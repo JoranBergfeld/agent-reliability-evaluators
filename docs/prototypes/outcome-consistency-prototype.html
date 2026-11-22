@@ -1,0 +1,183 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Prototype: Foundry outcome consistency</title>
+  <style>
+    :root { font: 16px/1.5 system-ui, sans-serif; color: #172534; background: #f3f6f7; }
+    body { max-width: 1050px; margin: auto; padding: 2rem 1rem 4rem; }
+    h1, h2, h3 { line-height: 1.2; }
+    h1 { margin-bottom: .3rem; }
+    section { background: white; border: 1px solid #d6e0e1; border-radius: .6rem; padding: 1.2rem; margin-top: 1rem; }
+    .badge { color: #11645c; font-weight: 700; }
+    .notice { border-left: .3rem solid #16877c; }
+    .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: .8rem; }
+    .stat { background: #f3f8f7; padding: .8rem; border-radius: .4rem; }
+    .stat strong { display: block; font-size: 1.3rem; }
+    button { background: white; border: 1px solid #87a7a3; color: #104c46; border-radius: .35rem; padding: .55rem .8rem; margin: .2rem .2rem .2rem 0; cursor: pointer; }
+    button:hover, button[aria-selected="true"] { background: #d7eee9; }
+    button:disabled { cursor: default; opacity: .5; }
+    table { border-collapse: collapse; width: 100%; }
+    th, td { padding: .5rem; border-bottom: 1px solid #e1e9e9; text-align: left; vertical-align: top; }
+    code { overflow-wrap: anywhere; }
+    .small { color: #425d5c; font-size: .9rem; }
+    .scroll { overflow-x: auto; }
+  </style>
+</head>
+<body>
+  <header>
+    <span class="badge">THROWAWAY PROTOTYPE · NOT PRODUCTION</span>
+    <h1>One task, repeated in Foundry</h1>
+    <p>How can real agent attempts become a multi-attempt outcome-consistency measure, and what happens when evidence is missing? Explore the captured run, then try simulated outcomes.</p>
+  </header>
+
+  <section class="notice">
+    <h2>What actually happened</h2>
+    <p>Five independent requests were sent to a Foundry prompt agent in a new Sandbox project in Sweden Central. The task was <strong>“What is 17 times 23? Reply with only the integer.”</strong> The customer-defined success rule for this demonstration was an exact, trimmed answer of <strong>391</strong>. Each captured response was 391.</p>
+    <p class="small">Agent: <code>outcome-consistency-prototype</code>, observed version 1; model deployment: <code>gpt-41-mini-prototype</code>; no tools; maximum 32 output tokens; no conversation shared between attempts. Version 1 was observed in every response; the endpoint was configured to select the latest version, not pinned. Requests received HTTP 429 rate limits during exploration, so the five successful requests were paced. Those service errors and the earlier smoke request are not represented as task failures or included in the five-attempt result.</p>
+    <p class="small">This page does not call Foundry. The five rows below are captured real responses; every action labelled simulated is fictional. Foundry invocation supplied the responses, the exact-match rule supplied outcomes, and the calculation below is local. No native Foundry cross-attempt reducer or portal publishing path was verified. Custom Foundry evaluators are preview, not production-ready.</p>
+  </section>
+
+  <section>
+    <h2>Current evidence and result</h2>
+    <div id="summary" class="grid" aria-live="polite"></div>
+    <p id="explanation" class="small"></p>
+    <div class="scroll"><table>
+      <thead><tr><th>Attempt</th><th>Source</th><th>Evidence</th><th>Outcome</th></tr></thead>
+      <tbody id="attempts"></tbody>
+    </table></div>
+  </section>
+
+  <section>
+    <h2>Free play</h2>
+    <p>These buttons add <strong>simulated</strong> outcomes; they never run an agent.</p>
+    <button id="real">Restore captured Foundry run</button>
+    <button id="clear">Start empty</button>
+    <button id="success">Add simulated success</button>
+    <button id="failure">Add simulated failure</button>
+    <button id="missing">Add simulated missing outcome</button>
+  </section>
+
+  <section>
+    <h2>Guided walkthroughs</h2>
+    <p>Select a scenario to reset its state, then use its steps in order.</p>
+    <div id="tabs" role="tablist" aria-label="Walkthrough scenarios"></div>
+    <h3 id="scenario-title"></h3>
+    <p id="scenario-description"></p>
+    <div id="steps"></div>
+  </section>
+
+  <section>
+    <h2>How to read this</h2>
+    <p>For one task, the paper’s v3 measure is <code>(2 × success frequency − 1)²</code>. Five successes out of five give <strong>1.00</strong>; four out of five give <strong>0.36</strong>. Five failures also give <strong>1.00</strong>: consistency is not success or a suitability verdict.</p>
+    <p class="small">This demo requires at least two known outcomes and marks the result unavailable if any attempt lacks an outcome. That is a prototype evidence policy, not a finalized product decision; the literal formula also returns 1 for a single attempt. Small samples and uncontrolled factors limit interpretation. The paper’s published code differs from its v3 formula; this demonstration uses the v3 formula. No acceptance threshold is applied.</p>
+  </section>
+
+  <script>
+    const realAttempts = [
+      { source: "Foundry", evidence: "391 · resp_02ff91aaecb21070006b0357b90798819087595b7718f4ba1a", outcome: "success" },
+      { source: "Foundry", evidence: "391 · resp_0dc91e1a5f013d06006b0357c92c88819486279b66e8c37373", outcome: "success" },
+      { source: "Foundry", evidence: "391 · resp_0dee535e33cacbc1006b03582305748194b2ec4bf4c98f6bf9", outcome: "success" },
+      { source: "Foundry", evidence: "391 · resp_0e905789c7ac1551006b03586598c48195a4c79fe3119eb816", outcome: "success" },
+      { source: "Foundry", evidence: "391 · resp_036c2bcd58fc821e006b0358a844c48194a2c549f59b5331d3", outcome: "success" }
+    ];
+
+    const model = {
+      real: () => realAttempts.map(attempt => ({ ...attempt })),
+      simulated: outcome => ({ source: "Simulated", evidence: "No Foundry request", outcome }),
+      measure(attempts) {
+        const successes = attempts.filter(a => a.outcome === "success").length;
+        const failures = attempts.filter(a => a.outcome === "failure").length;
+        const missing = attempts.filter(a => a.outcome === "missing").length;
+        const known = successes + failures;
+        const reason = missing ? "An outcome is missing." : known < 2 ? "At least two known outcomes are needed." : null;
+        const frequency = known ? successes / known : null;
+        return { successes, failures, missing, known, frequency, consistency: reason ? null : (2 * frequency - 1) ** 2, reason };
+      }
+    };
+  </script>
+  <script>
+    let attempts = model.real();
+    let scenario = 0;
+    let step = 0;
+    const scenarios = [
+      { title: "Real run", description: "Restore the five captured responses and inspect the separate success and consistency values.", initial: "empty", steps: [{ label: "Load real Foundry evidence", action: "real" }] },
+      { title: "Consistent failure", description: "A high consistency score does not mean the task succeeds.", initial: "empty", steps: [{ label: "Add first simulated failure", action: "failure" }, { label: "Add second simulated failure", action: "failure" }] },
+      { title: "Mixed outcomes", description: "A single failure changes the measure without defining an acceptance threshold.", initial: "empty", steps: [{ label: "Add four simulated successes", action: "four" }, { label: "Add one simulated failure", action: "failure" }] },
+      { title: "Missing evidence", description: "A missing outcome is not quietly counted as a failure or omitted from the calculation.", initial: "empty", steps: [{ label: "Add two simulated successes", action: "two" }, { label: "Add missing outcome", action: "missing" }] }
+    ];
+    const summary = document.getElementById("summary");
+    const explanation = document.getElementById("explanation");
+    const table = document.getElementById("attempts");
+    const tabs = document.getElementById("tabs");
+    const steps = document.getElementById("steps");
+
+    function apply(action) {
+      if (action === "real") attempts = model.real();
+      else if (action === "empty") attempts = [];
+      else if (action === "four") attempts.push(...Array.from({ length: 4 }, () => model.simulated("success")));
+      else if (action === "two") attempts.push(...Array.from({ length: 2 }, () => model.simulated("success")));
+      else attempts.push(model.simulated(action));
+      render();
+    }
+
+    function render() {
+      const m = model.measure(attempts);
+      summary.replaceChildren();
+      const values = [
+        ["Attempts", String(attempts.length)],
+        ["Known outcomes", `${m.known} (${m.successes} success, ${m.failures} failure)`],
+        ["Missing outcomes", String(m.missing)],
+        ["Success frequency", m.frequency === null ? "Unavailable" : `${(m.frequency * 100).toFixed(0)}% of known`],
+        ["Outcome consistency", m.consistency === null ? "Unavailable" : m.consistency.toFixed(2)]
+      ];
+      for (const [label, value] of values) {
+        const box = document.createElement("div");
+        box.className = "stat";
+        const heading = document.createElement("span");
+        heading.textContent = label;
+        const number = document.createElement("strong");
+        number.textContent = value;
+        box.append(heading, number);
+        summary.append(box);
+      }
+      explanation.textContent = m.reason || "Computed locally from the task outcomes using the paper’s v3 formula.";
+      table.replaceChildren();
+      attempts.forEach((attempt, index) => {
+        const row = document.createElement("tr");
+        for (const value of [index + 1, attempt.source, attempt.evidence, attempt.outcome]) {
+          const cell = document.createElement("td");
+          cell.textContent = value;
+          row.append(cell);
+        }
+        table.append(row);
+      });
+      tabs.replaceChildren();
+      scenarios.forEach((item, index) => {
+        const tab = document.createElement("button");
+        tab.textContent = item.title;
+        tab.setAttribute("role", "tab");
+        tab.setAttribute("aria-selected", String(index === scenario));
+        tab.onclick = () => { scenario = index; step = 0; attempts = []; render(); };
+        tabs.append(tab);
+      });
+      document.getElementById("scenario-title").textContent = scenarios[scenario].title;
+      document.getElementById("scenario-description").textContent = scenarios[scenario].description;
+      steps.replaceChildren();
+      scenarios[scenario].steps.forEach((item, index) => {
+        const button = document.createElement("button");
+        button.textContent = `${index + 1}. ${item.label}`;
+        button.disabled = index !== step;
+        button.onclick = () => { step++; apply(item.action); };
+        steps.append(button);
+      });
+    }
+
+    for (const [id, action] of [["real", "real"], ["clear", "empty"], ["success", "success"], ["failure", "failure"], ["missing", "missing"]]) {
+      document.getElementById(id).onclick = () => { step = 0; apply(action); };
+    }
+    render();
+  </script>
+</body>
+</html>
