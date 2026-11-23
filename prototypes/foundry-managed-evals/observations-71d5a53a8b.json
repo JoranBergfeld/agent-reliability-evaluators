@@ -1,0 +1,630 @@
+{
+  "started_at": "2026-11-23T12:54:47.108301+00:00",
+  "resource_group": "rg-foundry-eval-prototype-71d5a53a8b",
+  "account": "eval-prototype-71d5a53a8b",
+  "location": "swedencentral",
+  "python": "3.13.18 (main, Nov 11 2026, 00:19:14) [MSC v.1944 64 bit (AMD64)]",
+  "transport": "Python standard-library REST; bearer token from authenticated Azure CLI",
+  "sdk_validation": "Not performed: PyPI dependency download failed with TLS HandshakeFailure",
+  "evaluators": {
+    "prototype_scalar": {
+      "definition": {
+        "type": "code",
+        "code_text": "def grade(sample, item) -> float:\n    return float(item[\"value\"])\n",
+        "init_parameters": {
+          "type": "object",
+          "properties": {
+            "deployment_name": {
+              "type": "string"
+            },
+            "pass_threshold": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "deployment_name",
+            "pass_threshold"
+          ]
+        },
+        "data_schema": {
+          "type": "object",
+          "required": [
+            "item"
+          ],
+          "properties": {
+            "item": {
+              "type": "object",
+              "properties": {
+                "query": {
+                  "type": "string"
+                },
+                "response": {
+                  "type": "string"
+                },
+                "case_id": {
+                  "type": "string"
+                },
+                "value": {},
+                "attempts": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "attempts_json": {
+                  "type": "string"
+                },
+                "campaign": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "renamed": {}
+              }
+            }
+          }
+        },
+        "metrics": {
+          "result": {
+            "type": "continuous",
+            "desirable_direction": "increase",
+            "min_value": 0.0,
+            "max_value": 1.0
+          }
+        }
+      },
+      "version": "1",
+      "id": "azureai://accounts/eval-prototype-71d5a53a8b/projects/managed-evals-prototype/evaluators/prototype_scalar/versions/1"
+    },
+    "prototype_outcome": {
+      "definition": {
+        "type": "code",
+        "code_text": "def grade(sample, item) -> float:\n    attempts = item[\"attempts\"]\n    if len(attempts) < 2:\n        raise ValueError(\"unavailable: at least two attempts required\")\n    ids = [a[\"attempt_id\"] for a in attempts]\n    if len(set(ids)) != len(ids):\n        raise ValueError(\"unavailable: duplicate attempt identity\")\n    outcomes = [a[\"outcome\"] for a in attempts]\n    if any(type(x) is not int or x not in (0, 1) for x in outcomes):\n        raise ValueError(\"unavailable: sourced binary outcomes required\")\n    return float((2 * sum(outcomes) / len(outcomes) - 1) ** 2)\n",
+        "init_parameters": {
+          "type": "object",
+          "properties": {
+            "deployment_name": {
+              "type": "string"
+            },
+            "pass_threshold": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "deployment_name",
+            "pass_threshold"
+          ]
+        },
+        "data_schema": {
+          "type": "object",
+          "required": [
+            "item"
+          ],
+          "properties": {
+            "item": {
+              "type": "object",
+              "properties": {
+                "query": {
+                  "type": "string"
+                },
+                "response": {
+                  "type": "string"
+                },
+                "case_id": {
+                  "type": "string"
+                },
+                "value": {},
+                "attempts": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "attempts_json": {
+                  "type": "string"
+                },
+                "campaign": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "renamed": {}
+              }
+            }
+          }
+        },
+        "metrics": {
+          "result": {
+            "type": "continuous",
+            "desirable_direction": "increase",
+            "min_value": 0.0,
+            "max_value": 1.0
+          }
+        }
+      },
+      "version": "1",
+      "id": "azureai://accounts/eval-prototype-71d5a53a8b/projects/managed-evals-prototype/evaluators/prototype_outcome/versions/1"
+    },
+    "prototype_outcome_json": {
+      "definition": {
+        "type": "code",
+        "code_text": "def grade(sample, item) -> float:\n    import json\n    attempts = json.loads(item[\"attempts_json\"])\n    if len(attempts) < 2:\n        raise ValueError(\"unavailable: at least two attempts required\")\n    ids = [a[\"attempt_id\"] for a in attempts]\n    if len(set(ids)) != len(ids):\n        raise ValueError(\"unavailable: duplicate attempt identity\")\n    outcomes = [a[\"outcome\"] for a in attempts]\n    if any(type(x) is not int or x not in (0, 1) for x in outcomes):\n        raise ValueError(\"unavailable: sourced binary outcomes required\")\n    return float((2 * sum(outcomes) / len(outcomes) - 1) ** 2)\n",
+        "init_parameters": {
+          "type": "object",
+          "properties": {
+            "deployment_name": {
+              "type": "string"
+            },
+            "pass_threshold": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "deployment_name",
+            "pass_threshold"
+          ]
+        },
+        "data_schema": {
+          "type": "object",
+          "required": [
+            "item"
+          ],
+          "properties": {
+            "item": {
+              "type": "object",
+              "properties": {
+                "query": {
+                  "type": "string"
+                },
+                "response": {
+                  "type": "string"
+                },
+                "case_id": {
+                  "type": "string"
+                },
+                "value": {},
+                "attempts": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "attempts_json": {
+                  "type": "string"
+                },
+                "campaign": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "renamed": {}
+              }
+            }
+          }
+        },
+        "metrics": {
+          "result": {
+            "type": "continuous",
+            "desirable_direction": "increase",
+            "min_value": 0.0,
+            "max_value": 1.0
+          }
+        }
+      },
+      "version": "1",
+      "id": "azureai://accounts/eval-prototype-71d5a53a8b/projects/managed-evals-prototype/evaluators/prototype_outcome_json/versions/1"
+    },
+    "prototype_campaign": {
+      "definition": {
+        "type": "code",
+        "code_text": "def grade(sample, item) -> float:\n    tasks = item[\"campaign\"]\n    if not tasks or any(len(task[\"attempts\"]) < 2 for task in tasks):\n        raise ValueError(\"unavailable: missing repeated task evidence\")\n    return float(sum((2 * sum(a[\"outcome\"] for a in t[\"attempts\"]) / len(t[\"attempts\"]) - 1) ** 2 for t in tasks) / len(tasks))\n",
+        "init_parameters": {
+          "type": "object",
+          "properties": {
+            "deployment_name": {
+              "type": "string"
+            },
+            "pass_threshold": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "deployment_name",
+            "pass_threshold"
+          ]
+        },
+        "data_schema": {
+          "type": "object",
+          "required": [
+            "item"
+          ],
+          "properties": {
+            "item": {
+              "type": "object",
+              "properties": {
+                "query": {
+                  "type": "string"
+                },
+                "response": {
+                  "type": "string"
+                },
+                "case_id": {
+                  "type": "string"
+                },
+                "value": {},
+                "attempts": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "attempts_json": {
+                  "type": "string"
+                },
+                "campaign": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "renamed": {}
+              }
+            }
+          }
+        },
+        "metrics": {
+          "result": {
+            "type": "continuous",
+            "desirable_direction": "increase",
+            "min_value": 0.0,
+            "max_value": 1.0
+          }
+        }
+      },
+      "version": "1",
+      "id": "azureai://accounts/eval-prototype-71d5a53a8b/projects/managed-evals-prototype/evaluators/prototype_campaign/versions/1"
+    },
+    "prototype_numeric_contract": {
+      "definition": {
+        "type": "code",
+        "code_text": "def grade(sample, item) -> float:\n    value = item[\"value\"]\n    if value == \"exception\":\n        raise ValueError(\"unavailable: deliberate probe\")\n    if value == \"null\":\n        return None\n    if value == \"object\":\n        return {\"value\": 0.75, \"reason\": \"probe\", \"evidence_count\": 4}\n    if value == \"nan\":\n        return float(\"nan\")\n    if value == \"infinity\":\n        return float(\"inf\")\n    if value == \"timeout\":\n        import time\n        time.sleep(130)\n        return 0.75\n    return float(value)\n",
+        "init_parameters": {
+          "type": "object",
+          "properties": {
+            "deployment_name": {
+              "type": "string"
+            },
+            "pass_threshold": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "deployment_name",
+            "pass_threshold"
+          ]
+        },
+        "data_schema": {
+          "type": "object",
+          "required": [
+            "item"
+          ],
+          "properties": {
+            "item": {
+              "type": "object",
+              "properties": {
+                "query": {
+                  "type": "string"
+                },
+                "response": {
+                  "type": "string"
+                },
+                "case_id": {
+                  "type": "string"
+                },
+                "value": {},
+                "attempts": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "attempts_json": {
+                  "type": "string"
+                },
+                "campaign": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "renamed": {}
+              }
+            }
+          }
+        },
+        "metrics": {
+          "result": {
+            "type": "continuous",
+            "desirable_direction": "increase",
+            "min_value": 0.0,
+            "max_value": 1.0
+          }
+        }
+      },
+      "version": "1",
+      "id": "azureai://accounts/eval-prototype-71d5a53a8b/projects/managed-evals-prototype/evaluators/prototype_numeric_contract/versions/1"
+    },
+    "prototype_mapping": {
+      "definition": {
+        "type": "code",
+        "code_text": "def grade(sample, item) -> float:\n    return float(item[\"renamed\"])\n",
+        "init_parameters": {
+          "type": "object",
+          "properties": {
+            "deployment_name": {
+              "type": "string"
+            },
+            "pass_threshold": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "deployment_name",
+            "pass_threshold"
+          ]
+        },
+        "data_schema": {
+          "type": "object",
+          "required": [
+            "item"
+          ],
+          "properties": {
+            "item": {
+              "type": "object",
+              "properties": {
+                "query": {
+                  "type": "string"
+                },
+                "response": {
+                  "type": "string"
+                },
+                "case_id": {
+                  "type": "string"
+                },
+                "value": {},
+                "attempts": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "attempts_json": {
+                  "type": "string"
+                },
+                "campaign": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "renamed": {}
+              }
+            }
+          }
+        },
+        "metrics": {
+          "result": {
+            "type": "continuous",
+            "desirable_direction": "increase",
+            "min_value": 0.0,
+            "max_value": 1.0
+          }
+        }
+      },
+      "version": "1",
+      "id": "azureai://accounts/eval-prototype-71d5a53a8b/projects/managed-evals-prototype/evaluators/prototype_mapping/versions/1"
+    },
+    "prototype_flat_mapping": {
+      "definition": {
+        "type": "code",
+        "code_text": "def grade(sample, item) -> float:\n    return float(item[\"renamed\"])\n",
+        "init_parameters": {
+          "type": "object",
+          "properties": {
+            "deployment_name": {
+              "type": "string"
+            },
+            "pass_threshold": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "deployment_name",
+            "pass_threshold"
+          ]
+        },
+        "data_schema": {
+          "type": "object",
+          "properties": {
+            "renamed": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "renamed"
+          ]
+        },
+        "metrics": {
+          "result": {
+            "type": "continuous",
+            "desirable_direction": "increase",
+            "min_value": 0.0,
+            "max_value": 1.0
+          }
+        }
+      },
+      "version": "1",
+      "id": "azureai://accounts/eval-prototype-71d5a53a8b/projects/managed-evals-prototype/evaluators/prototype_flat_mapping/versions/1"
+    },
+    "prototype_optional_threshold": {
+      "definition": {
+        "type": "code",
+        "code_text": "def grade(sample, item) -> float:\n    return float(item[\"value\"])\n",
+        "init_parameters": {
+          "type": "object",
+          "properties": {
+            "deployment_name": {
+              "type": "string"
+            },
+            "pass_threshold": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "deployment_name"
+          ]
+        },
+        "data_schema": {
+          "type": "object",
+          "required": [
+            "item"
+          ],
+          "properties": {
+            "item": {
+              "type": "object",
+              "properties": {
+                "query": {
+                  "type": "string"
+                },
+                "response": {
+                  "type": "string"
+                },
+                "case_id": {
+                  "type": "string"
+                },
+                "value": {},
+                "attempts": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "attempts_json": {
+                  "type": "string"
+                },
+                "campaign": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "renamed": {}
+              }
+            }
+          }
+        },
+        "metrics": {
+          "result": {
+            "type": "continuous",
+            "desirable_direction": "increase",
+            "min_value": 0.0,
+            "max_value": 1.0
+          }
+        }
+      },
+      "version": "1",
+      "id": "azureai://accounts/eval-prototype-71d5a53a8b/projects/managed-evals-prototype/evaluators/prototype_optional_threshold/versions/1"
+    },
+    "prototype_optional_parameters": {
+      "definition": {
+        "type": "code",
+        "code_text": "def grade(sample, item) -> float:\n    return float(item[\"value\"])\n",
+        "init_parameters": {
+          "type": "object",
+          "properties": {
+            "deployment_name": {
+              "type": "string"
+            },
+            "pass_threshold": {
+              "type": "number"
+            }
+          },
+          "required": []
+        },
+        "data_schema": {
+          "type": "object",
+          "required": [
+            "item"
+          ],
+          "properties": {
+            "item": {
+              "type": "object",
+              "properties": {
+                "query": {
+                  "type": "string"
+                },
+                "response": {
+                  "type": "string"
+                },
+                "case_id": {
+                  "type": "string"
+                },
+                "value": {},
+                "attempts": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "attempts_json": {
+                  "type": "string"
+                },
+                "campaign": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "renamed": {}
+              }
+            }
+          }
+        },
+        "metrics": {
+          "result": {
+            "type": "continuous",
+            "desirable_direction": "increase",
+            "min_value": 0.0,
+            "max_value": 1.0
+          }
+        }
+      },
+      "version": "1",
+      "id": "azureai://accounts/eval-prototype-71d5a53a8b/projects/managed-evals-prototype/evaluators/prototype_optional_parameters/versions/1"
+    }
+  },
+  "probes": {},
+  "cleanup": {
+    "verified": true,
+    "group_exists": false,
+    "checked_at": "2026-11-23T13:01:24.006276+00:00"
+  },
+  "model": {
+    "name": "prototype-gpt-41-mini",
+    "model": "gpt-4.1-mini",
+    "version": "2025-04-14",
+    "capacity": 1
+  },
+  "project_endpoint": "https://eval-prototype-71d5a53a8b.services.ai.azure.com/api/projects/managed-evals-prototype",
+  "api_versions": {
+    "projects": "v1",
+    "openai_base_url": "https://eval-prototype-71d5a53a8b.services.ai.azure.com/api/projects/managed-evals-prototype/openai/v1"
+  },
+  "fatal_error": {
+    "type": "URLError",
+    "message": "<urlopen error [SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol (_ssl.c:1035)>"
+  }
+}

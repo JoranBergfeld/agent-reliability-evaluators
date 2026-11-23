@@ -1,0 +1,1104 @@
+<!doctype html><html lang="en"><meta charset="utf-8">
+<title>Foundry managed-code prototype scorecard</title>
+<style>
+body { font: 16px system-ui; max-width: 1100px; margin: 30px auto; padding: 0 20px; color: #24292f; }
+section { border: 1px solid #d0d7de; padding: 18px; margin: 20px 0; border-radius: 6px; }
+table { border-collapse: collapse; width: 100%; }
+th, td { text-align: left; border-bottom: 1px solid #d0d7de; padding: 10px; }
+pre { white-space: pre-wrap; overflow-wrap: anywhere; background: #f6f8fa; padding: 12px; }
+details { margin-top: 15px; } summary { cursor: pointer; }
+</style>
+<h1>Foundry managed-code prototype: observed scores</h1>
+<p><strong>Throwaway, synthetic evidence. All temporary Azure resource groups were deleted.</strong></p>
+<p>This is an offline projection of captured API results, not a Foundry portal scorecard.
+It does not combine reliability metrics or interpret platform pass/fail labels as customer
+acceptance. Only the outcome-consistency probes implement a paper metric; other evaluators
+are contract probes. Expand evidence to see numeric changes in returned structured data.
+Opaque JSON strings preserved the tested confidence/outcome evidence exactly.</p>
+<section><h2>scalar</h2><p>Run state: completed</p><table><thead><tr><th>Evidence item</th><th>Evaluator</th><th>Observed value</th></tr></thead><tbody><tr><td>quarter</td><td>prototype_scalar</td><td>0.25</td></tr><tr><td>one</td><td>prototype_scalar</td><td>1</td></tr></tbody></table><details><summary>Submitted vs returned evidence: quarter</summary><h4>Submitted</h4><pre>{
+  &quot;query&quot;: &quot;Synthetic evidence&quot;,
+  &quot;response&quot;: &quot;Precomputed&quot;,
+  &quot;case_id&quot;: &quot;quarter&quot;,
+  &quot;value&quot;: 0.25
+}</pre><h4>Foundry returned</h4><pre>{
+  &quot;query&quot;: &quot;Synthetic evidence&quot;,
+  &quot;response&quot;: &quot;Precomputed&quot;,
+  &quot;case_id&quot;: &quot;quarter&quot;,
+  &quot;value&quot;: 0.25
+}</pre><h4>Service diagnostics (not customer acceptance)</h4><pre>[
+  {
+    &quot;type&quot;: &quot;azure_ai_evaluator&quot;,
+    &quot;name&quot;: &quot;prototype_scalar&quot;,
+    &quot;metric&quot;: &quot;prototype_scalar&quot;,
+    &quot;score&quot;: 0.25,
+    &quot;label&quot;: &quot;fail&quot;,
+    &quot;reason&quot;: null,
+    &quot;threshold&quot;: 0.5,
+    &quot;passed&quot;: false,
+    &quot;status&quot;: &quot;completed&quot;
+  }
+]</pre></details><details><summary>Submitted vs returned evidence: one</summary><h4>Submitted</h4><pre>{
+  &quot;query&quot;: &quot;Synthetic evidence&quot;,
+  &quot;response&quot;: &quot;Precomputed&quot;,
+  &quot;case_id&quot;: &quot;one&quot;,
+  &quot;value&quot;: 1.0
+}</pre><h4>Foundry returned</h4><pre>{
+  &quot;query&quot;: &quot;Synthetic evidence&quot;,
+  &quot;response&quot;: &quot;Precomputed&quot;,
+  &quot;case_id&quot;: &quot;one&quot;,
+  &quot;value&quot;: 1
+}</pre><h4>Service diagnostics (not customer acceptance)</h4><pre>[
+  {
+    &quot;type&quot;: &quot;azure_ai_evaluator&quot;,
+    &quot;name&quot;: &quot;prototype_scalar&quot;,
+    &quot;metric&quot;: &quot;prototype_scalar&quot;,
+    &quot;score&quot;: 1,
+    &quot;label&quot;: &quot;pass&quot;,
+    &quot;reason&quot;: null,
+    &quot;threshold&quot;: 0.5,
+    &quot;passed&quot;: true,
+    &quot;status&quot;: &quot;completed&quot;
+  }
+]</pre></details></section><section><h2>nested</h2><p>Run state: completed</p><table><thead><tr><th>Evidence item</th><th>Evaluator</th><th>Observed value</th></tr></thead><tbody><tr><td>mixed</td><td>prototype_outcome</td><td>0.25</td></tr><tr><td>all-success</td><td>prototype_outcome</td><td>1</td></tr></tbody></table><details><summary>Submitted vs returned evidence: mixed</summary><h4>Submitted</h4><pre>{
+  &quot;query&quot;: &quot;Synthetic evidence&quot;,
+  &quot;response&quot;: &quot;Precomputed&quot;,
+  &quot;case_id&quot;: &quot;mixed&quot;,
+  &quot;attempts&quot;: [
+    {
+      &quot;attempt_id&quot;: &quot;a0&quot;,
+      &quot;outcome&quot;: 1,
+      &quot;outcome_source&quot;: &quot;synthetic-customer-test&quot;,
+      &quot;confidence&quot;: 0.8300000000000001
+    },
+    {
+      &quot;attempt_id&quot;: &quot;a1&quot;,
+      &quot;outcome&quot;: 1,
+      &quot;outcome_source&quot;: &quot;synthetic-customer-test&quot;,
+      &quot;confidence&quot;: 0.83
+    },
+    {
+      &quot;attempt_id&quot;: &quot;a2&quot;,
+      &quot;outcome&quot;: 1,
+      &quot;outcome_source&quot;: &quot;synthetic-customer-test&quot;,
+      &quot;confidence&quot;: 0.67
+    },
+    {
+      &quot;attempt_id&quot;: &quot;a3&quot;,
+      &quot;outcome&quot;: 0,
+      &quot;outcome_source&quot;: &quot;synthetic-customer-test&quot;,
+      &quot;confidence&quot;: 0.49999999999999994
+    }
+  ]
+}</pre><h4>Foundry returned</h4><pre>{
+  &quot;query&quot;: &quot;Synthetic evidence&quot;,
+  &quot;response&quot;: &quot;Precomputed&quot;,
+  &quot;case_id&quot;: &quot;mixed&quot;,
+  &quot;attempts&quot;: [
+    {
+      &quot;attempt_id&quot;: &quot;a0&quot;,
+      &quot;outcome&quot;: 1,
+      &quot;outcome_source&quot;: &quot;synthetic-customer-test&quot;,
+      &quot;confidence&quot;: 0.8300000000000001
+    },
+    {
+      &quot;attempt_id&quot;: &quot;a1&quot;,
+      &quot;outcome&quot;: 1,
+      &quot;outcome_source&quot;: &quot;synthetic-customer-test&quot;,
+      &quot;confidence&quot;: 0.8300000000000001
+    },
+    {
+      &quot;attempt_id&quot;: &quot;a2&quot;,
+      &quot;outcome&quot;: 1,
+      &quot;outcome_source&quot;: &quot;synthetic-customer-test&quot;,
+      &quot;confidence&quot;: 0.67
+    },
+    {
+      &quot;attempt_id&quot;: &quot;a3&quot;,
+      &quot;outcome&quot;: 0,
+      &quot;outcome_source&quot;: &quot;synthetic-customer-test&quot;,
+      &quot;confidence&quot;: 0.49999999999999906
+    }
+  ]
+}</pre><h4>Service diagnostics (not customer acceptance)</h4><pre>[
+  {
+    &quot;type&quot;: &quot;azure_ai_evaluator&quot;,
+    &quot;name&quot;: &quot;prototype_outcome&quot;,
+    &quot;metric&quot;: &quot;prototype_outcome&quot;,
+    &quot;score&quot;: 0.25,
+    &quot;label&quot;: &quot;fail&quot;,
+    &quot;reason&quot;: null,
+    &quot;threshold&quot;: 0.5,
+    &quot;passed&quot;: false,
+    &quot;status&quot;: &quot;completed&quot;
+  }
+]</pre></details><details><summary>Submitted vs returned evidence: all-success</summary><h4>Submitted</h4><pre>{
+  &quot;query&quot;: &quot;Synthetic evidence&quot;,
+  &quot;response&quot;: &quot;Precomputed&quot;,
+  &quot;case_id&quot;: &quot;all-success&quot;,
+  &quot;attempts&quot;: [
+    {
+      &quot;attempt_id&quot;: &quot;a0&quot;,
+      &quot;outcome&quot;: 1,
+      &quot;outcome_source&quot;: &quot;synthetic-customer-test&quot;,
+      &quot;confidence&quot;: 0.8300000000000001
+    },
+    {
+      &quot;attempt_id&quot;: &quot;a1&quot;,
+      &quot;outcome&quot;: 1,
+      &quot;outcome_source&quot;: &quot;synthetic-customer-test&quot;,
+      &quot;confidence&quot;: 0.83
+    },
+    {
+      &quot;attempt_id&quot;: &quot;a2&quot;,
+      &quot;outcome&quot;: 1,
+      &quot;outcome_source&quot;: &quot;synthetic-customer-test&quot;,
+      &quot;confidence&quot;: 0.67
+    },
+    {
+      &quot;attempt_id&quot;: &quot;a3&quot;,
+      &quot;outcome&quot;: 1,
+      &quot;outcome_source&quot;: &quot;synthetic-customer-test&quot;,
+      &quot;confidence&quot;: 0.49999999999999994
+    }
+  ]
+}</pre><h4>Foundry returned</h4><pre>{
+  &quot;query&quot;: &quot;Synthetic evidence&quot;,
+  &quot;response&quot;: &quot;Precomputed&quot;,
+  &quot;case_id&quot;: &quot;all-success&quot;,
+  &quot;attempts&quot;: [
+    {
+      &quot;attempt_id&quot;: &quot;a0&quot;,
+      &quot;outcome&quot;: 1,
+      &quot;outcome_source&quot;: &quot;synthetic-customer-test&quot;,
+      &quot;confidence&quot;: 0.8300000000000001
+    },
+    {
+      &quot;attempt_id&quot;: &quot;a1&quot;,
+      &quot;outcome&quot;: 1,
+      &quot;outcome_source&quot;: &quot;synthetic-customer-test&quot;,
+      &quot;confidence&quot;: 0.8300000000000001
+    },
+    {
+      &quot;attempt_id&quot;: &quot;a2&quot;,
+      &quot;outcome&quot;: 1,
+      &quot;outcome_source&quot;: &quot;synthetic-customer-test&quot;,
+      &quot;confidence&quot;: 0.67
+    },
+    {
+      &quot;attempt_id&quot;: &quot;a3&quot;,
+      &quot;outcome&quot;: 1,
+      &quot;outcome_source&quot;: &quot;synthetic-customer-test&quot;,
+      &quot;confidence&quot;: 0.49999999999999906
+    }
+  ]
+}</pre><h4>Service diagnostics (not customer acceptance)</h4><pre>[
+  {
+    &quot;type&quot;: &quot;azure_ai_evaluator&quot;,
+    &quot;name&quot;: &quot;prototype_outcome&quot;,
+    &quot;metric&quot;: &quot;prototype_outcome&quot;,
+    &quot;score&quot;: 1,
+    &quot;label&quot;: &quot;pass&quot;,
+    &quot;reason&quot;: null,
+    &quot;threshold&quot;: 0.5,
+    &quot;passed&quot;: true,
+    &quot;status&quot;: &quot;completed&quot;
+  }
+]</pre></details></section><section><h2>serialized</h2><p>Run state: completed</p><table><thead><tr><th>Evidence item</th><th>Evaluator</th><th>Observed value</th></tr></thead><tbody><tr><td>mixed</td><td>prototype_outcome_json</td><td>0.25</td></tr><tr><td>all-success</td><td>prototype_outcome_json</td><td>1</td></tr></tbody></table><details><summary>Submitted vs returned evidence: mixed</summary><h4>Submitted</h4><pre>{
+  &quot;query&quot;: &quot;Synthetic evidence&quot;,
+  &quot;response&quot;: &quot;Precomputed&quot;,
+  &quot;case_id&quot;: &quot;mixed&quot;,
+  &quot;attempts_json&quot;: &quot;[{\&quot;attempt_id\&quot;: \&quot;a0\&quot;, \&quot;outcome\&quot;: 1, \&quot;outcome_source\&quot;: \&quot;synthetic-customer-test\&quot;, \&quot;confidence\&quot;: 0.8300000000000001}, {\&quot;attempt_id\&quot;: \&quot;a1\&quot;, \&quot;outcome\&quot;: 1, \&quot;outcome_source\&quot;: \&quot;synthetic-customer-test\&quot;, \&quot;confidence\&quot;: 0.83}, {\&quot;attempt_id\&quot;: \&quot;a2\&quot;, \&quot;outcome\&quot;: 1, \&quot;outcome_source\&quot;: \&quot;synthetic-customer-test\&quot;, \&quot;confidence\&quot;: 0.67}, {\&quot;attempt_id\&quot;: \&quot;a3\&quot;, \&quot;outcome\&quot;: 0, \&quot;outcome_source\&quot;: \&quot;synthetic-customer-test\&quot;, \&quot;confidence\&quot;: 0.49999999999999994}]&quot;
+}</pre><h4>Foundry returned</h4><pre>{
+  &quot;query&quot;: &quot;Synthetic evidence&quot;,
+  &quot;response&quot;: &quot;Precomputed&quot;,
+  &quot;case_id&quot;: &quot;mixed&quot;,
+  &quot;attempts_json&quot;: &quot;[{\&quot;attempt_id\&quot;: \&quot;a0\&quot;, \&quot;outcome\&quot;: 1, \&quot;outcome_source\&quot;: \&quot;synthetic-customer-test\&quot;, \&quot;confidence\&quot;: 0.8300000000000001}, {\&quot;attempt_id\&quot;: \&quot;a1\&quot;, \&quot;outcome\&quot;: 1, \&quot;outcome_source\&quot;: \&quot;synthetic-customer-test\&quot;, \&quot;confidence\&quot;: 0.83}, {\&quot;attempt_id\&quot;: \&quot;a2\&quot;, \&quot;outcome\&quot;: 1, \&quot;outcome_source\&quot;: \&quot;synthetic-customer-test\&quot;, \&quot;confidence\&quot;: 0.67}, {\&quot;attempt_id\&quot;: \&quot;a3\&quot;, \&quot;outcome\&quot;: 0, \&quot;outcome_source\&quot;: \&quot;synthetic-customer-test\&quot;, \&quot;confidence\&quot;: 0.49999999999999994}]&quot;
+}</pre><h4>Service diagnostics (not customer acceptance)</h4><pre>[
+  {
+    &quot;type&quot;: &quot;azure_ai_evaluator&quot;,
+    &quot;name&quot;: &quot;prototype_outcome_json&quot;,
+    &quot;metric&quot;: &quot;prototype_outcome_json&quot;,
+    &quot;score&quot;: 0.25,
+    &quot;label&quot;: &quot;fail&quot;,
+    &quot;reason&quot;: null,
+    &quot;threshold&quot;: 0.5,
+    &quot;passed&quot;: false,
+    &quot;status&quot;: &quot;completed&quot;
+  }
+]</pre></details><details><summary>Submitted vs returned evidence: all-success</summary><h4>Submitted</h4><pre>{
+  &quot;query&quot;: &quot;Synthetic evidence&quot;,
+  &quot;response&quot;: &quot;Precomputed&quot;,
+  &quot;case_id&quot;: &quot;all-success&quot;,
+  &quot;attempts_json&quot;: &quot;[{\&quot;attempt_id\&quot;: \&quot;a0\&quot;, \&quot;outcome\&quot;: 1, \&quot;outcome_source\&quot;: \&quot;synthetic-customer-test\&quot;, \&quot;confidence\&quot;: 0.8300000000000001}, {\&quot;attempt_id\&quot;: \&quot;a1\&quot;, \&quot;outcome\&quot;: 1, \&quot;outcome_source\&quot;: \&quot;synthetic-customer-test\&quot;, \&quot;confidence\&quot;: 0.83}, {\&quot;attempt_id\&quot;: \&quot;a2\&quot;, \&quot;outcome\&quot;: 1, \&quot;outcome_source\&quot;: \&quot;synthetic-customer-test\&quot;, \&quot;confidence\&quot;: 0.67}, {\&quot;attempt_id\&quot;: \&quot;a3\&quot;, \&quot;outcome\&quot;: 1, \&quot;outcome_source\&quot;: \&quot;synthetic-customer-test\&quot;, \&quot;confidence\&quot;: 0.49999999999999994}]&quot;
+}</pre><h4>Foundry returned</h4><pre>{
+  &quot;query&quot;: &quot;Synthetic evidence&quot;,
+  &quot;response&quot;: &quot;Precomputed&quot;,
+  &quot;case_id&quot;: &quot;all-success&quot;,
+  &quot;attempts_json&quot;: &quot;[{\&quot;attempt_id\&quot;: \&quot;a0\&quot;, \&quot;outcome\&quot;: 1, \&quot;outcome_source\&quot;: \&quot;synthetic-customer-test\&quot;, \&quot;confidence\&quot;: 0.8300000000000001}, {\&quot;attempt_id\&quot;: \&quot;a1\&quot;, \&quot;outcome\&quot;: 1, \&quot;outcome_source\&quot;: \&quot;synthetic-customer-test\&quot;, \&quot;confidence\&quot;: 0.83}, {\&quot;attempt_id\&quot;: \&quot;a2\&quot;, \&quot;outcome\&quot;: 1, \&quot;outcome_source\&quot;: \&quot;synthetic-customer-test\&quot;, \&quot;confidence\&quot;: 0.67}, {\&quot;attempt_id\&quot;: \&quot;a3\&quot;, \&quot;outcome\&quot;: 1, \&quot;outcome_source\&quot;: \&quot;synthetic-customer-test\&quot;, \&quot;confidence\&quot;: 0.49999999999999994}]&quot;
+}</pre><h4>Service diagnostics (not customer acceptance)</h4><pre>[
+  {
+    &quot;type&quot;: &quot;azure_ai_evaluator&quot;,
+    &quot;name&quot;: &quot;prototype_outcome_json&quot;,
+    &quot;metric&quot;: &quot;prototype_outcome_json&quot;,
+    &quot;score&quot;: 1,
+    &quot;label&quot;: &quot;pass&quot;,
+    &quot;reason&quot;: null,
+    &quot;threshold&quot;: 0.5,
+    &quot;passed&quot;: true,
+    &quot;status&quot;: &quot;completed&quot;
+  }
+]</pre></details></section><section><h2>campaign</h2><p>Run state: completed</p><table><thead><tr><th>Evidence item</th><th>Evaluator</th><th>Observed value</th></tr></thead><tbody><tr><td>two-tasks</td><td>prototype_campaign</td><td>0.625</td></tr></tbody></table><details><summary>Submitted vs returned evidence: two-tasks</summary><h4>Submitted</h4><pre>{
+  &quot;query&quot;: &quot;Synthetic evidence&quot;,
+  &quot;response&quot;: &quot;Precomputed&quot;,
+  &quot;case_id&quot;: &quot;two-tasks&quot;,
+  &quot;campaign&quot;: [
+    {
+      &quot;query&quot;: &quot;Synthetic evidence&quot;,
+      &quot;response&quot;: &quot;Precomputed&quot;,
+      &quot;case_id&quot;: &quot;mixed&quot;,
+      &quot;attempts&quot;: [
+        {
+          &quot;attempt_id&quot;: &quot;a0&quot;,
+          &quot;outcome&quot;: 1,
+          &quot;outcome_source&quot;: &quot;synthetic-customer-test&quot;,
+          &quot;confidence&quot;: 0.8300000000000001
+        },
+        {
+          &quot;attempt_id&quot;: &quot;a1&quot;,
+          &quot;outcome&quot;: 1,
+          &quot;outcome_source&quot;: &quot;synthetic-customer-test&quot;,
+          &quot;confidence&quot;: 0.83
+        },
+        {
+          &quot;attempt_id&quot;: &quot;a2&quot;,
+          &quot;outcome&quot;: 1,
+          &quot;outcome_source&quot;: &quot;synthetic-customer-test&quot;,
+          &quot;confidence&quot;: 0.67
+        },
+        {
+          &quot;attempt_id&quot;: &quot;a3&quot;,
+          &quot;outcome&quot;: 0,
+          &quot;outcome_source&quot;: &quot;synthetic-customer-test&quot;,
+          &quot;confidence&quot;: 0.49999999999999994
+        }
+      ]
+    },
+    {
+      &quot;query&quot;: &quot;Synthetic evidence&quot;,
+      &quot;response&quot;: &quot;Precomputed&quot;,
+      &quot;case_id&quot;: &quot;all-success&quot;,
+      &quot;attempts&quot;: [
+        {
+          &quot;attempt_id&quot;: &quot;a0&quot;,
+          &quot;outcome&quot;: 1,
+          &quot;outcome_source&quot;: &quot;synthetic-customer-test&quot;,
+          &quot;confidence&quot;: 0.8300000000000001
+        },
+        {
+          &quot;attempt_id&quot;: &quot;a1&quot;,
+          &quot;outcome&quot;: 1,
+          &quot;outcome_source&quot;: &quot;synthetic-customer-test&quot;,
+          &quot;confidence&quot;: 0.83
+        },
+        {
+          &quot;attempt_id&quot;: &quot;a2&quot;,
+          &quot;outcome&quot;: 1,
+          &quot;outcome_source&quot;: &quot;synthetic-customer-test&quot;,
+          &quot;confidence&quot;: 0.67
+        },
+        {
+          &quot;attempt_id&quot;: &quot;a3&quot;,
+          &quot;outcome&quot;: 1,
+          &quot;outcome_source&quot;: &quot;synthetic-customer-test&quot;,
+          &quot;confidence&quot;: 0.49999999999999994
+        }
+      ]
+    }
+  ]
+}</pre><h4>Foundry returned</h4><pre>{
+  &quot;query&quot;: &quot;Synthetic evidence&quot;,
+  &quot;response&quot;: &quot;Precomputed&quot;,
+  &quot;case_id&quot;: &quot;two-tasks&quot;,
+  &quot;campaign&quot;: [
+    {
+      &quot;query&quot;: &quot;Synthetic evidence&quot;,
+      &quot;response&quot;: &quot;Precomputed&quot;,
+      &quot;case_id&quot;: &quot;mixed&quot;,
+      &quot;attempts&quot;: [
+        {
+          &quot;attempt_id&quot;: &quot;a0&quot;,
+          &quot;outcome&quot;: 1,
+          &quot;outcome_source&quot;: &quot;synthetic-customer-test&quot;,
+          &quot;confidence&quot;: 0.8300000000000001
+        },
+        {
+          &quot;attempt_id&quot;: &quot;a1&quot;,
+          &quot;outcome&quot;: 1,
+          &quot;outcome_source&quot;: &quot;synthetic-customer-test&quot;,
+          &quot;confidence&quot;: 0.8300000000000001
+        },
+        {
+          &quot;attempt_id&quot;: &quot;a2&quot;,
+          &quot;outcome&quot;: 1,
+          &quot;outcome_source&quot;: &quot;synthetic-customer-test&quot;,
+          &quot;confidence&quot;: 0.67
+        },
+        {
+          &quot;attempt_id&quot;: &quot;a3&quot;,
+          &quot;outcome&quot;: 0,
+          &quot;outcome_source&quot;: &quot;synthetic-customer-test&quot;,
+          &quot;confidence&quot;: 0.49999999999999906
+        }
+      ]
+    },
+    {
+      &quot;query&quot;: &quot;Synthetic evidence&quot;,
+      &quot;response&quot;: &quot;Precomputed&quot;,
+      &quot;case_id&quot;: &quot;all-success&quot;,
+      &quot;attempts&quot;: [
+        {
+          &quot;attempt_id&quot;: &quot;a0&quot;,
+          &quot;outcome&quot;: 1,
+          &quot;outcome_source&quot;: &quot;synthetic-customer-test&quot;,
+          &quot;confidence&quot;: 0.8300000000000001
+        },
+        {
+          &quot;attempt_id&quot;: &quot;a1&quot;,
+          &quot;outcome&quot;: 1,
+          &quot;outcome_source&quot;: &quot;synthetic-customer-test&quot;,
+          &quot;confidence&quot;: 0.8300000000000001
+        },
+        {
+          &quot;attempt_id&quot;: &quot;a2&quot;,
+          &quot;outcome&quot;: 1,
+          &quot;outcome_source&quot;: &quot;synthetic-customer-test&quot;,
+          &quot;confidence&quot;: 0.67
+        },
+        {
+          &quot;attempt_id&quot;: &quot;a3&quot;,
+          &quot;outcome&quot;: 1,
+          &quot;outcome_source&quot;: &quot;synthetic-customer-test&quot;,
+          &quot;confidence&quot;: 0.49999999999999906
+        }
+      ]
+    }
+  ]
+}</pre><h4>Service diagnostics (not customer acceptance)</h4><pre>[
+  {
+    &quot;type&quot;: &quot;azure_ai_evaluator&quot;,
+    &quot;name&quot;: &quot;prototype_campaign&quot;,
+    &quot;metric&quot;: &quot;prototype_campaign&quot;,
+    &quot;score&quot;: 0.625,
+    &quot;label&quot;: &quot;pass&quot;,
+    &quot;reason&quot;: null,
+    &quot;threshold&quot;: 0.5,
+    &quot;passed&quot;: true,
+    &quot;status&quot;: &quot;completed&quot;
+  }
+]</pre></details></section><section><h2>mapping</h2><p>Run state: request rejected</p><table><thead><tr><th>Evidence item</th><th>Evaluator</th><th>Observed value</th></tr></thead><tbody><tr><td colspan="3">No returned measurement. Do not substitute zero.</td></tr></tbody></table><details><summary>Error details</summary><pre>{
+  &quot;type&quot;: &quot;ServiceError&quot;,
+  &quot;status_code&quot;: 400,
+  &quot;message&quot;: &quot;{\n  \&quot;error\&quot;: {\n    \&quot;code\&quot;: \&quot;UserError\&quot;,\n    \&quot;severity\&quot;: null,\n    \&quot;message\&quot;: \&quot;Evaluation validation failed: missing required data mappings for evaluators &#x27;prototype_mapping&#x27;.\&quot;,\n    \&quot;messageFormat\&quot;: \&quot;Evaluation validation failed: {errors}\&quot;,\n    \&quot;messageParameters\&quot;: {\n      \&quot;errors\&quot;: \&quot;missing required data mappings for evaluators &#x27;prototype_mapping&#x27;.\&quot;\n    },\n    \&quot;referenceCode\&quot;: null,\n    \&quot;detailsUri\&quot;: \&quot;https://aka.ms/FoundryEvalsFormatIssues\&quot;,\n    \&quot;target\&quot;: \&quot;testing_criteria\&quot;,\n    \&quot;details\&quot;: [\n      {\n        \&quot;code\&quot;: \&quot;MissingRequiredDataMapping\&quot;,\n        \&quot;severity\&quot;: null,\n        \&quot;message\&quot;: \&quot;Data mapping for required field &#x27;item&#x27; is missing for evaluator &#x27;prototype_mapping&#x27;.\&quot;,\n        \&quot;messageFormat\&quot;: null,\n        \&quot;messageParameters\&quot;: {},\n        \&quot;referenceCode\&quot;: null,\n        \&quot;detailsUri\&quot;: null,\n        \&quot;target\&quot;: \&quot;evaluation.testing_criteria[0].data_mapping\&quot;,\n        \&quot;details\&quot;: [],\n        \&quot;innerError\&quot;: null,\n        \&quot;debugInfo\&quot;: null,\n        \&quot;additionalInfo\&quot;: null\n      }\n    ],\n    \&quot;innerError\&quot;: {\n      \&quot;code\&quot;: \&quot;EvalValidationFailed\&quot;,\n      \&quot;innerError\&quot;: null\n    },\n    \&quot;debugInfo\&quot;: null,\n    \&quot;additionalInfo\&quot;: null\n  },\n  \&quot;correlation\&quot;: {\n    \&quot;operation\&quot;: \&quot;c0e4d4e22cfa646d1042d59c9e63f44c\&quot;,\n    \&quot;request\&quot;: \&quot;4c6c2f667555b0f1\&quot;\n  },\n  \&quot;environment\&quot;: \&quot;swedencentral\&quot;,\n  \&quot;location\&quot;: \&quot;swedencentral\&quot;,\n  \&quot;time\&quot;: \&quot;2026-11-23T13:07:12.3148946+00:00\&quot;,\n  \&quot;componentName\&quot;: \&quot;raisvc\&quot;,\n  \&quot;statusCode\&quot;: 400\n}&quot;
+}</pre></details></section><section><h2>mapping-with-item</h2><p>Run state: request rejected</p><table><thead><tr><th>Evidence item</th><th>Evaluator</th><th>Observed value</th></tr></thead><tbody><tr><td colspan="3">No returned measurement. Do not substitute zero.</td></tr></tbody></table><details><summary>Error details</summary><pre>{
+  &quot;type&quot;: &quot;ServiceError&quot;,
+  &quot;status_code&quot;: 400,
+  &quot;message&quot;: &quot;{\n  \&quot;error\&quot;: {\n    \&quot;code\&quot;: \&quot;UserError\&quot;,\n    \&quot;severity\&quot;: null,\n    \&quot;message\&quot;: \&quot;Evaluation validation failed: invalid data mappings for evaluators &#x27;prototype_mapping&#x27;.\&quot;,\n    \&quot;messageFormat\&quot;: \&quot;Evaluation validation failed: {errors}\&quot;,\n    \&quot;messageParameters\&quot;: {\n      \&quot;errors\&quot;: \&quot;invalid data mappings for evaluators &#x27;prototype_mapping&#x27;.\&quot;\n    },\n    \&quot;referenceCode\&quot;: null,\n    \&quot;detailsUri\&quot;: \&quot;https://aka.ms/FoundryEvalsFormatIssues\&quot;,\n    \&quot;target\&quot;: \&quot;testing_criteria\&quot;,\n    \&quot;details\&quot;: [\n      {\n        \&quot;code\&quot;: \&quot;InvalidDataMapping\&quot;,\n        \&quot;severity\&quot;: null,\n        \&quot;message\&quot;: \&quot;Data mapping &#x27;{{item}}&#x27; must match pattern: ^\\\\{\\\\{(?:item|sample)\\\\.([a-zA-Z0-9_]+(?:\\\\.[a-zA-Z0-9_]+)*)\\\\}\\\\}$. Please check make sure the domain and the column name are properly formatted.\&quot;,\n        \&quot;messageFormat\&quot;: null,\n        \&quot;messageParameters\&quot;: {},\n        \&quot;referenceCode\&quot;: null,\n        \&quot;detailsUri\&quot;: null,\n        \&quot;target\&quot;: \&quot;evaluation.testing_criteria[0].data_mapping.item\&quot;,\n        \&quot;details\&quot;: [],\n        \&quot;innerError\&quot;: null,\n        \&quot;debugInfo\&quot;: null,\n        \&quot;additionalInfo\&quot;: null\n      }\n    ],\n    \&quot;innerError\&quot;: {\n      \&quot;code\&quot;: \&quot;EvalValidationFailed\&quot;,\n      \&quot;innerError\&quot;: null\n    },\n    \&quot;debugInfo\&quot;: null,\n    \&quot;additionalInfo\&quot;: null\n  },\n  \&quot;correlation\&quot;: {\n    \&quot;operation\&quot;: \&quot;a2d2fd9a0a750317d26b03cd951c4d1c\&quot;,\n    \&quot;request\&quot;: \&quot;4f801a5ba6c395e2\&quot;\n  },\n  \&quot;environment\&quot;: \&quot;swedencentral\&quot;,\n  \&quot;location\&quot;: \&quot;swedencentral\&quot;,\n  \&quot;time\&quot;: \&quot;2026-11-23T13:07:12.6419899+00:00\&quot;,\n  \&quot;componentName\&quot;: \&quot;raisvc\&quot;,\n  \&quot;statusCode\&quot;: 400\n}&quot;
+}</pre></details></section><section><h2>flat-mapping</h2><p>Run state: completed</p><table><thead><tr><th>Evidence item</th><th>Evaluator</th><th>Observed value</th></tr></thead><tbody><tr><td>mapped</td><td>prototype_flat_mapping</td><td>0.375</td></tr></tbody></table><details><summary>Submitted vs returned evidence: mapped</summary><h4>Submitted</h4><pre>{
+  &quot;query&quot;: &quot;Synthetic evidence&quot;,
+  &quot;response&quot;: &quot;Precomputed&quot;,
+  &quot;case_id&quot;: &quot;mapped&quot;,
+  &quot;value&quot;: 0.375
+}</pre><h4>Foundry returned</h4><pre>{
+  &quot;query&quot;: &quot;Synthetic evidence&quot;,
+  &quot;response&quot;: &quot;Precomputed&quot;,
+  &quot;case_id&quot;: &quot;mapped&quot;,
+  &quot;value&quot;: 0.375,
+  &quot;renamed&quot;: 0.375
+}</pre><h4>Service diagnostics (not customer acceptance)</h4><pre>[
+  {
+    &quot;type&quot;: &quot;azure_ai_evaluator&quot;,
+    &quot;name&quot;: &quot;prototype_flat_mapping&quot;,
+    &quot;metric&quot;: &quot;prototype_flat_mapping&quot;,
+    &quot;score&quot;: 0.375,
+    &quot;label&quot;: &quot;fail&quot;,
+    &quot;reason&quot;: null,
+    &quot;threshold&quot;: 0.5,
+    &quot;passed&quot;: false,
+    &quot;status&quot;: &quot;completed&quot;
+  }
+]</pre></details></section><section><h2>two-independent-metrics</h2><p>Run state: completed</p><table><thead><tr><th>Evidence item</th><th>Evaluator</th><th>Observed value</th></tr></thead><tbody><tr><td>mixed</td><td>prototype_outcome</td><td>0.25</td></tr><tr><td>mixed</td><td>prototype_scalar</td><td>0.8</td></tr><tr><td>all-success</td><td>prototype_outcome</td><td>1</td></tr><tr><td>all-success</td><td>prototype_scalar</td><td>0.8</td></tr></tbody></table><details><summary>Submitted vs returned evidence: mixed</summary><h4>Submitted</h4><pre>{
+  &quot;query&quot;: &quot;Synthetic evidence&quot;,
+  &quot;response&quot;: &quot;Precomputed&quot;,
+  &quot;case_id&quot;: &quot;mixed&quot;,
+  &quot;attempts&quot;: [
+    {
+      &quot;attempt_id&quot;: &quot;a0&quot;,
+      &quot;outcome&quot;: 1,
+      &quot;outcome_source&quot;: &quot;synthetic-customer-test&quot;,
+      &quot;confidence&quot;: 0.8300000000000001
+    },
+    {
+      &quot;attempt_id&quot;: &quot;a1&quot;,
+      &quot;outcome&quot;: 1,
+      &quot;outcome_source&quot;: &quot;synthetic-customer-test&quot;,
+      &quot;confidence&quot;: 0.83
+    },
+    {
+      &quot;attempt_id&quot;: &quot;a2&quot;,
+      &quot;outcome&quot;: 1,
+      &quot;outcome_source&quot;: &quot;synthetic-customer-test&quot;,
+      &quot;confidence&quot;: 0.67
+    },
+    {
+      &quot;attempt_id&quot;: &quot;a3&quot;,
+      &quot;outcome&quot;: 0,
+      &quot;outcome_source&quot;: &quot;synthetic-customer-test&quot;,
+      &quot;confidence&quot;: 0.49999999999999994
+    }
+  ],
+  &quot;value&quot;: 0.8
+}</pre><h4>Foundry returned</h4><pre>{
+  &quot;query&quot;: &quot;Synthetic evidence&quot;,
+  &quot;response&quot;: &quot;Precomputed&quot;,
+  &quot;case_id&quot;: &quot;mixed&quot;,
+  &quot;attempts&quot;: [
+    {
+      &quot;attempt_id&quot;: &quot;a0&quot;,
+      &quot;outcome&quot;: 1,
+      &quot;outcome_source&quot;: &quot;synthetic-customer-test&quot;,
+      &quot;confidence&quot;: 0.8300000000000001
+    },
+    {
+      &quot;attempt_id&quot;: &quot;a1&quot;,
+      &quot;outcome&quot;: 1,
+      &quot;outcome_source&quot;: &quot;synthetic-customer-test&quot;,
+      &quot;confidence&quot;: 0.8300000000000001
+    },
+    {
+      &quot;attempt_id&quot;: &quot;a2&quot;,
+      &quot;outcome&quot;: 1,
+      &quot;outcome_source&quot;: &quot;synthetic-customer-test&quot;,
+      &quot;confidence&quot;: 0.67
+    },
+    {
+      &quot;attempt_id&quot;: &quot;a3&quot;,
+      &quot;outcome&quot;: 0,
+      &quot;outcome_source&quot;: &quot;synthetic-customer-test&quot;,
+      &quot;confidence&quot;: 0.49999999999999906
+    }
+  ],
+  &quot;value&quot;: 0.8
+}</pre><h4>Service diagnostics (not customer acceptance)</h4><pre>[
+  {
+    &quot;type&quot;: &quot;azure_ai_evaluator&quot;,
+    &quot;name&quot;: &quot;prototype_outcome&quot;,
+    &quot;metric&quot;: &quot;prototype_outcome&quot;,
+    &quot;score&quot;: 0.25,
+    &quot;label&quot;: &quot;fail&quot;,
+    &quot;reason&quot;: null,
+    &quot;threshold&quot;: 0.5,
+    &quot;passed&quot;: false,
+    &quot;status&quot;: &quot;completed&quot;
+  },
+  {
+    &quot;type&quot;: &quot;azure_ai_evaluator&quot;,
+    &quot;name&quot;: &quot;prototype_scalar&quot;,
+    &quot;metric&quot;: &quot;prototype_scalar&quot;,
+    &quot;score&quot;: 0.8,
+    &quot;label&quot;: &quot;pass&quot;,
+    &quot;reason&quot;: null,
+    &quot;threshold&quot;: 0.5,
+    &quot;passed&quot;: true,
+    &quot;status&quot;: &quot;completed&quot;
+  }
+]</pre></details><details><summary>Submitted vs returned evidence: all-success</summary><h4>Submitted</h4><pre>{
+  &quot;query&quot;: &quot;Synthetic evidence&quot;,
+  &quot;response&quot;: &quot;Precomputed&quot;,
+  &quot;case_id&quot;: &quot;all-success&quot;,
+  &quot;attempts&quot;: [
+    {
+      &quot;attempt_id&quot;: &quot;a0&quot;,
+      &quot;outcome&quot;: 1,
+      &quot;outcome_source&quot;: &quot;synthetic-customer-test&quot;,
+      &quot;confidence&quot;: 0.8300000000000001
+    },
+    {
+      &quot;attempt_id&quot;: &quot;a1&quot;,
+      &quot;outcome&quot;: 1,
+      &quot;outcome_source&quot;: &quot;synthetic-customer-test&quot;,
+      &quot;confidence&quot;: 0.83
+    },
+    {
+      &quot;attempt_id&quot;: &quot;a2&quot;,
+      &quot;outcome&quot;: 1,
+      &quot;outcome_source&quot;: &quot;synthetic-customer-test&quot;,
+      &quot;confidence&quot;: 0.67
+    },
+    {
+      &quot;attempt_id&quot;: &quot;a3&quot;,
+      &quot;outcome&quot;: 1,
+      &quot;outcome_source&quot;: &quot;synthetic-customer-test&quot;,
+      &quot;confidence&quot;: 0.49999999999999994
+    }
+  ],
+  &quot;value&quot;: 0.8
+}</pre><h4>Foundry returned</h4><pre>{
+  &quot;query&quot;: &quot;Synthetic evidence&quot;,
+  &quot;response&quot;: &quot;Precomputed&quot;,
+  &quot;case_id&quot;: &quot;all-success&quot;,
+  &quot;attempts&quot;: [
+    {
+      &quot;attempt_id&quot;: &quot;a0&quot;,
+      &quot;outcome&quot;: 1,
+      &quot;outcome_source&quot;: &quot;synthetic-customer-test&quot;,
+      &quot;confidence&quot;: 0.8300000000000001
+    },
+    {
+      &quot;attempt_id&quot;: &quot;a1&quot;,
+      &quot;outcome&quot;: 1,
+      &quot;outcome_source&quot;: &quot;synthetic-customer-test&quot;,
+      &quot;confidence&quot;: 0.8300000000000001
+    },
+    {
+      &quot;attempt_id&quot;: &quot;a2&quot;,
+      &quot;outcome&quot;: 1,
+      &quot;outcome_source&quot;: &quot;synthetic-customer-test&quot;,
+      &quot;confidence&quot;: 0.67
+    },
+    {
+      &quot;attempt_id&quot;: &quot;a3&quot;,
+      &quot;outcome&quot;: 1,
+      &quot;outcome_source&quot;: &quot;synthetic-customer-test&quot;,
+      &quot;confidence&quot;: 0.49999999999999906
+    }
+  ],
+  &quot;value&quot;: 0.8
+}</pre><h4>Service diagnostics (not customer acceptance)</h4><pre>[
+  {
+    &quot;type&quot;: &quot;azure_ai_evaluator&quot;,
+    &quot;name&quot;: &quot;prototype_outcome&quot;,
+    &quot;metric&quot;: &quot;prototype_outcome&quot;,
+    &quot;score&quot;: 1,
+    &quot;label&quot;: &quot;pass&quot;,
+    &quot;reason&quot;: null,
+    &quot;threshold&quot;: 0.5,
+    &quot;passed&quot;: true,
+    &quot;status&quot;: &quot;completed&quot;
+  },
+  {
+    &quot;type&quot;: &quot;azure_ai_evaluator&quot;,
+    &quot;name&quot;: &quot;prototype_scalar&quot;,
+    &quot;metric&quot;: &quot;prototype_scalar&quot;,
+    &quot;score&quot;: 0.8,
+    &quot;label&quot;: &quot;pass&quot;,
+    &quot;reason&quot;: null,
+    &quot;threshold&quot;: 0.5,
+    &quot;passed&quot;: true,
+    &quot;status&quot;: &quot;completed&quot;
+  }
+]</pre></details></section><section><h2>unavailable-missing</h2><p>Run state: failed</p><table><thead><tr><th>Evidence item</th><th>Evaluator</th><th>Observed value</th></tr></thead><tbody><tr><td colspan="3">No returned measurement. Do not substitute zero.</td></tr></tbody></table><details><summary>Error details</summary><pre>{
+  &quot;code&quot;: &quot;UserError&quot;,
+  &quot;message&quot;: &quot;All examples failed due to invalid user input; please check the individual sample outputs for details.&quot;,
+  &quot;correlation_id&quot;: &quot;&quot;,
+  &quot;inner_error&quot;: {
+    &quot;code&quot;: &quot;UserErrorInner&quot;
+  }
+}</pre></details></section><section><h2>unavailable-too-few</h2><p>Run state: failed</p><table><thead><tr><th>Evidence item</th><th>Evaluator</th><th>Observed value</th></tr></thead><tbody><tr><td colspan="3">No returned measurement. Do not substitute zero.</td></tr></tbody></table><details><summary>Error details</summary><pre>{
+  &quot;code&quot;: &quot;UserError&quot;,
+  &quot;message&quot;: &quot;All examples failed due to invalid user input; please check the individual sample outputs for details.&quot;,
+  &quot;correlation_id&quot;: &quot;&quot;,
+  &quot;inner_error&quot;: {
+    &quot;code&quot;: &quot;UserErrorInner&quot;
+  }
+}</pre></details></section><section><h2>unavailable-null-outcome</h2><p>Run state: failed</p><table><thead><tr><th>Evidence item</th><th>Evaluator</th><th>Observed value</th></tr></thead><tbody><tr><td colspan="3">No returned measurement. Do not substitute zero.</td></tr></tbody></table><details><summary>Error details</summary><pre>{
+  &quot;code&quot;: &quot;UserError&quot;,
+  &quot;message&quot;: &quot;All examples failed due to invalid user input; please check the individual sample outputs for details.&quot;,
+  &quot;correlation_id&quot;: &quot;&quot;,
+  &quot;inner_error&quot;: {
+    &quot;code&quot;: &quot;UserErrorInner&quot;
+  }
+}</pre></details></section><section><h2>unavailable-duplicate</h2><p>Run state: failed</p><table><thead><tr><th>Evidence item</th><th>Evaluator</th><th>Observed value</th></tr></thead><tbody><tr><td colspan="3">No returned measurement. Do not substitute zero.</td></tr></tbody></table><details><summary>Error details</summary><pre>{
+  &quot;code&quot;: &quot;UserError&quot;,
+  &quot;message&quot;: &quot;All examples failed due to invalid user input; please check the individual sample outputs for details.&quot;,
+  &quot;correlation_id&quot;: &quot;&quot;,
+  &quot;inner_error&quot;: {
+    &quot;code&quot;: &quot;UserErrorInner&quot;
+  }
+}</pre></details></section><section><h2>numeric-valid</h2><p>Run state: completed</p><table><thead><tr><th>Evidence item</th><th>Evaluator</th><th>Observed value</th></tr></thead><tbody><tr><td>0.0</td><td>prototype_numeric_contract</td><td>0</td></tr><tr><td>1.0</td><td>prototype_numeric_contract</td><td>1</td></tr><tr><td>0.8300000000000001</td><td>prototype_numeric_contract</td><td>0.8300000000000001</td></tr><tr><td>0.83</td><td>prototype_numeric_contract</td><td>0.8300000000000001</td></tr></tbody></table><details><summary>Submitted vs returned evidence: 0.0</summary><h4>Submitted</h4><pre>{
+  &quot;query&quot;: &quot;Synthetic evidence&quot;,
+  &quot;response&quot;: &quot;Precomputed&quot;,
+  &quot;case_id&quot;: &quot;0.0&quot;,
+  &quot;value&quot;: 0.0
+}</pre><h4>Foundry returned</h4><pre>{
+  &quot;query&quot;: &quot;Synthetic evidence&quot;,
+  &quot;response&quot;: &quot;Precomputed&quot;,
+  &quot;case_id&quot;: &quot;0.0&quot;,
+  &quot;value&quot;: 0
+}</pre><h4>Service diagnostics (not customer acceptance)</h4><pre>[
+  {
+    &quot;type&quot;: &quot;azure_ai_evaluator&quot;,
+    &quot;name&quot;: &quot;prototype_numeric_contract&quot;,
+    &quot;metric&quot;: &quot;prototype_numeric_contract&quot;,
+    &quot;score&quot;: 0,
+    &quot;label&quot;: &quot;fail&quot;,
+    &quot;reason&quot;: null,
+    &quot;threshold&quot;: 0.5,
+    &quot;passed&quot;: false,
+    &quot;status&quot;: &quot;completed&quot;
+  }
+]</pre></details><details><summary>Submitted vs returned evidence: 1.0</summary><h4>Submitted</h4><pre>{
+  &quot;query&quot;: &quot;Synthetic evidence&quot;,
+  &quot;response&quot;: &quot;Precomputed&quot;,
+  &quot;case_id&quot;: &quot;1.0&quot;,
+  &quot;value&quot;: 1.0
+}</pre><h4>Foundry returned</h4><pre>{
+  &quot;query&quot;: &quot;Synthetic evidence&quot;,
+  &quot;response&quot;: &quot;Precomputed&quot;,
+  &quot;case_id&quot;: &quot;1.0&quot;,
+  &quot;value&quot;: 1
+}</pre><h4>Service diagnostics (not customer acceptance)</h4><pre>[
+  {
+    &quot;type&quot;: &quot;azure_ai_evaluator&quot;,
+    &quot;name&quot;: &quot;prototype_numeric_contract&quot;,
+    &quot;metric&quot;: &quot;prototype_numeric_contract&quot;,
+    &quot;score&quot;: 1,
+    &quot;label&quot;: &quot;pass&quot;,
+    &quot;reason&quot;: null,
+    &quot;threshold&quot;: 0.5,
+    &quot;passed&quot;: true,
+    &quot;status&quot;: &quot;completed&quot;
+  }
+]</pre></details><details><summary>Submitted vs returned evidence: 0.8300000000000001</summary><h4>Submitted</h4><pre>{
+  &quot;query&quot;: &quot;Synthetic evidence&quot;,
+  &quot;response&quot;: &quot;Precomputed&quot;,
+  &quot;case_id&quot;: &quot;0.8300000000000001&quot;,
+  &quot;value&quot;: 0.8300000000000001
+}</pre><h4>Foundry returned</h4><pre>{
+  &quot;query&quot;: &quot;Synthetic evidence&quot;,
+  &quot;response&quot;: &quot;Precomputed&quot;,
+  &quot;case_id&quot;: &quot;0.8300000000000001&quot;,
+  &quot;value&quot;: 0.8300000000000001
+}</pre><h4>Service diagnostics (not customer acceptance)</h4><pre>[
+  {
+    &quot;type&quot;: &quot;azure_ai_evaluator&quot;,
+    &quot;name&quot;: &quot;prototype_numeric_contract&quot;,
+    &quot;metric&quot;: &quot;prototype_numeric_contract&quot;,
+    &quot;score&quot;: 0.8300000000000001,
+    &quot;label&quot;: &quot;pass&quot;,
+    &quot;reason&quot;: null,
+    &quot;threshold&quot;: 0.5,
+    &quot;passed&quot;: true,
+    &quot;status&quot;: &quot;completed&quot;
+  }
+]</pre></details><details><summary>Submitted vs returned evidence: 0.83</summary><h4>Submitted</h4><pre>{
+  &quot;query&quot;: &quot;Synthetic evidence&quot;,
+  &quot;response&quot;: &quot;Precomputed&quot;,
+  &quot;case_id&quot;: &quot;0.83&quot;,
+  &quot;value&quot;: 0.83
+}</pre><h4>Foundry returned</h4><pre>{
+  &quot;query&quot;: &quot;Synthetic evidence&quot;,
+  &quot;response&quot;: &quot;Precomputed&quot;,
+  &quot;case_id&quot;: &quot;0.83&quot;,
+  &quot;value&quot;: 0.8300000000000001
+}</pre><h4>Service diagnostics (not customer acceptance)</h4><pre>[
+  {
+    &quot;type&quot;: &quot;azure_ai_evaluator&quot;,
+    &quot;name&quot;: &quot;prototype_numeric_contract&quot;,
+    &quot;metric&quot;: &quot;prototype_numeric_contract&quot;,
+    &quot;score&quot;: 0.8300000000000001,
+    &quot;label&quot;: &quot;pass&quot;,
+    &quot;reason&quot;: null,
+    &quot;threshold&quot;: 0.5,
+    &quot;passed&quot;: true,
+    &quot;status&quot;: &quot;completed&quot;
+  }
+]</pre></details></section><section><h2>numeric--0.1</h2><p>Run state: completed</p><table><thead><tr><th>Evidence item</th><th>Evaluator</th><th>Observed value</th></tr></thead><tbody><tr><td>-0.1</td><td>prototype_numeric_contract</td><td>-0.1 (outside documented range)</td></tr></tbody></table><details><summary>Submitted vs returned evidence: -0.1</summary><h4>Submitted</h4><pre>{
+  &quot;query&quot;: &quot;Synthetic evidence&quot;,
+  &quot;response&quot;: &quot;Precomputed&quot;,
+  &quot;case_id&quot;: &quot;-0.1&quot;,
+  &quot;value&quot;: -0.1
+}</pre><h4>Foundry returned</h4><pre>{
+  &quot;query&quot;: &quot;Synthetic evidence&quot;,
+  &quot;response&quot;: &quot;Precomputed&quot;,
+  &quot;case_id&quot;: &quot;-0.1&quot;,
+  &quot;value&quot;: -0.1
+}</pre><h4>Service diagnostics (not customer acceptance)</h4><pre>[
+  {
+    &quot;type&quot;: &quot;azure_ai_evaluator&quot;,
+    &quot;name&quot;: &quot;prototype_numeric_contract&quot;,
+    &quot;metric&quot;: &quot;prototype_numeric_contract&quot;,
+    &quot;score&quot;: -0.1,
+    &quot;label&quot;: &quot;fail&quot;,
+    &quot;reason&quot;: null,
+    &quot;threshold&quot;: 0.5,
+    &quot;passed&quot;: false,
+    &quot;status&quot;: &quot;completed&quot;
+  }
+]</pre></details></section><section><h2>numeric-1.1</h2><p>Run state: completed</p><table><thead><tr><th>Evidence item</th><th>Evaluator</th><th>Observed value</th></tr></thead><tbody><tr><td>1.1</td><td>prototype_numeric_contract</td><td>1.1 (outside documented range)</td></tr></tbody></table><details><summary>Submitted vs returned evidence: 1.1</summary><h4>Submitted</h4><pre>{
+  &quot;query&quot;: &quot;Synthetic evidence&quot;,
+  &quot;response&quot;: &quot;Precomputed&quot;,
+  &quot;case_id&quot;: &quot;1.1&quot;,
+  &quot;value&quot;: 1.1
+}</pre><h4>Foundry returned</h4><pre>{
+  &quot;query&quot;: &quot;Synthetic evidence&quot;,
+  &quot;response&quot;: &quot;Precomputed&quot;,
+  &quot;case_id&quot;: &quot;1.1&quot;,
+  &quot;value&quot;: 1.1
+}</pre><h4>Service diagnostics (not customer acceptance)</h4><pre>[
+  {
+    &quot;type&quot;: &quot;azure_ai_evaluator&quot;,
+    &quot;name&quot;: &quot;prototype_numeric_contract&quot;,
+    &quot;metric&quot;: &quot;prototype_numeric_contract&quot;,
+    &quot;score&quot;: 1.1,
+    &quot;label&quot;: &quot;pass&quot;,
+    &quot;reason&quot;: null,
+    &quot;threshold&quot;: 0.5,
+    &quot;passed&quot;: true,
+    &quot;status&quot;: &quot;completed&quot;
+  }
+]</pre></details></section><section><h2>numeric-exception</h2><p>Run state: failed</p><table><thead><tr><th>Evidence item</th><th>Evaluator</th><th>Observed value</th></tr></thead><tbody><tr><td colspan="3">No returned measurement. Do not substitute zero.</td></tr></tbody></table><details><summary>Error details</summary><pre>{
+  &quot;code&quot;: &quot;UserError&quot;,
+  &quot;message&quot;: &quot;All examples failed due to invalid user input; please check the individual sample outputs for details.&quot;,
+  &quot;correlation_id&quot;: &quot;&quot;,
+  &quot;inner_error&quot;: {
+    &quot;code&quot;: &quot;UserErrorInner&quot;
+  }
+}</pre></details></section><section><h2>numeric-null</h2><p>Run state: failed</p><table><thead><tr><th>Evidence item</th><th>Evaluator</th><th>Observed value</th></tr></thead><tbody><tr><td colspan="3">No returned measurement. Do not substitute zero.</td></tr></tbody></table><details><summary>Error details</summary><pre>{
+  &quot;code&quot;: &quot;UserError&quot;,
+  &quot;message&quot;: &quot;All examples failed due to invalid user input; please check the individual sample outputs for details.&quot;,
+  &quot;correlation_id&quot;: &quot;&quot;,
+  &quot;inner_error&quot;: {
+    &quot;code&quot;: &quot;UserErrorInner&quot;
+  }
+}</pre></details></section><section><h2>numeric-object</h2><p>Run state: failed</p><table><thead><tr><th>Evidence item</th><th>Evaluator</th><th>Observed value</th></tr></thead><tbody><tr><td colspan="3">No returned measurement. Do not substitute zero.</td></tr></tbody></table><details><summary>Error details</summary><pre>{
+  &quot;code&quot;: &quot;UserError&quot;,
+  &quot;message&quot;: &quot;All examples failed due to invalid user input; please check the individual sample outputs for details.&quot;,
+  &quot;correlation_id&quot;: &quot;&quot;,
+  &quot;inner_error&quot;: {
+    &quot;code&quot;: &quot;UserErrorInner&quot;
+  }
+}</pre></details></section><section><h2>numeric-nan</h2><p>Run state: failed</p><table><thead><tr><th>Evidence item</th><th>Evaluator</th><th>Observed value</th></tr></thead><tbody><tr><td colspan="3">No returned measurement. Do not substitute zero.</td></tr></tbody></table><details><summary>Error details</summary><pre>{
+  &quot;code&quot;: &quot;SystemError&quot;,
+  &quot;message&quot;: &quot;Evaluation system error: (InternalError) AOAI evaluation run eval_6b043a905f148191b98d675c9d0a8e8f/evalrun_6b043a92516c8191928f719dabfb2c56 failed with status failed.&quot;,
+  &quot;correlation_id&quot;: &quot;&quot;,
+  &quot;inner_error&quot;: {
+    &quot;code&quot;: &quot;InternalServerError&quot;
+  }
+}</pre></details></section><section><h2>numeric-infinity</h2><p>Run state: failed</p><table><thead><tr><th>Evidence item</th><th>Evaluator</th><th>Observed value</th></tr></thead><tbody><tr><td colspan="3">No returned measurement. Do not substitute zero.</td></tr></tbody></table><details><summary>Error details</summary><pre>{
+  &quot;code&quot;: &quot;SystemError&quot;,
+  &quot;message&quot;: &quot;Evaluation system error: (InternalError) AOAI evaluation run eval_6b043a914f748191ae05cb5bbce45a10/evalrun_6b043a92c20081918c0dc77bcb328c3b failed with status failed.&quot;,
+  &quot;correlation_id&quot;: &quot;&quot;,
+  &quot;inner_error&quot;: {
+    &quot;code&quot;: &quot;InternalServerError&quot;
+  }
+}</pre></details></section><section><h2>timeout</h2><p>Run state: failed</p><table><thead><tr><th>Evidence item</th><th>Evaluator</th><th>Observed value</th></tr></thead><tbody><tr><td colspan="3">No returned measurement. Do not substitute zero.</td></tr></tbody></table><details><summary>Error details</summary><pre>{
+  &quot;code&quot;: &quot;UserError&quot;,
+  &quot;message&quot;: &quot;All examples failed due to invalid user input; please check the individual sample outputs for details.&quot;,
+  &quot;correlation_id&quot;: &quot;&quot;,
+  &quot;inner_error&quot;: {
+    &quot;code&quot;: &quot;UserErrorInner&quot;
+  }
+}</pre></details></section><section><h2>no-threshold</h2><p>Run state: request rejected</p><table><thead><tr><th>Evidence item</th><th>Evaluator</th><th>Observed value</th></tr></thead><tbody><tr><td colspan="3">No returned measurement. Do not substitute zero.</td></tr></tbody></table><details><summary>Error details</summary><pre>{
+  &quot;type&quot;: &quot;ServiceError&quot;,
+  &quot;status_code&quot;: 400,
+  &quot;message&quot;: &quot;{\n  \&quot;error\&quot;: {\n    \&quot;code\&quot;: \&quot;UserError\&quot;,\n    \&quot;severity\&quot;: null,\n    \&quot;message\&quot;: \&quot;Evaluation validation failed: missing required parameters for evaluators &#x27;prototype_scalar&#x27;.\&quot;,\n    \&quot;messageFormat\&quot;: \&quot;Evaluation validation failed: {errors}\&quot;,\n    \&quot;messageParameters\&quot;: {\n      \&quot;errors\&quot;: \&quot;missing required parameters for evaluators &#x27;prototype_scalar&#x27;.\&quot;\n    },\n    \&quot;referenceCode\&quot;: null,\n    \&quot;detailsUri\&quot;: \&quot;https://aka.ms/FoundryEvalsFormatIssues\&quot;,\n    \&quot;target\&quot;: \&quot;testing_criteria\&quot;,\n    \&quot;details\&quot;: [\n      {\n        \&quot;code\&quot;: \&quot;MissingRequiredParameter\&quot;,\n        \&quot;severity\&quot;: null,\n        \&quot;message\&quot;: \&quot;Parameter &#x27;pass_threshold&#x27; is required by evaluator &#x27;prototype_scalar&#x27;.\&quot;,\n        \&quot;messageFormat\&quot;: null,\n        \&quot;messageParameters\&quot;: {},\n        \&quot;referenceCode\&quot;: null,\n        \&quot;detailsUri\&quot;: null,\n        \&quot;target\&quot;: \&quot;evaluation.testing_criteria[0].initialization_parameters.pass_threshold\&quot;,\n        \&quot;details\&quot;: [],\n        \&quot;innerError\&quot;: null,\n        \&quot;debugInfo\&quot;: null,\n        \&quot;additionalInfo\&quot;: null\n      }\n    ],\n    \&quot;innerError\&quot;: {\n      \&quot;code\&quot;: \&quot;EvalValidationFailed\&quot;,\n      \&quot;innerError\&quot;: null\n    },\n    \&quot;debugInfo\&quot;: null,\n    \&quot;additionalInfo\&quot;: null\n  },\n  \&quot;correlation\&quot;: {\n    \&quot;operation\&quot;: \&quot;9b8630e721a22139def1546f72d54009\&quot;,\n    \&quot;request\&quot;: \&quot;0176f5382a51701f\&quot;\n  },\n  \&quot;environment\&quot;: \&quot;swedencentral\&quot;,\n  \&quot;location\&quot;: \&quot;swedencentral\&quot;,\n  \&quot;time\&quot;: \&quot;2026-11-23T13:07:28.0947896+00:00\&quot;,\n  \&quot;componentName\&quot;: \&quot;raisvc\&quot;,\n  \&quot;statusCode\&quot;: 400\n}&quot;
+}</pre></details></section><section><h2>no-deployment</h2><p>Run state: request rejected</p><table><thead><tr><th>Evidence item</th><th>Evaluator</th><th>Observed value</th></tr></thead><tbody><tr><td colspan="3">No returned measurement. Do not substitute zero.</td></tr></tbody></table><details><summary>Error details</summary><pre>{
+  &quot;type&quot;: &quot;ServiceError&quot;,
+  &quot;status_code&quot;: 400,
+  &quot;message&quot;: &quot;{\n  \&quot;error\&quot;: {\n    \&quot;code\&quot;: \&quot;UserError\&quot;,\n    \&quot;severity\&quot;: null,\n    \&quot;message\&quot;: \&quot;Evaluation validation failed: missing required parameters for evaluators &#x27;prototype_scalar&#x27;.\&quot;,\n    \&quot;messageFormat\&quot;: \&quot;Evaluation validation failed: {errors}\&quot;,\n    \&quot;messageParameters\&quot;: {\n      \&quot;errors\&quot;: \&quot;missing required parameters for evaluators &#x27;prototype_scalar&#x27;.\&quot;\n    },\n    \&quot;referenceCode\&quot;: null,\n    \&quot;detailsUri\&quot;: \&quot;https://aka.ms/FoundryEvalsFormatIssues\&quot;,\n    \&quot;target\&quot;: \&quot;testing_criteria\&quot;,\n    \&quot;details\&quot;: [\n      {\n        \&quot;code\&quot;: \&quot;MissingRequiredParameter\&quot;,\n        \&quot;severity\&quot;: null,\n        \&quot;message\&quot;: \&quot;Parameter &#x27;deployment_name&#x27; is required by evaluator &#x27;prototype_scalar&#x27;.\&quot;,\n        \&quot;messageFormat\&quot;: null,\n        \&quot;messageParameters\&quot;: {},\n        \&quot;referenceCode\&quot;: null,\n        \&quot;detailsUri\&quot;: null,\n        \&quot;target\&quot;: \&quot;evaluation.testing_criteria[0].initialization_parameters.deployment_name\&quot;,\n        \&quot;details\&quot;: [],\n        \&quot;innerError\&quot;: null,\n        \&quot;debugInfo\&quot;: null,\n        \&quot;additionalInfo\&quot;: null\n      }\n    ],\n    \&quot;innerError\&quot;: {\n      \&quot;code\&quot;: \&quot;EvalValidationFailed\&quot;,\n      \&quot;innerError\&quot;: null\n    },\n    \&quot;debugInfo\&quot;: null,\n    \&quot;additionalInfo\&quot;: null\n  },\n  \&quot;correlation\&quot;: {\n    \&quot;operation\&quot;: \&quot;1ffacafafa250cd458e57178e3f9b9f6\&quot;,\n    \&quot;request\&quot;: \&quot;506591da5da59a42\&quot;\n  },\n  \&quot;environment\&quot;: \&quot;swedencentral\&quot;,\n  \&quot;location\&quot;: \&quot;swedencentral\&quot;,\n  \&quot;time\&quot;: \&quot;2026-11-23T13:07:29.6171252+00:00\&quot;,\n  \&quot;componentName\&quot;: \&quot;raisvc\&quot;,\n  \&quot;statusCode\&quot;: 400\n}&quot;
+}</pre></details></section><section><h2>optional-threshold</h2><p>Run state: completed</p><table><thead><tr><th>Evidence item</th><th>Evaluator</th><th>Observed value</th></tr></thead><tbody><tr><td>measurement-only</td><td>prototype_optional_threshold</td><td>0.625</td></tr></tbody></table><details><summary>Submitted vs returned evidence: measurement-only</summary><h4>Submitted</h4><pre>{
+  &quot;query&quot;: &quot;Synthetic evidence&quot;,
+  &quot;response&quot;: &quot;Precomputed&quot;,
+  &quot;case_id&quot;: &quot;measurement-only&quot;,
+  &quot;value&quot;: 0.625
+}</pre><h4>Foundry returned</h4><pre>{
+  &quot;query&quot;: &quot;Synthetic evidence&quot;,
+  &quot;response&quot;: &quot;Precomputed&quot;,
+  &quot;case_id&quot;: &quot;measurement-only&quot;,
+  &quot;value&quot;: 0.625
+}</pre><h4>Service diagnostics (not customer acceptance)</h4><pre>[
+  {
+    &quot;type&quot;: &quot;azure_ai_evaluator&quot;,
+    &quot;name&quot;: &quot;prototype_optional_threshold&quot;,
+    &quot;metric&quot;: &quot;prototype_optional_threshold&quot;,
+    &quot;score&quot;: 0.625,
+    &quot;label&quot;: &quot;pass&quot;,
+    &quot;reason&quot;: null,
+    &quot;threshold&quot;: 0.5,
+    &quot;passed&quot;: true,
+    &quot;status&quot;: &quot;completed&quot;
+  }
+]</pre></details></section><section><h2>optional-parameters</h2><p>Run state: completed</p><table><thead><tr><th>Evidence item</th><th>Evaluator</th><th>Observed value</th></tr></thead><tbody><tr><td>no-parameters</td><td>prototype_optional_parameters</td><td>0.625</td></tr></tbody></table><details><summary>Submitted vs returned evidence: no-parameters</summary><h4>Submitted</h4><pre>{
+  &quot;query&quot;: &quot;Synthetic evidence&quot;,
+  &quot;response&quot;: &quot;Precomputed&quot;,
+  &quot;case_id&quot;: &quot;no-parameters&quot;,
+  &quot;value&quot;: 0.625
+}</pre><h4>Foundry returned</h4><pre>{
+  &quot;query&quot;: &quot;Synthetic evidence&quot;,
+  &quot;response&quot;: &quot;Precomputed&quot;,
+  &quot;case_id&quot;: &quot;no-parameters&quot;,
+  &quot;value&quot;: 0.625
+}</pre><h4>Service diagnostics (not customer acceptance)</h4><pre>[
+  {
+    &quot;type&quot;: &quot;azure_ai_evaluator&quot;,
+    &quot;name&quot;: &quot;prototype_optional_parameters&quot;,
+    &quot;metric&quot;: &quot;prototype_optional_parameters&quot;,
+    &quot;score&quot;: 0.625,
+    &quot;label&quot;: &quot;pass&quot;,
+    &quot;reason&quot;: null,
+    &quot;threshold&quot;: 0.5,
+    &quot;passed&quot;: true,
+    &quot;status&quot;: &quot;completed&quot;
+  }
+]</pre></details></section><section><h2>runtime</h2><p>Run state: failed</p><table><thead><tr><th>Evidence item</th><th>Evaluator</th><th>Observed value</th></tr></thead><tbody><tr><td colspan="3">No returned measurement. Do not substitute zero.</td></tr></tbody></table><details><summary>Error details</summary><pre>{
+  &quot;code&quot;: &quot;UserError&quot;,
+  &quot;message&quot;: &quot;Evaluation failed with AOAI error: Error code: 400 - {&#x27;error&#x27;: {&#x27;message&#x27;: \&quot;Invalid grader source: use of module &#x27;socket&#x27; is not allowed in Python graders\&quot;, &#x27;type&#x27;: &#x27;invalid_request_error&#x27;, &#x27;param&#x27;: None, &#x27;code&#x27;: &#x27;invalid_grader&#x27;}}. Request: &lt;Request(&#x27;POST&#x27;, &#x27;https://eval-prototype-cbee5be8a2.openai.azure.com/openai/evals?api-version=2025-04-01-preview&#x27;)&gt;, Request id: f817e4f8-4b29-427b-8305-c7af8222fa7d. Source error: N/A&quot;,
+  &quot;correlation_id&quot;: &quot;&quot;,
+  &quot;inner_error&quot;: {
+    &quot;code&quot;: &quot;BadRequest&quot;
+  }
+}</pre></details></section><section><h2>numpy</h2><p>Run state: completed</p><table><thead><tr><th>Evidence item</th><th>Evaluator</th><th>Observed value</th></tr></thead><tbody><tr><td>numpy-only</td><td>prototype_numpy</td><td>0.625</td></tr></tbody></table><details><summary>Submitted vs returned evidence: numpy-only</summary><h4>Submitted</h4><pre>{
+  &quot;query&quot;: &quot;Synthetic evidence&quot;,
+  &quot;response&quot;: &quot;Precomputed&quot;,
+  &quot;case_id&quot;: &quot;numpy-only&quot;
+}</pre><h4>Foundry returned</h4><pre>{
+  &quot;query&quot;: &quot;Synthetic evidence&quot;,
+  &quot;response&quot;: &quot;Precomputed&quot;,
+  &quot;case_id&quot;: &quot;numpy-only&quot;
+}</pre><h4>Service diagnostics (not customer acceptance)</h4><pre>[
+  {
+    &quot;type&quot;: &quot;azure_ai_evaluator&quot;,
+    &quot;name&quot;: &quot;prototype_numpy&quot;,
+    &quot;metric&quot;: &quot;prototype_numpy&quot;,
+    &quot;score&quot;: 0.625,
+    &quot;label&quot;: &quot;pass&quot;,
+    &quot;reason&quot;: null,
+    &quot;threshold&quot;: 0.5,
+    &quot;passed&quot;: true,
+    &quot;status&quot;: &quot;completed&quot;
+  }
+]</pre></details></section><section><h2>escaped-json</h2><p>Run state: completed</p><table><thead><tr><th>Evidence item</th><th>Evaluator</th><th>Observed value</th></tr></thead><tbody><tr><td>escaped</td><td>prototype_outcome_json</td><td>0</td></tr></tbody></table><details><summary>Submitted vs returned evidence: escaped</summary><h4>Submitted</h4><pre>{
+  &quot;query&quot;: &quot;Synthetic evidence&quot;,
+  &quot;response&quot;: &quot;Precomputed&quot;,
+  &quot;case_id&quot;: &quot;escaped&quot;,
+  &quot;attempts_json&quot;: &quot;[{\&quot;attempt_id\&quot;: \&quot;a0\&quot;, \&quot;outcome\&quot;: 1, \&quot;outcome_source\&quot;: \&quot;synthetic-customer-test\&quot;, \&quot;confidence\&quot;: 0.8300000000000001}, {\&quot;attempt_id\&quot;: \&quot;a1\&quot;, \&quot;outcome\&quot;: 0, \&quot;outcome_source\&quot;: \&quot;synthetic-customer-test\&quot;, \&quot;confidence\&quot;: 0.83}] \n\t&quot;
+}</pre><h4>Foundry returned</h4><pre>{
+  &quot;query&quot;: &quot;Synthetic evidence&quot;,
+  &quot;response&quot;: &quot;Precomputed&quot;,
+  &quot;case_id&quot;: &quot;escaped&quot;,
+  &quot;attempts_json&quot;: &quot;[{\&quot;attempt_id\&quot;: \&quot;a0\&quot;, \&quot;outcome\&quot;: 1, \&quot;outcome_source\&quot;: \&quot;synthetic-customer-test\&quot;, \&quot;confidence\&quot;: 0.8300000000000001}, {\&quot;attempt_id\&quot;: \&quot;a1\&quot;, \&quot;outcome\&quot;: 0, \&quot;outcome_source\&quot;: \&quot;synthetic-customer-test\&quot;, \&quot;confidence\&quot;: 0.83}] \n\t&quot;
+}</pre><h4>Service diagnostics (not customer acceptance)</h4><pre>[
+  {
+    &quot;type&quot;: &quot;azure_ai_evaluator&quot;,
+    &quot;name&quot;: &quot;prototype_outcome_json&quot;,
+    &quot;metric&quot;: &quot;prototype_outcome_json&quot;,
+    &quot;score&quot;: 0,
+    &quot;label&quot;: &quot;fail&quot;,
+    &quot;reason&quot;: null,
+    &quot;threshold&quot;: 0.5,
+    &quot;passed&quot;: false,
+    &quot;status&quot;: &quot;completed&quot;
+  }
+]</pre></details></section><section><h2>unicode-json</h2><p>Run state: completed</p><table><thead><tr><th>Evidence item</th><th>Evaluator</th><th>Observed value</th></tr></thead><tbody><tr><td>unicode</td><td>prototype_outcome_json</td><td>0</td></tr></tbody></table><details><summary>Submitted vs returned evidence: unicode</summary><h4>Submitted</h4><pre>{
+  &quot;query&quot;: &quot;Synthetic evidence&quot;,
+  &quot;response&quot;: &quot;Precomputed&quot;,
+  &quot;case_id&quot;: &quot;unicode&quot;,
+  &quot;attempts_json&quot;: &quot;[{\&quot;attempt_id\&quot;: \&quot;a0\&quot;, \&quot;outcome\&quot;: 1, \&quot;outcome_source\&quot;: \&quot;synthetic \\\\ quote \\\&quot; newline\\n snowman \u2603\&quot;, \&quot;confidence\&quot;: 0.8300000000000001}, {\&quot;attempt_id\&quot;: \&quot;a1\&quot;, \&quot;outcome\&quot;: 0, \&quot;outcome_source\&quot;: \&quot;synthetic-customer-test\&quot;, \&quot;confidence\&quot;: 0.83}]&quot;
+}</pre><h4>Foundry returned</h4><pre>{
+  &quot;query&quot;: &quot;Synthetic evidence&quot;,
+  &quot;response&quot;: &quot;Precomputed&quot;,
+  &quot;case_id&quot;: &quot;unicode&quot;,
+  &quot;attempts_json&quot;: &quot;[{\&quot;attempt_id\&quot;: \&quot;a0\&quot;, \&quot;outcome\&quot;: 1, \&quot;outcome_source\&quot;: \&quot;synthetic \\\\ quote \\\&quot; newline\\n snowman \u2603\&quot;, \&quot;confidence\&quot;: 0.8300000000000001}, {\&quot;attempt_id\&quot;: \&quot;a1\&quot;, \&quot;outcome\&quot;: 0, \&quot;outcome_source\&quot;: \&quot;synthetic-customer-test\&quot;, \&quot;confidence\&quot;: 0.83}]&quot;
+}</pre><h4>Service diagnostics (not customer acceptance)</h4><pre>[
+  {
+    &quot;type&quot;: &quot;azure_ai_evaluator&quot;,
+    &quot;name&quot;: &quot;prototype_outcome_json&quot;,
+    &quot;metric&quot;: &quot;prototype_outcome_json&quot;,
+    &quot;score&quot;: 0,
+    &quot;label&quot;: &quot;fail&quot;,
+    &quot;reason&quot;: null,
+    &quot;threshold&quot;: 0.5,
+    &quot;passed&quot;: false,
+    &quot;status&quot;: &quot;completed&quot;
+  }
+]</pre></details></section><section><h2>row-size-1900000</h2><p>Run state: completed</p><table><thead><tr><th>Evidence item</th><th>Evaluator</th><th>Observed value</th></tr></thead><tbody><tr><td>large</td><td>prototype_scalar</td><td>0.625</td></tr></tbody></table><details><summary>Submitted vs returned evidence: large</summary><h4>Submitted</h4><pre>{
+  &quot;query&quot;: &quot;Synthetic evidence&quot;,
+  &quot;response&quot;: &quot;Precomputed&quot;,
+  &quot;case_id&quot;: &quot;large&quot;,
+  &quot;value&quot;: 0.625,
+  &quot;padding&quot;: {
+    &quot;omitted_large_string_bytes&quot;: 1900000,
+    &quot;sha256&quot;: &quot;85c1a774f05bc91f3b11f4ef9088a9c16f140f1b4df2129ba27fee4a8eacc856&quot;
+  }
+}</pre><h4>Foundry returned</h4><pre>{
+  &quot;case_id&quot;: &quot;large&quot;,
+  &quot;value&quot;: 0.625,
+  &quot;padding&quot;: &quot;xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx&quot;,
+  &quot;_raisvc_content_omission&quot;: {
+    &quot;reason&quot;: &quot;size_limit&quot;,
+    &quot;fields&quot;: [
+      &quot;datasource_item.query&quot;,
+      &quot;datasource_item.response&quot;
+    ]
+  }
+}</pre><h4>Service diagnostics (not customer acceptance)</h4><pre>[
+  {
+    &quot;type&quot;: &quot;azure_ai_evaluator&quot;,
+    &quot;name&quot;: &quot;prototype_scalar&quot;,
+    &quot;metric&quot;: &quot;prototype_scalar&quot;,
+    &quot;score&quot;: 0.625,
+    &quot;label&quot;: &quot;pass&quot;,
+    &quot;reason&quot;: null,
+    &quot;threshold&quot;: 0.5,
+    &quot;passed&quot;: true,
+    &quot;status&quot;: &quot;completed&quot;
+  }
+]</pre></details></section><section><h2>row-size-2100000</h2><p>Run state: request rejected</p><table><thead><tr><th>Evidence item</th><th>Evaluator</th><th>Observed value</th></tr></thead><tbody><tr><td colspan="3">No returned measurement. Do not substitute zero.</td></tr></tbody></table><details><summary>Error details</summary><pre>{
+  &quot;type&quot;: &quot;ServiceError&quot;,
+  &quot;status_code&quot;: 413,
+  &quot;message&quot;: &quot;{\n  \&quot;error\&quot;: {\n    \&quot;code\&quot;: \&quot;UserError\&quot;,\n    \&quot;severity\&quot;: null,\n    \&quot;message\&quot;: \&quot;Received 413 from a service request\&quot;,\n    \&quot;messageFormat\&quot;: null,\n    \&quot;messageParameters\&quot;: null,\n    \&quot;referenceCode\&quot;: null,\n    \&quot;detailsUri\&quot;: null,\n    \&quot;target\&quot;: \&quot;PATCH http://run-history.vienna-swedencentral.svc/history/v1.0/subscriptions/fa68ebb3-c4c4-4b3f-8c91-cbef4c119d77/resourceGroups/rg-foundry-eval-prototype-cbee5be8a2/providers/Microsoft.MachineLearningServices/workspaces/eval-prototype-cbee5be8a2@managed-evals-prototype@AML/runs/evalrun_1678790f9ac64aa9a01164ed4f6da835?tagOperation=Merge\&quot;,\n    \&quot;details\&quot;: [\n      {\n        \&quot;code\&quot;: \&quot;RequestEntityTooLarge\&quot;,\n        \&quot;severity\&quot;: null,\n        \&quot;message\&quot;: \&quot;{\\n  \\\&quot;error\\\&quot;: {\\n    \\\&quot;code\\\&quot;: \\\&quot;UserError\\\&quot;,\\n    \\\&quot;severity\\\&quot;: null,\\n    \\\&quot;message\\\&quot;: \\\&quot;The given document was too large\\\&quot;,\\n    \\\&quot;messageFormat\\\&quot;: null,\\n    \\\&quot;messageParameters\\\&quot;: null,\\n    \\\&quot;referenceCode\\\&quot;: null,\\n    \\\&quot;detailsUri\\\&quot;: null,\\n    \\\&quot;target\\\&quot;: null,\\n    \\\&quot;details\\\&quot;: [],\\n    \\\&quot;innerError\\\&quot;: null,\\n    \\\&quot;debugInfo\\\&quot;: null,\\n    \\\&quot;additionalInfo\\\&quot;: null\\n  },\\n  \\\&quot;correlation\\\&quot;: {\\n    \\\&quot;operation\\\&quot;: \\\&quot;af0b5b8b7987ba64823d9fea65aa471e\\\&quot;,\\n    \\\&quot;request\\\&quot;: \\\&quot;dd363c3477ff8e1c\\\&quot;\\n  },\\n  \\\&quot;environment\\\&quot;: \\\&quot;swedencentral\\\&quot;,\\n  \\\&quot;location\\\&quot;: \\\&quot;swedencentral\\\&quot;,\\n  \\\&quot;time\\\&quot;: \\\&quot;2026-11-23T13:07:39.6394356+00:00\\\&quot;,\\n  \\\&quot;componentName\\\&quot;: \\\&quot;run-history\\\&quot;,\\n  \\\&quot;statusCode\\\&quot;: 413\\n}\&quot;,\n        \&quot;messageFormat\&quot;: null,\n        \&quot;messageParameters\&quot;: {},\n        \&quot;referenceCode\&quot;: null,\n        \&quot;detailsUri\&quot;: null,\n        \&quot;target\&quot;: null,\n        \&quot;details\&quot;: [],\n        \&quot;innerError\&quot;: null,\n        \&quot;debugInfo\&quot;: null,\n        \&quot;additionalInfo\&quot;: null\n      }\n    ],\n    \&quot;innerError\&quot;: null,\n    \&quot;debugInfo\&quot;: null,\n    \&quot;additionalInfo\&quot;: null\n  },\n  \&quot;correlation\&quot;: {\n    \&quot;operation\&quot;: \&quot;af0b5b8b7987ba64823d9fea65aa471e\&quot;,\n    \&quot;request\&quot;: \&quot;04b9a165e43fca9f\&quot;\n  },\n  \&quot;environment\&quot;: \&quot;swedencentral\&quot;,\n  \&quot;location\&quot;: \&quot;swedencentral\&quot;,\n  \&quot;time\&quot;: \&quot;2026-11-23T13:07:39.6561172+00:00\&quot;,\n  \&quot;componentName\&quot;: \&quot;raisvc\&quot;,\n  \&quot;statusCode\&quot;: 413\n}&quot;
+}</pre></details></section><section><h2>uploaded-jsonl</h2><p>Run state: completed</p><table><thead><tr><th>Evidence item</th><th>Evaluator</th><th>Observed value</th></tr></thead><tbody><tr><td>mixed</td><td>prototype_outcome</td><td>0.25</td></tr><tr><td>all-success</td><td>prototype_outcome</td><td>1</td></tr></tbody></table><details><summary>Submitted vs returned evidence: mixed</summary><h4>Submitted</h4><pre>{
+  &quot;query&quot;: &quot;Synthetic evidence&quot;,
+  &quot;response&quot;: &quot;Precomputed&quot;,
+  &quot;case_id&quot;: &quot;mixed&quot;,
+  &quot;attempts&quot;: [
+    {
+      &quot;attempt_id&quot;: &quot;a0&quot;,
+      &quot;outcome&quot;: 1,
+      &quot;outcome_source&quot;: &quot;synthetic-customer-test&quot;,
+      &quot;confidence&quot;: 0.8300000000000001
+    },
+    {
+      &quot;attempt_id&quot;: &quot;a1&quot;,
+      &quot;outcome&quot;: 1,
+      &quot;outcome_source&quot;: &quot;synthetic-customer-test&quot;,
+      &quot;confidence&quot;: 0.83
+    },
+    {
+      &quot;attempt_id&quot;: &quot;a2&quot;,
+      &quot;outcome&quot;: 1,
+      &quot;outcome_source&quot;: &quot;synthetic-customer-test&quot;,
+      &quot;confidence&quot;: 0.67
+    },
+    {
+      &quot;attempt_id&quot;: &quot;a3&quot;,
+      &quot;outcome&quot;: 0,
+      &quot;outcome_source&quot;: &quot;synthetic-customer-test&quot;,
+      &quot;confidence&quot;: 0.49999999999999994
+    }
+  ]
+}</pre><h4>Foundry returned</h4><pre>{
+  &quot;query&quot;: &quot;Synthetic evidence&quot;,
+  &quot;response&quot;: &quot;Precomputed&quot;,
+  &quot;case_id&quot;: &quot;mixed&quot;,
+  &quot;attempts&quot;: [
+    {
+      &quot;attempt_id&quot;: &quot;a0&quot;,
+      &quot;outcome&quot;: 1,
+      &quot;outcome_source&quot;: &quot;synthetic-customer-test&quot;,
+      &quot;confidence&quot;: 0.8300000000000001
+    },
+    {
+      &quot;attempt_id&quot;: &quot;a1&quot;,
+      &quot;outcome&quot;: 1,
+      &quot;outcome_source&quot;: &quot;synthetic-customer-test&quot;,
+      &quot;confidence&quot;: 0.8300000000000001
+    },
+    {
+      &quot;attempt_id&quot;: &quot;a2&quot;,
+      &quot;outcome&quot;: 1,
+      &quot;outcome_source&quot;: &quot;synthetic-customer-test&quot;,
+      &quot;confidence&quot;: 0.67
+    },
+    {
+      &quot;attempt_id&quot;: &quot;a3&quot;,
+      &quot;outcome&quot;: 0,
+      &quot;outcome_source&quot;: &quot;synthetic-customer-test&quot;,
+      &quot;confidence&quot;: 0.49999999999999906
+    }
+  ]
+}</pre><h4>Service diagnostics (not customer acceptance)</h4><pre>[
+  {
+    &quot;type&quot;: &quot;azure_ai_evaluator&quot;,
+    &quot;name&quot;: &quot;prototype_outcome&quot;,
+    &quot;metric&quot;: &quot;prototype_outcome&quot;,
+    &quot;score&quot;: 0.25,
+    &quot;label&quot;: &quot;fail&quot;,
+    &quot;reason&quot;: null,
+    &quot;threshold&quot;: 0.5,
+    &quot;passed&quot;: false,
+    &quot;status&quot;: &quot;completed&quot;
+  }
+]</pre></details><details><summary>Submitted vs returned evidence: all-success</summary><h4>Submitted</h4><pre>{
+  &quot;query&quot;: &quot;Synthetic evidence&quot;,
+  &quot;response&quot;: &quot;Precomputed&quot;,
+  &quot;case_id&quot;: &quot;all-success&quot;,
+  &quot;attempts&quot;: [
+    {
+      &quot;attempt_id&quot;: &quot;a0&quot;,
+      &quot;outcome&quot;: 1,
+      &quot;outcome_source&quot;: &quot;synthetic-customer-test&quot;,
+      &quot;confidence&quot;: 0.8300000000000001
+    },
+    {
+      &quot;attempt_id&quot;: &quot;a1&quot;,
+      &quot;outcome&quot;: 1,
+      &quot;outcome_source&quot;: &quot;synthetic-customer-test&quot;,
+      &quot;confidence&quot;: 0.83
+    },
+    {
+      &quot;attempt_id&quot;: &quot;a2&quot;,
+      &quot;outcome&quot;: 1,
+      &quot;outcome_source&quot;: &quot;synthetic-customer-test&quot;,
+      &quot;confidence&quot;: 0.67
+    },
+    {
+      &quot;attempt_id&quot;: &quot;a3&quot;,
+      &quot;outcome&quot;: 1,
+      &quot;outcome_source&quot;: &quot;synthetic-customer-test&quot;,
+      &quot;confidence&quot;: 0.49999999999999994
+    }
+  ]
+}</pre><h4>Foundry returned</h4><pre>{
+  &quot;query&quot;: &quot;Synthetic evidence&quot;,
+  &quot;response&quot;: &quot;Precomputed&quot;,
+  &quot;case_id&quot;: &quot;all-success&quot;,
+  &quot;attempts&quot;: [
+    {
+      &quot;attempt_id&quot;: &quot;a0&quot;,
+      &quot;outcome&quot;: 1,
+      &quot;outcome_source&quot;: &quot;synthetic-customer-test&quot;,
+      &quot;confidence&quot;: 0.8300000000000001
+    },
+    {
+      &quot;attempt_id&quot;: &quot;a1&quot;,
+      &quot;outcome&quot;: 1,
+      &quot;outcome_source&quot;: &quot;synthetic-customer-test&quot;,
+      &quot;confidence&quot;: 0.8300000000000001
+    },
+    {
+      &quot;attempt_id&quot;: &quot;a2&quot;,
+      &quot;outcome&quot;: 1,
+      &quot;outcome_source&quot;: &quot;synthetic-customer-test&quot;,
+      &quot;confidence&quot;: 0.67
+    },
+    {
+      &quot;attempt_id&quot;: &quot;a3&quot;,
+      &quot;outcome&quot;: 1,
+      &quot;outcome_source&quot;: &quot;synthetic-customer-test&quot;,
+      &quot;confidence&quot;: 0.49999999999999906
+    }
+  ]
+}</pre><h4>Service diagnostics (not customer acceptance)</h4><pre>[
+  {
+    &quot;type&quot;: &quot;azure_ai_evaluator&quot;,
+    &quot;name&quot;: &quot;prototype_outcome&quot;,
+    &quot;metric&quot;: &quot;prototype_outcome&quot;,
+    &quot;score&quot;: 1,
+    &quot;label&quot;: &quot;pass&quot;,
+    &quot;reason&quot;: null,
+    &quot;threshold&quot;: 0.5,
+    &quot;passed&quot;: true,
+    &quot;status&quot;: &quot;completed&quot;
+  }
+]</pre></details></section></html>

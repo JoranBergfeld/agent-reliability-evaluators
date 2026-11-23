@@ -1,0 +1,2870 @@
+{
+  "started_at": "2026-11-23T12:46:05.694578+00:00",
+  "resource_group": "rg-foundry-eval-prototype-88aae1bae5",
+  "account": "eval-prototype-88aae1bae5",
+  "location": "swedencentral",
+  "python": "3.13.18 (main, Nov 11 2026, 00:19:14) [MSC v.1944 64 bit (AMD64)]",
+  "transport": "Python standard-library REST; bearer token from authenticated Azure CLI",
+  "sdk_validation": "Not performed: PyPI dependency download failed with TLS HandshakeFailure",
+  "evaluators": {
+    "prototype_scalar": {
+      "definition": {
+        "type": "code",
+        "code_text": "def grade(sample, item) -> float:\n    return float(item[\"value\"])\n",
+        "init_parameters": {
+          "type": "object",
+          "properties": {
+            "deployment_name": {
+              "type": "string"
+            },
+            "pass_threshold": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "deployment_name",
+            "pass_threshold"
+          ]
+        },
+        "data_schema": {
+          "type": "object",
+          "required": [
+            "item"
+          ],
+          "properties": {
+            "item": {
+              "type": "object",
+              "properties": {
+                "query": {
+                  "type": "string"
+                },
+                "response": {
+                  "type": "string"
+                },
+                "case_id": {
+                  "type": "string"
+                },
+                "value": {},
+                "attempts": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "attempts_json": {
+                  "type": "string"
+                },
+                "campaign": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "renamed": {}
+              }
+            }
+          }
+        },
+        "metrics": {
+          "result": {
+            "type": "continuous",
+            "desirable_direction": "increase",
+            "min_value": 0.0,
+            "max_value": 1.0
+          }
+        }
+      },
+      "version": "1",
+      "id": "azureai://accounts/eval-prototype-88aae1bae5/projects/managed-evals-prototype/evaluators/prototype_scalar/versions/1"
+    },
+    "prototype_outcome": {
+      "definition": {
+        "type": "code",
+        "code_text": "def grade(sample, item) -> float:\n    attempts = item[\"attempts\"]\n    if len(attempts) < 2:\n        raise ValueError(\"unavailable: at least two attempts required\")\n    ids = [a[\"attempt_id\"] for a in attempts]\n    if len(set(ids)) != len(ids):\n        raise ValueError(\"unavailable: duplicate attempt identity\")\n    outcomes = [a[\"outcome\"] for a in attempts]\n    if any(type(x) is not int or x not in (0, 1) for x in outcomes):\n        raise ValueError(\"unavailable: sourced binary outcomes required\")\n    return float((2 * sum(outcomes) / len(outcomes) - 1) ** 2)\n",
+        "init_parameters": {
+          "type": "object",
+          "properties": {
+            "deployment_name": {
+              "type": "string"
+            },
+            "pass_threshold": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "deployment_name",
+            "pass_threshold"
+          ]
+        },
+        "data_schema": {
+          "type": "object",
+          "required": [
+            "item"
+          ],
+          "properties": {
+            "item": {
+              "type": "object",
+              "properties": {
+                "query": {
+                  "type": "string"
+                },
+                "response": {
+                  "type": "string"
+                },
+                "case_id": {
+                  "type": "string"
+                },
+                "value": {},
+                "attempts": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "attempts_json": {
+                  "type": "string"
+                },
+                "campaign": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "renamed": {}
+              }
+            }
+          }
+        },
+        "metrics": {
+          "result": {
+            "type": "continuous",
+            "desirable_direction": "increase",
+            "min_value": 0.0,
+            "max_value": 1.0
+          }
+        }
+      },
+      "version": "1",
+      "id": "azureai://accounts/eval-prototype-88aae1bae5/projects/managed-evals-prototype/evaluators/prototype_outcome/versions/1"
+    },
+    "prototype_outcome_json": {
+      "definition": {
+        "type": "code",
+        "code_text": "def grade(sample, item) -> float:\n    import json\n    attempts = json.loads(item[\"attempts_json\"])\n    if len(attempts) < 2:\n        raise ValueError(\"unavailable: at least two attempts required\")\n    ids = [a[\"attempt_id\"] for a in attempts]\n    if len(set(ids)) != len(ids):\n        raise ValueError(\"unavailable: duplicate attempt identity\")\n    outcomes = [a[\"outcome\"] for a in attempts]\n    if any(type(x) is not int or x not in (0, 1) for x in outcomes):\n        raise ValueError(\"unavailable: sourced binary outcomes required\")\n    return float((2 * sum(outcomes) / len(outcomes) - 1) ** 2)\n",
+        "init_parameters": {
+          "type": "object",
+          "properties": {
+            "deployment_name": {
+              "type": "string"
+            },
+            "pass_threshold": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "deployment_name",
+            "pass_threshold"
+          ]
+        },
+        "data_schema": {
+          "type": "object",
+          "required": [
+            "item"
+          ],
+          "properties": {
+            "item": {
+              "type": "object",
+              "properties": {
+                "query": {
+                  "type": "string"
+                },
+                "response": {
+                  "type": "string"
+                },
+                "case_id": {
+                  "type": "string"
+                },
+                "value": {},
+                "attempts": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "attempts_json": {
+                  "type": "string"
+                },
+                "campaign": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "renamed": {}
+              }
+            }
+          }
+        },
+        "metrics": {
+          "result": {
+            "type": "continuous",
+            "desirable_direction": "increase",
+            "min_value": 0.0,
+            "max_value": 1.0
+          }
+        }
+      },
+      "version": "1",
+      "id": "azureai://accounts/eval-prototype-88aae1bae5/projects/managed-evals-prototype/evaluators/prototype_outcome_json/versions/1"
+    },
+    "prototype_campaign": {
+      "definition": {
+        "type": "code",
+        "code_text": "def grade(sample, item) -> float:\n    tasks = item[\"campaign\"]\n    if not tasks or any(len(task[\"attempts\"]) < 2 for task in tasks):\n        raise ValueError(\"unavailable: missing repeated task evidence\")\n    return float(sum((2 * sum(a[\"outcome\"] for a in t[\"attempts\"]) / len(t[\"attempts\"]) - 1) ** 2 for t in tasks) / len(tasks))\n",
+        "init_parameters": {
+          "type": "object",
+          "properties": {
+            "deployment_name": {
+              "type": "string"
+            },
+            "pass_threshold": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "deployment_name",
+            "pass_threshold"
+          ]
+        },
+        "data_schema": {
+          "type": "object",
+          "required": [
+            "item"
+          ],
+          "properties": {
+            "item": {
+              "type": "object",
+              "properties": {
+                "query": {
+                  "type": "string"
+                },
+                "response": {
+                  "type": "string"
+                },
+                "case_id": {
+                  "type": "string"
+                },
+                "value": {},
+                "attempts": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "attempts_json": {
+                  "type": "string"
+                },
+                "campaign": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "renamed": {}
+              }
+            }
+          }
+        },
+        "metrics": {
+          "result": {
+            "type": "continuous",
+            "desirable_direction": "increase",
+            "min_value": 0.0,
+            "max_value": 1.0
+          }
+        }
+      },
+      "version": "1",
+      "id": "azureai://accounts/eval-prototype-88aae1bae5/projects/managed-evals-prototype/evaluators/prototype_campaign/versions/1"
+    },
+    "prototype_numeric_contract": {
+      "definition": {
+        "type": "code",
+        "code_text": "def grade(sample, item) -> float:\n    value = item[\"value\"]\n    if value == \"exception\":\n        raise ValueError(\"unavailable: deliberate probe\")\n    if value == \"null\":\n        return None\n    if value == \"object\":\n        return {\"value\": 0.75, \"reason\": \"probe\", \"evidence_count\": 4}\n    if value == \"nan\":\n        return float(\"nan\")\n    if value == \"infinity\":\n        return float(\"inf\")\n    if value == \"timeout\":\n        import time\n        time.sleep(130)\n        return 0.75\n    return float(value)\n",
+        "init_parameters": {
+          "type": "object",
+          "properties": {
+            "deployment_name": {
+              "type": "string"
+            },
+            "pass_threshold": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "deployment_name",
+            "pass_threshold"
+          ]
+        },
+        "data_schema": {
+          "type": "object",
+          "required": [
+            "item"
+          ],
+          "properties": {
+            "item": {
+              "type": "object",
+              "properties": {
+                "query": {
+                  "type": "string"
+                },
+                "response": {
+                  "type": "string"
+                },
+                "case_id": {
+                  "type": "string"
+                },
+                "value": {},
+                "attempts": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "attempts_json": {
+                  "type": "string"
+                },
+                "campaign": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "renamed": {}
+              }
+            }
+          }
+        },
+        "metrics": {
+          "result": {
+            "type": "continuous",
+            "desirable_direction": "increase",
+            "min_value": 0.0,
+            "max_value": 1.0
+          }
+        }
+      },
+      "version": "1",
+      "id": "azureai://accounts/eval-prototype-88aae1bae5/projects/managed-evals-prototype/evaluators/prototype_numeric_contract/versions/1"
+    },
+    "prototype_mapping": {
+      "definition": {
+        "type": "code",
+        "code_text": "def grade(sample, item) -> float:\n    return float(item[\"renamed\"])\n",
+        "init_parameters": {
+          "type": "object",
+          "properties": {
+            "deployment_name": {
+              "type": "string"
+            },
+            "pass_threshold": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "deployment_name",
+            "pass_threshold"
+          ]
+        },
+        "data_schema": {
+          "type": "object",
+          "required": [
+            "item"
+          ],
+          "properties": {
+            "item": {
+              "type": "object",
+              "properties": {
+                "query": {
+                  "type": "string"
+                },
+                "response": {
+                  "type": "string"
+                },
+                "case_id": {
+                  "type": "string"
+                },
+                "value": {},
+                "attempts": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "attempts_json": {
+                  "type": "string"
+                },
+                "campaign": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "renamed": {}
+              }
+            }
+          }
+        },
+        "metrics": {
+          "result": {
+            "type": "continuous",
+            "desirable_direction": "increase",
+            "min_value": 0.0,
+            "max_value": 1.0
+          }
+        }
+      },
+      "version": "1",
+      "id": "azureai://accounts/eval-prototype-88aae1bae5/projects/managed-evals-prototype/evaluators/prototype_mapping/versions/1"
+    },
+    "prototype_runtime": {
+      "definition": {
+        "type": "code",
+        "code_text": "def grade(sample, item) -> float:\n    import numpy\n    import socket\n    if numpy.__version__ != \"2.2.4\":\n        raise ValueError(\"unexpected numpy version: \" + numpy.__version__)\n    try:\n        socket.create_connection((\"example.com\", 443), timeout=3).close()\n    except OSError:\n        return 1.0\n    return 0.0\n",
+        "init_parameters": {
+          "type": "object",
+          "properties": {
+            "deployment_name": {
+              "type": "string"
+            },
+            "pass_threshold": {
+              "type": "number"
+            }
+          },
+          "required": [
+            "deployment_name",
+            "pass_threshold"
+          ]
+        },
+        "data_schema": {
+          "type": "object",
+          "required": [
+            "item"
+          ],
+          "properties": {
+            "item": {
+              "type": "object",
+              "properties": {
+                "query": {
+                  "type": "string"
+                },
+                "response": {
+                  "type": "string"
+                },
+                "case_id": {
+                  "type": "string"
+                },
+                "value": {},
+                "attempts": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "attempts_json": {
+                  "type": "string"
+                },
+                "campaign": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "renamed": {}
+              }
+            }
+          }
+        },
+        "metrics": {
+          "result": {
+            "type": "continuous",
+            "desirable_direction": "increase",
+            "min_value": 0.0,
+            "max_value": 1.0
+          }
+        }
+      },
+      "version": "1",
+      "id": "azureai://accounts/eval-prototype-88aae1bae5/projects/managed-evals-prototype/evaluators/prototype_runtime/versions/1"
+    }
+  },
+  "probes": {
+    "scalar": {
+      "input": [
+        {
+          "query": "Synthetic evidence",
+          "response": "Precomputed",
+          "case_id": "quarter",
+          "value": 0.25
+        },
+        {
+          "query": "Synthetic evidence",
+          "response": "Precomputed",
+          "case_id": "one",
+          "value": 1.0
+        }
+      ],
+      "criteria": [
+        {
+          "type": "azure_ai_evaluator",
+          "name": "prototype_scalar",
+          "evaluator_name": "prototype_scalar",
+          "initialization_parameters": {
+            "deployment_name": "prototype-gpt-41-mini",
+            "pass_threshold": 0.5
+          }
+        }
+      ],
+      "expected": [
+        0.25,
+        1.0
+      ],
+      "evaluation": {
+        "object": "eval",
+        "created_at": 1795438297,
+        "modified_at": 1795438297,
+        "id": "eval_53b7f180330443c29dc4330e89c81303",
+        "name": "prototype-scalar",
+        "metadata": {},
+        "properties": {
+          "evals_run_type": "azure_ai"
+        },
+        "data_source_config": {
+          "type": "custom",
+          "item_schema": {},
+          "include_sample_schema": true,
+          "schema": {
+            "item": {
+              "type": "object",
+              "properties": {
+                "query": {
+                  "type": "string"
+                },
+                "response": {
+                  "type": "string"
+                },
+                "case_id": {
+                  "type": "string"
+                },
+                "value": {},
+                "attempts": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "attempts_json": {
+                  "type": "string"
+                },
+                "campaign": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "renamed": {}
+              }
+            },
+            "sample": {
+              "type": "object",
+              "properties": {
+                "output_text": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "testing_criteria": [
+          {
+            "type": "azure_ai_evaluator",
+            "id": "prototype_scalar_5afe2184-516e-4bed-a39e-c7fcf4f3299c",
+            "name": "prototype_scalar",
+            "evaluator_name": "prototype_scalar",
+            "evaluator_version": "",
+            "initialization_parameters": {
+              "deployment_name": "prototype-gpt-41-mini",
+              "pass_threshold": 0.5
+            },
+            "data_mapping": {}
+          }
+        ]
+      },
+      "run": {
+        "object": "eval.run",
+        "created_at": 1795438299,
+        "modified_at": 1795438324,
+        "duration": "PT23.6455064S",
+        "id": "evalrun_45c2b18e9e204c4e99093b2db87a5bb7",
+        "eval_id": "eval_53b7f180330443c29dc4330e89c81303",
+        "status": "completed",
+        "data_source": {
+          "type": "jsonl",
+          "source": {
+            "type": "file_content",
+            "content": [
+              {
+                "item": {
+                  "query": "Synthetic evidence",
+                  "response": "Precomputed",
+                  "case_id": "quarter",
+                  "value": 0.25
+                }
+              },
+              {
+                "item": {
+                  "query": "Synthetic evidence",
+                  "response": "Precomputed",
+                  "case_id": "one",
+                  "value": 1
+                }
+              }
+            ]
+          }
+        },
+        "metadata": {
+          "trigger_type": "oneoff"
+        },
+        "properties": {
+          "eval_id": "eval_53b7f180330443c29dc4330e89c81303",
+          "runType": "eval_run",
+          "_azureml.evaluation_run": "evaluation.service",
+          "_azureml.evaluate_artifacts": "[{\"path\": \"instance_results.jsonl\", \"type\": \"table\"}]",
+          "DataSourceType": "Jsonl",
+          "AOAISubRunIds": "[{\"eval_group_id\": \"eval_6b0436e0b7708191a894a785d4effbce\", \"eval_run_id\": \"evalrun_6b0436e26bb881918b415eb07d2d5c46\"}]",
+          "job_logs": "azureai://accounts/eval-prototype-88aae1bae5/projects/managed-evals-prototype/evaluationresults/eval-result-evalrun_45c2b18e9e204c4e99093b2db87a5bb7-MRAN/versions/1"
+        },
+        "name": "scalar",
+        "report_url": "https://ai.azure.com/nextgen/r/-mjrs8TESz-MkcvvTBGddw,rg-foundry-eval-prototype-88aae1bae5,,eval-prototype-88aae1bae5,managed-evals-prototype/build/evaluations/eval_53b7f180330443c29dc4330e89c81303/run/evalrun_45c2b18e9e204c4e99093b2db87a5bb7",
+        "result_counts": {
+          "total": 2,
+          "passed": 1,
+          "failed": 1,
+          "errored": 0,
+          "skipped": 0
+        },
+        "per_model_usage": [],
+        "per_testing_criteria_results": [
+          {
+            "testing_criteria": "prototype_scalar",
+            "passed": 1,
+            "failed": 1,
+            "errored": 0,
+            "skipped": 0
+          }
+        ],
+        "error": null
+      }
+    },
+    "nested": {
+      "input": [
+        {
+          "query": "Synthetic evidence",
+          "response": "Precomputed",
+          "case_id": "mixed",
+          "attempts": [
+            {
+              "attempt_id": "a0",
+              "outcome": 1,
+              "outcome_source": "synthetic-customer-test",
+              "confidence": 0.8300000000000001
+            },
+            {
+              "attempt_id": "a1",
+              "outcome": 1,
+              "outcome_source": "synthetic-customer-test",
+              "confidence": 0.83
+            },
+            {
+              "attempt_id": "a2",
+              "outcome": 1,
+              "outcome_source": "synthetic-customer-test",
+              "confidence": 0.67
+            },
+            {
+              "attempt_id": "a3",
+              "outcome": 0,
+              "outcome_source": "synthetic-customer-test",
+              "confidence": 0.49999999999999994
+            }
+          ]
+        },
+        {
+          "query": "Synthetic evidence",
+          "response": "Precomputed",
+          "case_id": "all-success",
+          "attempts": [
+            {
+              "attempt_id": "a0",
+              "outcome": 1,
+              "outcome_source": "synthetic-customer-test",
+              "confidence": 0.8300000000000001
+            },
+            {
+              "attempt_id": "a1",
+              "outcome": 1,
+              "outcome_source": "synthetic-customer-test",
+              "confidence": 0.83
+            },
+            {
+              "attempt_id": "a2",
+              "outcome": 1,
+              "outcome_source": "synthetic-customer-test",
+              "confidence": 0.67
+            },
+            {
+              "attempt_id": "a3",
+              "outcome": 1,
+              "outcome_source": "synthetic-customer-test",
+              "confidence": 0.49999999999999994
+            }
+          ]
+        }
+      ],
+      "criteria": [
+        {
+          "type": "azure_ai_evaluator",
+          "name": "prototype_outcome",
+          "evaluator_name": "prototype_outcome",
+          "initialization_parameters": {
+            "deployment_name": "prototype-gpt-41-mini",
+            "pass_threshold": 0.5
+          }
+        }
+      ],
+      "expected": [
+        0.25,
+        1.0
+      ],
+      "evaluation": {
+        "object": "eval",
+        "created_at": 1795438299,
+        "modified_at": 1795438299,
+        "id": "eval_95d004701cd84a88a5b65667e0cdeac9",
+        "name": "prototype-nested",
+        "metadata": {},
+        "properties": {
+          "evals_run_type": "azure_ai"
+        },
+        "data_source_config": {
+          "type": "custom",
+          "item_schema": {},
+          "include_sample_schema": true,
+          "schema": {
+            "item": {
+              "type": "object",
+              "properties": {
+                "query": {
+                  "type": "string"
+                },
+                "response": {
+                  "type": "string"
+                },
+                "case_id": {
+                  "type": "string"
+                },
+                "value": {},
+                "attempts": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "attempts_json": {
+                  "type": "string"
+                },
+                "campaign": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "renamed": {}
+              }
+            },
+            "sample": {
+              "type": "object",
+              "properties": {
+                "output_text": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "testing_criteria": [
+          {
+            "type": "azure_ai_evaluator",
+            "id": "prototype_outcome_df0c614a-0069-4ca4-bfd3-318a2df9d1d2",
+            "name": "prototype_outcome",
+            "evaluator_name": "prototype_outcome",
+            "evaluator_version": "",
+            "initialization_parameters": {
+              "deployment_name": "prototype-gpt-41-mini",
+              "pass_threshold": 0.5
+            },
+            "data_mapping": {}
+          }
+        ]
+      },
+      "run": {
+        "object": "eval.run",
+        "created_at": 1795438300,
+        "modified_at": 1795438302,
+        "duration": null,
+        "id": "evalrun_2051c80fc2df411880442c1d623fc962",
+        "eval_id": "eval_95d004701cd84a88a5b65667e0cdeac9",
+        "status": "in_progress",
+        "data_source": {
+          "type": "jsonl",
+          "source": {
+            "type": "file_content",
+            "content": [
+              {
+                "item": {
+                  "query": "Synthetic evidence",
+                  "response": "Precomputed",
+                  "case_id": "mixed",
+                  "attempts": [
+                    {
+                      "attempt_id": "a0",
+                      "outcome": 1,
+                      "outcome_source": "synthetic-customer-test",
+                      "confidence": 0.8300000000000001
+                    },
+                    {
+                      "attempt_id": "a1",
+                      "outcome": 1,
+                      "outcome_source": "synthetic-customer-test",
+                      "confidence": 0.83
+                    },
+                    {
+                      "attempt_id": "a2",
+                      "outcome": 1,
+                      "outcome_source": "synthetic-customer-test",
+                      "confidence": 0.67
+                    },
+                    {
+                      "attempt_id": "a3",
+                      "outcome": 0,
+                      "outcome_source": "synthetic-customer-test",
+                      "confidence": 0.49999999999999994
+                    }
+                  ]
+                }
+              },
+              {
+                "item": {
+                  "query": "Synthetic evidence",
+                  "response": "Precomputed",
+                  "case_id": "all-success",
+                  "attempts": [
+                    {
+                      "attempt_id": "a0",
+                      "outcome": 1,
+                      "outcome_source": "synthetic-customer-test",
+                      "confidence": 0.8300000000000001
+                    },
+                    {
+                      "attempt_id": "a1",
+                      "outcome": 1,
+                      "outcome_source": "synthetic-customer-test",
+                      "confidence": 0.83
+                    },
+                    {
+                      "attempt_id": "a2",
+                      "outcome": 1,
+                      "outcome_source": "synthetic-customer-test",
+                      "confidence": 0.67
+                    },
+                    {
+                      "attempt_id": "a3",
+                      "outcome": 1,
+                      "outcome_source": "synthetic-customer-test",
+                      "confidence": 0.49999999999999994
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        },
+        "metadata": {
+          "trigger_type": "oneoff"
+        },
+        "properties": {
+          "eval_id": "eval_95d004701cd84a88a5b65667e0cdeac9",
+          "runType": "eval_run",
+          "_azureml.evaluation_run": "evaluation.service",
+          "_azureml.evaluate_artifacts": "[{\"path\": \"instance_results.jsonl\", \"type\": \"table\"}]"
+        },
+        "name": "nested",
+        "report_url": null,
+        "result_counts": {
+          "total": 0,
+          "passed": 0,
+          "failed": 0
+        },
+        "per_model_usage": [],
+        "per_testing_criteria_results": [],
+        "error": null
+      }
+    },
+    "serialized": {
+      "input": [
+        {
+          "query": "Synthetic evidence",
+          "response": "Precomputed",
+          "case_id": "mixed",
+          "attempts_json": "[{\"attempt_id\": \"a0\", \"outcome\": 1, \"outcome_source\": \"synthetic-customer-test\", \"confidence\": 0.8300000000000001}, {\"attempt_id\": \"a1\", \"outcome\": 1, \"outcome_source\": \"synthetic-customer-test\", \"confidence\": 0.83}, {\"attempt_id\": \"a2\", \"outcome\": 1, \"outcome_source\": \"synthetic-customer-test\", \"confidence\": 0.67}, {\"attempt_id\": \"a3\", \"outcome\": 0, \"outcome_source\": \"synthetic-customer-test\", \"confidence\": 0.49999999999999994}]"
+        },
+        {
+          "query": "Synthetic evidence",
+          "response": "Precomputed",
+          "case_id": "all-success",
+          "attempts_json": "[{\"attempt_id\": \"a0\", \"outcome\": 1, \"outcome_source\": \"synthetic-customer-test\", \"confidence\": 0.8300000000000001}, {\"attempt_id\": \"a1\", \"outcome\": 1, \"outcome_source\": \"synthetic-customer-test\", \"confidence\": 0.83}, {\"attempt_id\": \"a2\", \"outcome\": 1, \"outcome_source\": \"synthetic-customer-test\", \"confidence\": 0.67}, {\"attempt_id\": \"a3\", \"outcome\": 1, \"outcome_source\": \"synthetic-customer-test\", \"confidence\": 0.49999999999999994}]"
+        }
+      ],
+      "criteria": [
+        {
+          "type": "azure_ai_evaluator",
+          "name": "prototype_outcome_json",
+          "evaluator_name": "prototype_outcome_json",
+          "initialization_parameters": {
+            "deployment_name": "prototype-gpt-41-mini",
+            "pass_threshold": 0.5
+          }
+        }
+      ],
+      "expected": [
+        0.25,
+        1.0
+      ],
+      "evaluation": {
+        "object": "eval",
+        "created_at": 1795438301,
+        "modified_at": 1795438301,
+        "id": "eval_6ce53631f9b74dbe953f06044d4a59bb",
+        "name": "prototype-serialized",
+        "metadata": {},
+        "properties": {
+          "evals_run_type": "azure_ai"
+        },
+        "data_source_config": {
+          "type": "custom",
+          "item_schema": {},
+          "include_sample_schema": true,
+          "schema": {
+            "item": {
+              "type": "object",
+              "properties": {
+                "query": {
+                  "type": "string"
+                },
+                "response": {
+                  "type": "string"
+                },
+                "case_id": {
+                  "type": "string"
+                },
+                "value": {},
+                "attempts": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "attempts_json": {
+                  "type": "string"
+                },
+                "campaign": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "renamed": {}
+              }
+            },
+            "sample": {
+              "type": "object",
+              "properties": {
+                "output_text": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "testing_criteria": [
+          {
+            "type": "azure_ai_evaluator",
+            "id": "prototype_outcome_json_9dba7071-a90c-45e4-af22-b34568c67434",
+            "name": "prototype_outcome_json",
+            "evaluator_name": "prototype_outcome_json",
+            "evaluator_version": "",
+            "initialization_parameters": {
+              "deployment_name": "prototype-gpt-41-mini",
+              "pass_threshold": 0.5
+            },
+            "data_mapping": {}
+          }
+        ]
+      },
+      "run": {
+        "object": "eval.run",
+        "created_at": 1795438301,
+        "modified_at": 1795438303,
+        "duration": null,
+        "id": "evalrun_703272b689f948839908b5be2bbdc99c",
+        "eval_id": "eval_6ce53631f9b74dbe953f06044d4a59bb",
+        "status": "in_progress",
+        "data_source": {
+          "type": "jsonl",
+          "source": {
+            "type": "file_content",
+            "content": [
+              {
+                "item": {
+                  "query": "Synthetic evidence",
+                  "response": "Precomputed",
+                  "case_id": "mixed",
+                  "attempts_json": "[{\"attempt_id\": \"a0\", \"outcome\": 1, \"outcome_source\": \"synthetic-customer-test\", \"confidence\": 0.8300000000000001}, {\"attempt_id\": \"a1\", \"outcome\": 1, \"outcome_source\": \"synthetic-customer-test\", \"confidence\": 0.83}, {\"attempt_id\": \"a2\", \"outcome\": 1, \"outcome_source\": \"synthetic-customer-test\", \"confidence\": 0.67}, {\"attempt_id\": \"a3\", \"outcome\": 0, \"outcome_source\": \"synthetic-customer-test\", \"confidence\": 0.49999999999999994}]"
+                }
+              },
+              {
+                "item": {
+                  "query": "Synthetic evidence",
+                  "response": "Precomputed",
+                  "case_id": "all-success",
+                  "attempts_json": "[{\"attempt_id\": \"a0\", \"outcome\": 1, \"outcome_source\": \"synthetic-customer-test\", \"confidence\": 0.8300000000000001}, {\"attempt_id\": \"a1\", \"outcome\": 1, \"outcome_source\": \"synthetic-customer-test\", \"confidence\": 0.83}, {\"attempt_id\": \"a2\", \"outcome\": 1, \"outcome_source\": \"synthetic-customer-test\", \"confidence\": 0.67}, {\"attempt_id\": \"a3\", \"outcome\": 1, \"outcome_source\": \"synthetic-customer-test\", \"confidence\": 0.49999999999999994}]"
+                }
+              }
+            ]
+          }
+        },
+        "metadata": {
+          "trigger_type": "oneoff"
+        },
+        "properties": {
+          "eval_id": "eval_6ce53631f9b74dbe953f06044d4a59bb",
+          "runType": "eval_run",
+          "_azureml.evaluation_run": "evaluation.service",
+          "_azureml.evaluate_artifacts": "[{\"path\": \"instance_results.jsonl\", \"type\": \"table\"}]"
+        },
+        "name": "serialized",
+        "report_url": null,
+        "result_counts": {
+          "total": 0,
+          "passed": 0,
+          "failed": 0
+        },
+        "per_model_usage": [],
+        "per_testing_criteria_results": [],
+        "error": null
+      }
+    },
+    "campaign": {
+      "input": [
+        {
+          "query": "Synthetic evidence",
+          "response": "Precomputed",
+          "case_id": "two-tasks",
+          "campaign": [
+            {
+              "query": "Synthetic evidence",
+              "response": "Precomputed",
+              "case_id": "mixed",
+              "attempts": [
+                {
+                  "attempt_id": "a0",
+                  "outcome": 1,
+                  "outcome_source": "synthetic-customer-test",
+                  "confidence": 0.8300000000000001
+                },
+                {
+                  "attempt_id": "a1",
+                  "outcome": 1,
+                  "outcome_source": "synthetic-customer-test",
+                  "confidence": 0.83
+                },
+                {
+                  "attempt_id": "a2",
+                  "outcome": 1,
+                  "outcome_source": "synthetic-customer-test",
+                  "confidence": 0.67
+                },
+                {
+                  "attempt_id": "a3",
+                  "outcome": 0,
+                  "outcome_source": "synthetic-customer-test",
+                  "confidence": 0.49999999999999994
+                }
+              ]
+            },
+            {
+              "query": "Synthetic evidence",
+              "response": "Precomputed",
+              "case_id": "all-success",
+              "attempts": [
+                {
+                  "attempt_id": "a0",
+                  "outcome": 1,
+                  "outcome_source": "synthetic-customer-test",
+                  "confidence": 0.8300000000000001
+                },
+                {
+                  "attempt_id": "a1",
+                  "outcome": 1,
+                  "outcome_source": "synthetic-customer-test",
+                  "confidence": 0.83
+                },
+                {
+                  "attempt_id": "a2",
+                  "outcome": 1,
+                  "outcome_source": "synthetic-customer-test",
+                  "confidence": 0.67
+                },
+                {
+                  "attempt_id": "a3",
+                  "outcome": 1,
+                  "outcome_source": "synthetic-customer-test",
+                  "confidence": 0.49999999999999994
+                }
+              ]
+            }
+          ]
+        }
+      ],
+      "criteria": [
+        {
+          "type": "azure_ai_evaluator",
+          "name": "prototype_campaign",
+          "evaluator_name": "prototype_campaign",
+          "initialization_parameters": {
+            "deployment_name": "prototype-gpt-41-mini",
+            "pass_threshold": 0.5
+          }
+        }
+      ],
+      "expected": [
+        0.625
+      ],
+      "evaluation": {
+        "object": "eval",
+        "created_at": 1795438302,
+        "modified_at": 1795438302,
+        "id": "eval_4e26e90e54b7492f88d59a6388007953",
+        "name": "prototype-campaign",
+        "metadata": {},
+        "properties": {
+          "evals_run_type": "azure_ai"
+        },
+        "data_source_config": {
+          "type": "custom",
+          "item_schema": {},
+          "include_sample_schema": true,
+          "schema": {
+            "item": {
+              "type": "object",
+              "properties": {
+                "query": {
+                  "type": "string"
+                },
+                "response": {
+                  "type": "string"
+                },
+                "case_id": {
+                  "type": "string"
+                },
+                "value": {},
+                "attempts": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "attempts_json": {
+                  "type": "string"
+                },
+                "campaign": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "renamed": {}
+              }
+            },
+            "sample": {
+              "type": "object",
+              "properties": {
+                "output_text": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "testing_criteria": [
+          {
+            "type": "azure_ai_evaluator",
+            "id": "prototype_campaign_2250a064-0d21-46ec-867d-da6b00ca0ad9",
+            "name": "prototype_campaign",
+            "evaluator_name": "prototype_campaign",
+            "evaluator_version": "",
+            "initialization_parameters": {
+              "deployment_name": "prototype-gpt-41-mini",
+              "pass_threshold": 0.5
+            },
+            "data_mapping": {}
+          }
+        ]
+      },
+      "run": {
+        "object": "eval.run",
+        "created_at": 1795438302,
+        "modified_at": 1795438304,
+        "duration": null,
+        "id": "evalrun_514462bd15524403bc522619a4da3593",
+        "eval_id": "eval_4e26e90e54b7492f88d59a6388007953",
+        "status": "in_progress",
+        "data_source": {
+          "type": "jsonl",
+          "source": {
+            "type": "file_content",
+            "content": [
+              {
+                "item": {
+                  "query": "Synthetic evidence",
+                  "response": "Precomputed",
+                  "case_id": "two-tasks",
+                  "campaign": [
+                    {
+                      "query": "Synthetic evidence",
+                      "response": "Precomputed",
+                      "case_id": "mixed",
+                      "attempts": [
+                        {
+                          "attempt_id": "a0",
+                          "outcome": 1,
+                          "outcome_source": "synthetic-customer-test",
+                          "confidence": 0.8300000000000001
+                        },
+                        {
+                          "attempt_id": "a1",
+                          "outcome": 1,
+                          "outcome_source": "synthetic-customer-test",
+                          "confidence": 0.83
+                        },
+                        {
+                          "attempt_id": "a2",
+                          "outcome": 1,
+                          "outcome_source": "synthetic-customer-test",
+                          "confidence": 0.67
+                        },
+                        {
+                          "attempt_id": "a3",
+                          "outcome": 0,
+                          "outcome_source": "synthetic-customer-test",
+                          "confidence": 0.49999999999999994
+                        }
+                      ]
+                    },
+                    {
+                      "query": "Synthetic evidence",
+                      "response": "Precomputed",
+                      "case_id": "all-success",
+                      "attempts": [
+                        {
+                          "attempt_id": "a0",
+                          "outcome": 1,
+                          "outcome_source": "synthetic-customer-test",
+                          "confidence": 0.8300000000000001
+                        },
+                        {
+                          "attempt_id": "a1",
+                          "outcome": 1,
+                          "outcome_source": "synthetic-customer-test",
+                          "confidence": 0.83
+                        },
+                        {
+                          "attempt_id": "a2",
+                          "outcome": 1,
+                          "outcome_source": "synthetic-customer-test",
+                          "confidence": 0.67
+                        },
+                        {
+                          "attempt_id": "a3",
+                          "outcome": 1,
+                          "outcome_source": "synthetic-customer-test",
+                          "confidence": 0.49999999999999994
+                        }
+                      ]
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        },
+        "metadata": {
+          "trigger_type": "oneoff"
+        },
+        "properties": {
+          "eval_id": "eval_4e26e90e54b7492f88d59a6388007953",
+          "runType": "eval_run",
+          "_azureml.evaluation_run": "evaluation.service",
+          "_azureml.evaluate_artifacts": "[{\"path\": \"instance_results.jsonl\", \"type\": \"table\"}]"
+        },
+        "name": "campaign",
+        "report_url": null,
+        "result_counts": {
+          "total": 0,
+          "passed": 0,
+          "failed": 0
+        },
+        "per_model_usage": [],
+        "per_testing_criteria_results": [],
+        "error": null
+      }
+    },
+    "mapping": {
+      "input": [
+        {
+          "query": "Synthetic evidence",
+          "response": "Precomputed",
+          "case_id": "mapped",
+          "value": 0.375
+        }
+      ],
+      "criteria": [
+        {
+          "type": "azure_ai_evaluator",
+          "name": "prototype_mapping",
+          "evaluator_name": "prototype_mapping",
+          "initialization_parameters": {
+            "deployment_name": "prototype-gpt-41-mini",
+            "pass_threshold": 0.5
+          },
+          "data_mapping": {
+            "renamed": "{{item.value}}"
+          }
+        }
+      ],
+      "expected": [
+        0.375
+      ],
+      "api_error": {
+        "type": "ServiceError",
+        "status_code": 400,
+        "message": "{\n  \"error\": {\n    \"code\": \"UserError\",\n    \"severity\": null,\n    \"message\": \"Evaluation validation failed: missing required data mappings for evaluators 'prototype_mapping'.\",\n    \"messageFormat\": \"Evaluation validation failed: {errors}\",\n    \"messageParameters\": {\n      \"errors\": \"missing required data mappings for evaluators 'prototype_mapping'.\"\n    },\n    \"referenceCode\": null,\n    \"detailsUri\": \"https://aka.ms/FoundryEvalsFormatIssues\",\n    \"target\": \"testing_criteria\",\n    \"details\": [\n      {\n        \"code\": \"MissingRequiredDataMapping\",\n        \"severity\": null,\n        \"message\": \"Data mapping for required field 'item' is missing for evaluator 'prototype_mapping'.\",\n        \"messageFormat\": null,\n        \"messageParameters\": {},\n        \"referenceCode\": null,\n        \"detailsUri\": null,\n        \"target\": \"evaluation.testing_criteria[0].data_mapping\",\n        \"details\": [],\n        \"innerError\": null,\n        \"debugInfo\": null,\n        \"additionalInfo\": null\n      }\n    ],\n    \"innerError\": {\n      \"code\": \"EvalValidationFailed\",\n      \"innerError\": null\n    },\n    \"debugInfo\": null,\n    \"additionalInfo\": null\n  },\n  \"correlation\": {\n    \"operation\": \"02b2a6d173eb59345958711487cd08b6\",\n    \"request\": \"3cd8a60019402e5a\"\n  },\n  \"environment\": \"swedencentral\",\n  \"location\": \"swedencentral\",\n  \"time\": \"2026-11-23T12:51:43.0539005+00:00\",\n  \"componentName\": \"raisvc\",\n  \"statusCode\": 400\n}"
+      }
+    },
+    "two-independent-metrics": {
+      "input": [
+        {
+          "query": "Synthetic evidence",
+          "response": "Precomputed",
+          "case_id": "mixed",
+          "attempts": [
+            {
+              "attempt_id": "a0",
+              "outcome": 1,
+              "outcome_source": "synthetic-customer-test",
+              "confidence": 0.8300000000000001
+            },
+            {
+              "attempt_id": "a1",
+              "outcome": 1,
+              "outcome_source": "synthetic-customer-test",
+              "confidence": 0.83
+            },
+            {
+              "attempt_id": "a2",
+              "outcome": 1,
+              "outcome_source": "synthetic-customer-test",
+              "confidence": 0.67
+            },
+            {
+              "attempt_id": "a3",
+              "outcome": 0,
+              "outcome_source": "synthetic-customer-test",
+              "confidence": 0.49999999999999994
+            }
+          ],
+          "value": 0.8
+        },
+        {
+          "query": "Synthetic evidence",
+          "response": "Precomputed",
+          "case_id": "all-success",
+          "attempts": [
+            {
+              "attempt_id": "a0",
+              "outcome": 1,
+              "outcome_source": "synthetic-customer-test",
+              "confidence": 0.8300000000000001
+            },
+            {
+              "attempt_id": "a1",
+              "outcome": 1,
+              "outcome_source": "synthetic-customer-test",
+              "confidence": 0.83
+            },
+            {
+              "attempt_id": "a2",
+              "outcome": 1,
+              "outcome_source": "synthetic-customer-test",
+              "confidence": 0.67
+            },
+            {
+              "attempt_id": "a3",
+              "outcome": 1,
+              "outcome_source": "synthetic-customer-test",
+              "confidence": 0.49999999999999994
+            }
+          ],
+          "value": 0.8
+        }
+      ],
+      "criteria": [
+        {
+          "type": "azure_ai_evaluator",
+          "name": "prototype_outcome",
+          "evaluator_name": "prototype_outcome",
+          "initialization_parameters": {
+            "deployment_name": "prototype-gpt-41-mini",
+            "pass_threshold": 0.5
+          }
+        },
+        {
+          "type": "azure_ai_evaluator",
+          "name": "prototype_scalar",
+          "evaluator_name": "prototype_scalar",
+          "initialization_parameters": {
+            "deployment_name": "prototype-gpt-41-mini",
+            "pass_threshold": 0.5
+          }
+        }
+      ],
+      "expected": [
+        [
+          0.25,
+          0.8
+        ],
+        [
+          1.0,
+          0.8
+        ]
+      ],
+      "evaluation": {
+        "object": "eval",
+        "created_at": 1795438303,
+        "modified_at": 1795438303,
+        "id": "eval_606b54c4bb5e48be908857050c0cebef",
+        "name": "prototype-two-independent-metrics",
+        "metadata": {},
+        "properties": {
+          "evals_run_type": "azure_ai"
+        },
+        "data_source_config": {
+          "type": "custom",
+          "item_schema": {},
+          "include_sample_schema": true,
+          "schema": {
+            "item": {
+              "type": "object",
+              "properties": {
+                "query": {
+                  "type": "string"
+                },
+                "response": {
+                  "type": "string"
+                },
+                "case_id": {
+                  "type": "string"
+                },
+                "value": {},
+                "attempts": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "attempts_json": {
+                  "type": "string"
+                },
+                "campaign": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "renamed": {}
+              }
+            },
+            "sample": {
+              "type": "object",
+              "properties": {
+                "output_text": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "testing_criteria": [
+          {
+            "type": "azure_ai_evaluator",
+            "id": "prototype_outcome_06d7c210-4c99-4d17-82ba-76dafc4c02a7",
+            "name": "prototype_outcome",
+            "evaluator_name": "prototype_outcome",
+            "evaluator_version": "",
+            "initialization_parameters": {
+              "deployment_name": "prototype-gpt-41-mini",
+              "pass_threshold": 0.5
+            },
+            "data_mapping": {}
+          },
+          {
+            "type": "azure_ai_evaluator",
+            "id": "prototype_scalar_2dcda165-2f81-4d9e-8c04-d3f35935577d",
+            "name": "prototype_scalar",
+            "evaluator_name": "prototype_scalar",
+            "evaluator_version": "",
+            "initialization_parameters": {
+              "deployment_name": "prototype-gpt-41-mini",
+              "pass_threshold": 0.5
+            },
+            "data_mapping": {}
+          }
+        ]
+      },
+      "run": {
+        "object": "eval.run",
+        "created_at": 1795438303,
+        "modified_at": 1795438305,
+        "duration": null,
+        "id": "evalrun_95b17e18e22d43ccb87f6fe2b43b81ea",
+        "eval_id": "eval_606b54c4bb5e48be908857050c0cebef",
+        "status": "in_progress",
+        "data_source": {
+          "type": "jsonl",
+          "source": {
+            "type": "file_content",
+            "content": [
+              {
+                "item": {
+                  "query": "Synthetic evidence",
+                  "response": "Precomputed",
+                  "case_id": "mixed",
+                  "attempts": [
+                    {
+                      "attempt_id": "a0",
+                      "outcome": 1,
+                      "outcome_source": "synthetic-customer-test",
+                      "confidence": 0.8300000000000001
+                    },
+                    {
+                      "attempt_id": "a1",
+                      "outcome": 1,
+                      "outcome_source": "synthetic-customer-test",
+                      "confidence": 0.83
+                    },
+                    {
+                      "attempt_id": "a2",
+                      "outcome": 1,
+                      "outcome_source": "synthetic-customer-test",
+                      "confidence": 0.67
+                    },
+                    {
+                      "attempt_id": "a3",
+                      "outcome": 0,
+                      "outcome_source": "synthetic-customer-test",
+                      "confidence": 0.49999999999999994
+                    }
+                  ],
+                  "value": 0.8
+                }
+              },
+              {
+                "item": {
+                  "query": "Synthetic evidence",
+                  "response": "Precomputed",
+                  "case_id": "all-success",
+                  "attempts": [
+                    {
+                      "attempt_id": "a0",
+                      "outcome": 1,
+                      "outcome_source": "synthetic-customer-test",
+                      "confidence": 0.8300000000000001
+                    },
+                    {
+                      "attempt_id": "a1",
+                      "outcome": 1,
+                      "outcome_source": "synthetic-customer-test",
+                      "confidence": 0.83
+                    },
+                    {
+                      "attempt_id": "a2",
+                      "outcome": 1,
+                      "outcome_source": "synthetic-customer-test",
+                      "confidence": 0.67
+                    },
+                    {
+                      "attempt_id": "a3",
+                      "outcome": 1,
+                      "outcome_source": "synthetic-customer-test",
+                      "confidence": 0.49999999999999994
+                    }
+                  ],
+                  "value": 0.8
+                }
+              }
+            ]
+          }
+        },
+        "metadata": {
+          "trigger_type": "oneoff"
+        },
+        "properties": {
+          "eval_id": "eval_606b54c4bb5e48be908857050c0cebef",
+          "runType": "eval_run",
+          "_azureml.evaluation_run": "evaluation.service",
+          "_azureml.evaluate_artifacts": "[{\"path\": \"instance_results.jsonl\", \"type\": \"table\"}]"
+        },
+        "name": "two-independent-metrics",
+        "report_url": null,
+        "result_counts": {
+          "total": 0,
+          "passed": 0,
+          "failed": 0
+        },
+        "per_model_usage": [],
+        "per_testing_criteria_results": [],
+        "error": null
+      }
+    },
+    "unavailable": {
+      "input": [
+        {
+          "query": "Synthetic evidence",
+          "response": "Precomputed",
+          "case_id": "missing"
+        },
+        {
+          "query": "Synthetic evidence",
+          "response": "Precomputed",
+          "case_id": "too-few",
+          "attempts": [
+            {
+              "attempt_id": "a0",
+              "outcome": 1,
+              "outcome_source": "synthetic-customer-test",
+              "confidence": 0.8300000000000001
+            }
+          ]
+        },
+        {
+          "query": "Synthetic evidence",
+          "response": "Precomputed",
+          "case_id": "null-outcome",
+          "attempts": [
+            {
+              "attempt_id": "a0",
+              "outcome": 1,
+              "outcome_source": "synthetic-customer-test",
+              "confidence": 0.8300000000000001
+            },
+            {
+              "attempt_id": "a1",
+              "outcome": null,
+              "outcome_source": "synthetic-customer-test",
+              "confidence": 0.83
+            }
+          ]
+        },
+        {
+          "query": "Synthetic evidence",
+          "response": "Precomputed",
+          "case_id": "duplicate",
+          "attempts": [
+            {
+              "attempt_id": "a0",
+              "outcome": 1,
+              "outcome_source": "synthetic-customer-test",
+              "confidence": 0.8300000000000001
+            },
+            {
+              "attempt_id": "a0",
+              "outcome": 1,
+              "outcome_source": "synthetic-customer-test",
+              "confidence": 0.8300000000000001
+            }
+          ]
+        }
+      ],
+      "criteria": [
+        {
+          "type": "azure_ai_evaluator",
+          "name": "prototype_outcome",
+          "evaluator_name": "prototype_outcome",
+          "initialization_parameters": {
+            "deployment_name": "prototype-gpt-41-mini",
+            "pass_threshold": 0.5
+          }
+        }
+      ],
+      "expected": null,
+      "evaluation": {
+        "object": "eval",
+        "created_at": 1795438304,
+        "modified_at": 1795438304,
+        "id": "eval_643746c4483a4073939765fae93efd40",
+        "name": "prototype-unavailable",
+        "metadata": {},
+        "properties": {
+          "evals_run_type": "azure_ai"
+        },
+        "data_source_config": {
+          "type": "custom",
+          "item_schema": {},
+          "include_sample_schema": true,
+          "schema": {
+            "item": {
+              "type": "object",
+              "properties": {
+                "query": {
+                  "type": "string"
+                },
+                "response": {
+                  "type": "string"
+                },
+                "case_id": {
+                  "type": "string"
+                },
+                "value": {},
+                "attempts": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "attempts_json": {
+                  "type": "string"
+                },
+                "campaign": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "renamed": {}
+              }
+            },
+            "sample": {
+              "type": "object",
+              "properties": {
+                "output_text": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "testing_criteria": [
+          {
+            "type": "azure_ai_evaluator",
+            "id": "prototype_outcome_6bea700b-dfb2-4732-a4da-1d7c3a130970",
+            "name": "prototype_outcome",
+            "evaluator_name": "prototype_outcome",
+            "evaluator_version": "",
+            "initialization_parameters": {
+              "deployment_name": "prototype-gpt-41-mini",
+              "pass_threshold": 0.5
+            },
+            "data_mapping": {}
+          }
+        ]
+      },
+      "run": {
+        "object": "eval.run",
+        "created_at": 1795438304,
+        "modified_at": 1795438311,
+        "duration": "PT5.6473844S",
+        "id": "evalrun_c67965d4d61d44c7af47fd956a95e0fa",
+        "eval_id": "eval_643746c4483a4073939765fae93efd40",
+        "status": "failed",
+        "data_source": {
+          "type": "jsonl",
+          "source": {
+            "type": "file_content",
+            "content": [
+              {
+                "item": {
+                  "query": "Synthetic evidence",
+                  "response": "Precomputed",
+                  "case_id": "missing"
+                }
+              },
+              {
+                "item": {
+                  "query": "Synthetic evidence",
+                  "response": "Precomputed",
+                  "case_id": "too-few",
+                  "attempts": [
+                    {
+                      "attempt_id": "a0",
+                      "outcome": 1,
+                      "outcome_source": "synthetic-customer-test",
+                      "confidence": 0.8300000000000001
+                    }
+                  ]
+                }
+              },
+              {
+                "item": {
+                  "query": "Synthetic evidence",
+                  "response": "Precomputed",
+                  "case_id": "null-outcome",
+                  "attempts": [
+                    {
+                      "attempt_id": "a0",
+                      "outcome": 1,
+                      "outcome_source": "synthetic-customer-test",
+                      "confidence": 0.8300000000000001
+                    },
+                    {
+                      "attempt_id": "a1",
+                      "outcome": null,
+                      "outcome_source": "synthetic-customer-test",
+                      "confidence": 0.83
+                    }
+                  ]
+                }
+              },
+              {
+                "item": {
+                  "query": "Synthetic evidence",
+                  "response": "Precomputed",
+                  "case_id": "duplicate",
+                  "attempts": [
+                    {
+                      "attempt_id": "a0",
+                      "outcome": 1,
+                      "outcome_source": "synthetic-customer-test",
+                      "confidence": 0.8300000000000001
+                    },
+                    {
+                      "attempt_id": "a0",
+                      "outcome": 1,
+                      "outcome_source": "synthetic-customer-test",
+                      "confidence": 0.8300000000000001
+                    }
+                  ]
+                }
+              }
+            ]
+          }
+        },
+        "metadata": {
+          "trigger_type": "oneoff"
+        },
+        "properties": {
+          "eval_id": "eval_643746c4483a4073939765fae93efd40",
+          "runType": "eval_run",
+          "_azureml.evaluation_run": "evaluation.service",
+          "_azureml.evaluate_artifacts": "[{\"path\": \"instance_results.jsonl\", \"type\": \"table\"}]",
+          "DataSourceType": "Jsonl",
+          "job_logs": "azureai://accounts/eval-prototype-88aae1bae5/projects/managed-evals-prototype/evaluationresults/eval-result-evalrun_c67965d4d61d44c7af47fd956a95e0fa-QVEP/versions/1"
+        },
+        "name": "unavailable",
+        "report_url": "https://ai.azure.com/nextgen/r/-mjrs8TESz-MkcvvTBGddw,rg-foundry-eval-prototype-88aae1bae5,,eval-prototype-88aae1bae5,managed-evals-prototype/build/evaluations/eval_643746c4483a4073939765fae93efd40/run/evalrun_c67965d4d61d44c7af47fd956a95e0fa",
+        "result_counts": {
+          "total": 0,
+          "passed": 0,
+          "failed": 0
+        },
+        "per_model_usage": [],
+        "per_testing_criteria_results": [],
+        "error": {
+          "code": "SystemError",
+          "message": "Evaluation system error: Out of range float values are not JSON compliant: nan",
+          "correlation_id": "",
+          "inner_error": {
+            "code": "InternalServerError"
+          }
+        }
+      }
+    },
+    "numeric-contract": {
+      "input": [
+        {
+          "query": "Synthetic evidence",
+          "response": "Precomputed",
+          "case_id": "0.0",
+          "value": 0.0
+        },
+        {
+          "query": "Synthetic evidence",
+          "response": "Precomputed",
+          "case_id": "1.0",
+          "value": 1.0
+        },
+        {
+          "query": "Synthetic evidence",
+          "response": "Precomputed",
+          "case_id": "0.8300000000000001",
+          "value": 0.8300000000000001
+        },
+        {
+          "query": "Synthetic evidence",
+          "response": "Precomputed",
+          "case_id": "0.83",
+          "value": 0.83
+        },
+        {
+          "query": "Synthetic evidence",
+          "response": "Precomputed",
+          "case_id": "-0.1",
+          "value": -0.1
+        },
+        {
+          "query": "Synthetic evidence",
+          "response": "Precomputed",
+          "case_id": "1.1",
+          "value": 1.1
+        },
+        {
+          "query": "Synthetic evidence",
+          "response": "Precomputed",
+          "case_id": "exception",
+          "value": "exception"
+        },
+        {
+          "query": "Synthetic evidence",
+          "response": "Precomputed",
+          "case_id": "null",
+          "value": "null"
+        },
+        {
+          "query": "Synthetic evidence",
+          "response": "Precomputed",
+          "case_id": "object",
+          "value": "object"
+        },
+        {
+          "query": "Synthetic evidence",
+          "response": "Precomputed",
+          "case_id": "nan",
+          "value": "nan"
+        },
+        {
+          "query": "Synthetic evidence",
+          "response": "Precomputed",
+          "case_id": "infinity",
+          "value": "infinity"
+        }
+      ],
+      "criteria": [
+        {
+          "type": "azure_ai_evaluator",
+          "name": "prototype_numeric_contract",
+          "evaluator_name": "prototype_numeric_contract",
+          "initialization_parameters": {
+            "deployment_name": "prototype-gpt-41-mini",
+            "pass_threshold": 0.5
+          }
+        }
+      ],
+      "expected": null,
+      "evaluation": {
+        "object": "eval",
+        "created_at": 1795438305,
+        "modified_at": 1795438305,
+        "id": "eval_3c982f1bedb04cb89fade897a1b67b85",
+        "name": "prototype-numeric-contract",
+        "metadata": {},
+        "properties": {
+          "evals_run_type": "azure_ai"
+        },
+        "data_source_config": {
+          "type": "custom",
+          "item_schema": {},
+          "include_sample_schema": true,
+          "schema": {
+            "item": {
+              "type": "object",
+              "properties": {
+                "query": {
+                  "type": "string"
+                },
+                "response": {
+                  "type": "string"
+                },
+                "case_id": {
+                  "type": "string"
+                },
+                "value": {},
+                "attempts": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "attempts_json": {
+                  "type": "string"
+                },
+                "campaign": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "renamed": {}
+              }
+            },
+            "sample": {
+              "type": "object",
+              "properties": {
+                "output_text": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "testing_criteria": [
+          {
+            "type": "azure_ai_evaluator",
+            "id": "prototype_numeric_contract_e2ed8dfd-8bfe-433d-9c00-5760eef7f9bb",
+            "name": "prototype_numeric_contract",
+            "evaluator_name": "prototype_numeric_contract",
+            "evaluator_version": "",
+            "initialization_parameters": {
+              "deployment_name": "prototype-gpt-41-mini",
+              "pass_threshold": 0.5
+            },
+            "data_mapping": {}
+          }
+        ]
+      },
+      "run": {
+        "object": "eval.run",
+        "created_at": 1795438305,
+        "modified_at": 1795438307,
+        "duration": null,
+        "id": "evalrun_3b2629b2d26142f8a554fd0e08d5bedd",
+        "eval_id": "eval_3c982f1bedb04cb89fade897a1b67b85",
+        "status": "in_progress",
+        "data_source": {
+          "type": "jsonl",
+          "source": {
+            "type": "file_content",
+            "content": [
+              {
+                "item": {
+                  "query": "Synthetic evidence",
+                  "response": "Precomputed",
+                  "case_id": "0.0",
+                  "value": 0
+                }
+              },
+              {
+                "item": {
+                  "query": "Synthetic evidence",
+                  "response": "Precomputed",
+                  "case_id": "1.0",
+                  "value": 1
+                }
+              },
+              {
+                "item": {
+                  "query": "Synthetic evidence",
+                  "response": "Precomputed",
+                  "case_id": "0.8300000000000001",
+                  "value": 0.8300000000000001
+                }
+              },
+              {
+                "item": {
+                  "query": "Synthetic evidence",
+                  "response": "Precomputed",
+                  "case_id": "0.83",
+                  "value": 0.83
+                }
+              },
+              {
+                "item": {
+                  "query": "Synthetic evidence",
+                  "response": "Precomputed",
+                  "case_id": "-0.1",
+                  "value": -0.1
+                }
+              },
+              {
+                "item": {
+                  "query": "Synthetic evidence",
+                  "response": "Precomputed",
+                  "case_id": "1.1",
+                  "value": 1.1
+                }
+              },
+              {
+                "item": {
+                  "query": "Synthetic evidence",
+                  "response": "Precomputed",
+                  "case_id": "exception",
+                  "value": "exception"
+                }
+              },
+              {
+                "item": {
+                  "query": "Synthetic evidence",
+                  "response": "Precomputed",
+                  "case_id": "null",
+                  "value": "null"
+                }
+              },
+              {
+                "item": {
+                  "query": "Synthetic evidence",
+                  "response": "Precomputed",
+                  "case_id": "object",
+                  "value": "object"
+                }
+              },
+              {
+                "item": {
+                  "query": "Synthetic evidence",
+                  "response": "Precomputed",
+                  "case_id": "nan",
+                  "value": "nan"
+                }
+              },
+              {
+                "item": {
+                  "query": "Synthetic evidence",
+                  "response": "Precomputed",
+                  "case_id": "infinity",
+                  "value": "infinity"
+                }
+              }
+            ]
+          }
+        },
+        "metadata": {
+          "trigger_type": "oneoff"
+        },
+        "properties": {
+          "eval_id": "eval_3c982f1bedb04cb89fade897a1b67b85",
+          "runType": "eval_run",
+          "_azureml.evaluation_run": "evaluation.service",
+          "_azureml.evaluate_artifacts": "[{\"path\": \"instance_results.jsonl\", \"type\": \"table\"}]"
+        },
+        "name": "numeric-contract",
+        "report_url": null,
+        "result_counts": {
+          "total": 0,
+          "passed": 0,
+          "failed": 0
+        },
+        "per_model_usage": [],
+        "per_testing_criteria_results": [],
+        "error": null
+      }
+    },
+    "timeout": {
+      "input": [
+        {
+          "query": "Synthetic evidence",
+          "response": "Precomputed",
+          "case_id": "timeout",
+          "value": "timeout"
+        }
+      ],
+      "criteria": [
+        {
+          "type": "azure_ai_evaluator",
+          "name": "prototype_numeric_contract",
+          "evaluator_name": "prototype_numeric_contract",
+          "initialization_parameters": {
+            "deployment_name": "prototype-gpt-41-mini",
+            "pass_threshold": 0.5
+          }
+        }
+      ],
+      "expected": null,
+      "evaluation": {
+        "object": "eval",
+        "created_at": 1795438306,
+        "modified_at": 1795438306,
+        "id": "eval_f9004101d23640edaba770198347e902",
+        "name": "prototype-timeout",
+        "metadata": {},
+        "properties": {
+          "evals_run_type": "azure_ai"
+        },
+        "data_source_config": {
+          "type": "custom",
+          "item_schema": {},
+          "include_sample_schema": true,
+          "schema": {
+            "item": {
+              "type": "object",
+              "properties": {
+                "query": {
+                  "type": "string"
+                },
+                "response": {
+                  "type": "string"
+                },
+                "case_id": {
+                  "type": "string"
+                },
+                "value": {},
+                "attempts": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "attempts_json": {
+                  "type": "string"
+                },
+                "campaign": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "renamed": {}
+              }
+            },
+            "sample": {
+              "type": "object",
+              "properties": {
+                "output_text": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "testing_criteria": [
+          {
+            "type": "azure_ai_evaluator",
+            "id": "prototype_numeric_contract_966adbaf-deb9-452b-bb10-d362bd56d440",
+            "name": "prototype_numeric_contract",
+            "evaluator_name": "prototype_numeric_contract",
+            "evaluator_version": "",
+            "initialization_parameters": {
+              "deployment_name": "prototype-gpt-41-mini",
+              "pass_threshold": 0.5
+            },
+            "data_mapping": {}
+          }
+        ]
+      },
+      "run": {
+        "object": "eval.run",
+        "created_at": 1795438306,
+        "modified_at": 1795438308,
+        "duration": null,
+        "id": "evalrun_2c561f7a530740fe87a50b01eb6b3747",
+        "eval_id": "eval_f9004101d23640edaba770198347e902",
+        "status": "in_progress",
+        "data_source": {
+          "type": "jsonl",
+          "source": {
+            "type": "file_content",
+            "content": [
+              {
+                "item": {
+                  "query": "Synthetic evidence",
+                  "response": "Precomputed",
+                  "case_id": "timeout",
+                  "value": "timeout"
+                }
+              }
+            ]
+          }
+        },
+        "metadata": {
+          "trigger_type": "oneoff"
+        },
+        "properties": {
+          "eval_id": "eval_f9004101d23640edaba770198347e902",
+          "runType": "eval_run",
+          "_azureml.evaluation_run": "evaluation.service",
+          "_azureml.evaluate_artifacts": "[{\"path\": \"instance_results.jsonl\", \"type\": \"table\"}]"
+        },
+        "name": "timeout",
+        "report_url": null,
+        "result_counts": {
+          "total": 0,
+          "passed": 0,
+          "failed": 0
+        },
+        "per_model_usage": [],
+        "per_testing_criteria_results": [],
+        "error": null
+      }
+    },
+    "no-threshold": {
+      "input": [
+        {
+          "query": "Synthetic evidence",
+          "response": "Precomputed",
+          "case_id": "measurement-only",
+          "value": 0.625
+        }
+      ],
+      "criteria": [
+        {
+          "type": "azure_ai_evaluator",
+          "name": "prototype_scalar",
+          "evaluator_name": "prototype_scalar",
+          "initialization_parameters": {
+            "deployment_name": "prototype-gpt-41-mini"
+          }
+        }
+      ],
+      "expected": null,
+      "api_error": {
+        "type": "ServiceError",
+        "status_code": 400,
+        "message": "{\n  \"error\": {\n    \"code\": \"UserError\",\n    \"severity\": null,\n    \"message\": \"Evaluation validation failed: missing required parameters for evaluators 'prototype_scalar'.\",\n    \"messageFormat\": \"Evaluation validation failed: {errors}\",\n    \"messageParameters\": {\n      \"errors\": \"missing required parameters for evaluators 'prototype_scalar'.\"\n    },\n    \"referenceCode\": null,\n    \"detailsUri\": \"https://aka.ms/FoundryEvalsFormatIssues\",\n    \"target\": \"testing_criteria\",\n    \"details\": [\n      {\n        \"code\": \"MissingRequiredParameter\",\n        \"severity\": null,\n        \"message\": \"Parameter 'pass_threshold' is required by evaluator 'prototype_scalar'.\",\n        \"messageFormat\": null,\n        \"messageParameters\": {},\n        \"referenceCode\": null,\n        \"detailsUri\": null,\n        \"target\": \"evaluation.testing_criteria[0].initialization_parameters.pass_threshold\",\n        \"details\": [],\n        \"innerError\": null,\n        \"debugInfo\": null,\n        \"additionalInfo\": null\n      }\n    ],\n    \"innerError\": {\n      \"code\": \"EvalValidationFailed\",\n      \"innerError\": null\n    },\n    \"debugInfo\": null,\n    \"additionalInfo\": null\n  },\n  \"correlation\": {\n    \"operation\": \"82d57159b5df64e30d5ee0969d3bffa1\",\n    \"request\": \"34bc6fa202d07e5f\"\n  },\n  \"environment\": \"swedencentral\",\n  \"location\": \"swedencentral\",\n  \"time\": \"2026-11-23T12:51:47.1318302+00:00\",\n  \"componentName\": \"raisvc\",\n  \"statusCode\": 400\n}"
+      }
+    },
+    "no-deployment": {
+      "input": [
+        {
+          "query": "Synthetic evidence",
+          "response": "Precomputed",
+          "case_id": "no-deployment",
+          "value": 0.625
+        }
+      ],
+      "criteria": [
+        {
+          "type": "azure_ai_evaluator",
+          "name": "prototype_scalar",
+          "evaluator_name": "prototype_scalar",
+          "initialization_parameters": {
+            "pass_threshold": 0.5
+          }
+        }
+      ],
+      "expected": null,
+      "api_error": {
+        "type": "ServiceError",
+        "status_code": 400,
+        "message": "{\n  \"error\": {\n    \"code\": \"UserError\",\n    \"severity\": null,\n    \"message\": \"Evaluation validation failed: missing required parameters for evaluators 'prototype_scalar'.\",\n    \"messageFormat\": \"Evaluation validation failed: {errors}\",\n    \"messageParameters\": {\n      \"errors\": \"missing required parameters for evaluators 'prototype_scalar'.\"\n    },\n    \"referenceCode\": null,\n    \"detailsUri\": \"https://aka.ms/FoundryEvalsFormatIssues\",\n    \"target\": \"testing_criteria\",\n    \"details\": [\n      {\n        \"code\": \"MissingRequiredParameter\",\n        \"severity\": null,\n        \"message\": \"Parameter 'deployment_name' is required by evaluator 'prototype_scalar'.\",\n        \"messageFormat\": null,\n        \"messageParameters\": {},\n        \"referenceCode\": null,\n        \"detailsUri\": null,\n        \"target\": \"evaluation.testing_criteria[0].initialization_parameters.deployment_name\",\n        \"details\": [],\n        \"innerError\": null,\n        \"debugInfo\": null,\n        \"additionalInfo\": null\n      }\n    ],\n    \"innerError\": {\n      \"code\": \"EvalValidationFailed\",\n      \"innerError\": null\n    },\n    \"debugInfo\": null,\n    \"additionalInfo\": null\n  },\n  \"correlation\": {\n    \"operation\": \"652dfa793ed4c56c1fc9b46bf44c3f75\",\n    \"request\": \"8b91fb33fb3bbb0b\"\n  },\n  \"environment\": \"swedencentral\",\n  \"location\": \"swedencentral\",\n  \"time\": \"2026-11-23T12:51:47.4631075+00:00\",\n  \"componentName\": \"raisvc\",\n  \"statusCode\": 400\n}"
+      }
+    },
+    "runtime": {
+      "input": [
+        {
+          "query": "Synthetic evidence",
+          "response": "Precomputed",
+          "case_id": "numpy-and-network"
+        }
+      ],
+      "criteria": [
+        {
+          "type": "azure_ai_evaluator",
+          "name": "prototype_runtime",
+          "evaluator_name": "prototype_runtime",
+          "initialization_parameters": {
+            "deployment_name": "prototype-gpt-41-mini",
+            "pass_threshold": 0.5
+          }
+        }
+      ],
+      "expected": [
+        1.0
+      ],
+      "evaluation": {
+        "object": "eval",
+        "created_at": 1795438307,
+        "modified_at": 1795438307,
+        "id": "eval_7db575f409b04e6796a65474f5232937",
+        "name": "prototype-runtime",
+        "metadata": {},
+        "properties": {
+          "evals_run_type": "azure_ai"
+        },
+        "data_source_config": {
+          "type": "custom",
+          "item_schema": {},
+          "include_sample_schema": true,
+          "schema": {
+            "item": {
+              "type": "object",
+              "properties": {
+                "query": {
+                  "type": "string"
+                },
+                "response": {
+                  "type": "string"
+                },
+                "case_id": {
+                  "type": "string"
+                },
+                "value": {},
+                "attempts": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "attempts_json": {
+                  "type": "string"
+                },
+                "campaign": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "renamed": {}
+              }
+            },
+            "sample": {
+              "type": "object",
+              "properties": {
+                "output_text": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "testing_criteria": [
+          {
+            "type": "azure_ai_evaluator",
+            "id": "prototype_runtime_71b8bc70-fb9c-4d18-b861-b980158325fb",
+            "name": "prototype_runtime",
+            "evaluator_name": "prototype_runtime",
+            "evaluator_version": "",
+            "initialization_parameters": {
+              "deployment_name": "prototype-gpt-41-mini",
+              "pass_threshold": 0.5
+            },
+            "data_mapping": {}
+          }
+        ]
+      },
+      "run": {
+        "object": "eval.run",
+        "created_at": 1795438308,
+        "modified_at": 1795438314,
+        "duration": "PT4.2652284S",
+        "id": "evalrun_a394679dfbf5427b87593d202cbfd3b8",
+        "eval_id": "eval_7db575f409b04e6796a65474f5232937",
+        "status": "failed",
+        "data_source": {
+          "type": "jsonl",
+          "source": {
+            "type": "file_content",
+            "content": [
+              {
+                "item": {
+                  "query": "Synthetic evidence",
+                  "response": "Precomputed",
+                  "case_id": "numpy-and-network"
+                }
+              }
+            ]
+          }
+        },
+        "metadata": {
+          "trigger_type": "oneoff"
+        },
+        "properties": {
+          "eval_id": "eval_7db575f409b04e6796a65474f5232937",
+          "runType": "eval_run",
+          "_azureml.evaluation_run": "evaluation.service",
+          "_azureml.evaluate_artifacts": "[{\"path\": \"instance_results.jsonl\", \"type\": \"table\"}]",
+          "DataSourceType": "Jsonl",
+          "job_logs": "azureai://accounts/eval-prototype-88aae1bae5/projects/managed-evals-prototype/evaluationresults/eval-result-evalrun_a394679dfbf5427b87593d202cbfd3b8-HJLH/versions/1"
+        },
+        "name": "runtime",
+        "report_url": "https://ai.azure.com/nextgen/r/-mjrs8TESz-MkcvvTBGddw,rg-foundry-eval-prototype-88aae1bae5,,eval-prototype-88aae1bae5,managed-evals-prototype/build/evaluations/eval_7db575f409b04e6796a65474f5232937/run/evalrun_a394679dfbf5427b87593d202cbfd3b8",
+        "result_counts": {
+          "total": 0,
+          "passed": 0,
+          "failed": 0
+        },
+        "per_model_usage": [],
+        "per_testing_criteria_results": [],
+        "error": {
+          "code": "UserError",
+          "message": "Evaluation failed with AOAI error: Error code: 400 - {'error': {'message': \"Invalid grader source: use of module 'socket' is not allowed in Python graders\", 'type': 'invalid_request_error', 'param': None, 'code': 'invalid_grader'}}. Request: <Request('POST', 'https://eval-prototype-88aae1bae5.openai.azure.com/openai/evals?api-version=2025-04-01-preview')>, Request id: 2f551ab0-ee78-4321-a1ac-4d899b7c666f. Source error: N/A",
+          "correlation_id": "",
+          "inner_error": {
+            "code": "BadRequest"
+          }
+        }
+      }
+    },
+    "escaped-json": {
+      "input": [
+        {
+          "query": "Synthetic evidence",
+          "response": "Precomputed",
+          "case_id": "escaped",
+          "attempts_json": "[{\"attempt_id\": \"a0\", \"outcome\": 1, \"outcome_source\": \"synthetic-customer-test\", \"confidence\": 0.8300000000000001}, {\"attempt_id\": \"a1\", \"outcome\": 0, \"outcome_source\": \"synthetic-customer-test\", \"confidence\": 0.83}] \n\t"
+        }
+      ],
+      "criteria": [
+        {
+          "type": "azure_ai_evaluator",
+          "name": "prototype_outcome_json",
+          "evaluator_name": "prototype_outcome_json",
+          "initialization_parameters": {
+            "deployment_name": "prototype-gpt-41-mini",
+            "pass_threshold": 0.5
+          }
+        }
+      ],
+      "expected": [
+        0.0
+      ],
+      "evaluation": {
+        "object": "eval",
+        "created_at": 1795438308,
+        "modified_at": 1795438308,
+        "id": "eval_c025350fbc6d41be8b14c1127029b10d",
+        "name": "prototype-escaped-json",
+        "metadata": {},
+        "properties": {
+          "evals_run_type": "azure_ai"
+        },
+        "data_source_config": {
+          "type": "custom",
+          "item_schema": {},
+          "include_sample_schema": true,
+          "schema": {
+            "item": {
+              "type": "object",
+              "properties": {
+                "query": {
+                  "type": "string"
+                },
+                "response": {
+                  "type": "string"
+                },
+                "case_id": {
+                  "type": "string"
+                },
+                "value": {},
+                "attempts": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "attempts_json": {
+                  "type": "string"
+                },
+                "campaign": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "renamed": {}
+              }
+            },
+            "sample": {
+              "type": "object",
+              "properties": {
+                "output_text": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "testing_criteria": [
+          {
+            "type": "azure_ai_evaluator",
+            "id": "prototype_outcome_json_62b330fc-9228-4951-ad51-bcf23ca8de18",
+            "name": "prototype_outcome_json",
+            "evaluator_name": "prototype_outcome_json",
+            "evaluator_version": "",
+            "initialization_parameters": {
+              "deployment_name": "prototype-gpt-41-mini",
+              "pass_threshold": 0.5
+            },
+            "data_mapping": {}
+          }
+        ]
+      },
+      "run": {
+        "object": "eval.run",
+        "created_at": 1795438309,
+        "modified_at": 1795438311,
+        "duration": null,
+        "id": "evalrun_c1a6f9c531514daea793b891e32e7645",
+        "eval_id": "eval_c025350fbc6d41be8b14c1127029b10d",
+        "status": "in_progress",
+        "data_source": {
+          "type": "jsonl",
+          "source": {
+            "type": "file_content",
+            "content": [
+              {
+                "item": {
+                  "query": "Synthetic evidence",
+                  "response": "Precomputed",
+                  "case_id": "escaped",
+                  "attempts_json": "[{\"attempt_id\": \"a0\", \"outcome\": 1, \"outcome_source\": \"synthetic-customer-test\", \"confidence\": 0.8300000000000001}, {\"attempt_id\": \"a1\", \"outcome\": 0, \"outcome_source\": \"synthetic-customer-test\", \"confidence\": 0.83}] \n\t"
+                }
+              }
+            ]
+          }
+        },
+        "metadata": {
+          "trigger_type": "oneoff"
+        },
+        "properties": {
+          "eval_id": "eval_c025350fbc6d41be8b14c1127029b10d",
+          "runType": "eval_run",
+          "_azureml.evaluation_run": "evaluation.service",
+          "_azureml.evaluate_artifacts": "[{\"path\": \"instance_results.jsonl\", \"type\": \"table\"}]"
+        },
+        "name": "escaped-json",
+        "report_url": null,
+        "result_counts": {
+          "total": 0,
+          "passed": 0,
+          "failed": 0
+        },
+        "per_model_usage": [],
+        "per_testing_criteria_results": [],
+        "error": null
+      }
+    },
+    "uploaded-jsonl": {
+      "input": [
+        {
+          "query": "Synthetic evidence",
+          "response": "Precomputed",
+          "case_id": "mixed",
+          "attempts": [
+            {
+              "attempt_id": "a0",
+              "outcome": 1,
+              "outcome_source": "synthetic-customer-test",
+              "confidence": 0.8300000000000001
+            },
+            {
+              "attempt_id": "a1",
+              "outcome": 1,
+              "outcome_source": "synthetic-customer-test",
+              "confidence": 0.83
+            },
+            {
+              "attempt_id": "a2",
+              "outcome": 1,
+              "outcome_source": "synthetic-customer-test",
+              "confidence": 0.67
+            },
+            {
+              "attempt_id": "a3",
+              "outcome": 0,
+              "outcome_source": "synthetic-customer-test",
+              "confidence": 0.49999999999999994
+            }
+          ]
+        },
+        {
+          "query": "Synthetic evidence",
+          "response": "Precomputed",
+          "case_id": "all-success",
+          "attempts": [
+            {
+              "attempt_id": "a0",
+              "outcome": 1,
+              "outcome_source": "synthetic-customer-test",
+              "confidence": 0.8300000000000001
+            },
+            {
+              "attempt_id": "a1",
+              "outcome": 1,
+              "outcome_source": "synthetic-customer-test",
+              "confidence": 0.83
+            },
+            {
+              "attempt_id": "a2",
+              "outcome": 1,
+              "outcome_source": "synthetic-customer-test",
+              "confidence": 0.67
+            },
+            {
+              "attempt_id": "a3",
+              "outcome": 1,
+              "outcome_source": "synthetic-customer-test",
+              "confidence": 0.49999999999999994
+            }
+          ]
+        }
+      ],
+      "criteria": [
+        {
+          "type": "azure_ai_evaluator",
+          "name": "prototype_outcome",
+          "evaluator_name": "prototype_outcome",
+          "initialization_parameters": {
+            "deployment_name": "prototype-gpt-41-mini",
+            "pass_threshold": 0.5
+          }
+        }
+      ],
+      "expected": [
+        0.25,
+        1.0
+      ],
+      "evaluation": {
+        "object": "eval",
+        "created_at": 1795438310,
+        "modified_at": 1795438310,
+        "id": "eval_4fb46455c33847f0b917d393efedecc0",
+        "name": "prototype-uploaded-jsonl",
+        "metadata": {},
+        "properties": {
+          "evals_run_type": "azure_ai"
+        },
+        "data_source_config": {
+          "type": "custom",
+          "item_schema": {},
+          "include_sample_schema": true,
+          "schema": {
+            "item": {
+              "type": "object",
+              "properties": {
+                "query": {
+                  "type": "string"
+                },
+                "response": {
+                  "type": "string"
+                },
+                "case_id": {
+                  "type": "string"
+                },
+                "value": {},
+                "attempts": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "attempts_json": {
+                  "type": "string"
+                },
+                "campaign": {
+                  "type": "array",
+                  "items": {
+                    "type": "object"
+                  }
+                },
+                "renamed": {}
+              }
+            },
+            "sample": {
+              "type": "object",
+              "properties": {
+                "output_text": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        },
+        "testing_criteria": [
+          {
+            "type": "azure_ai_evaluator",
+            "id": "prototype_outcome_3a4499f2-fe97-4506-a6df-60aaf8f7c592",
+            "name": "prototype_outcome",
+            "evaluator_name": "prototype_outcome",
+            "evaluator_version": "",
+            "initialization_parameters": {
+              "deployment_name": "prototype-gpt-41-mini",
+              "pass_threshold": 0.5
+            },
+            "data_mapping": {}
+          }
+        ]
+      },
+      "run": {
+        "object": "eval.run",
+        "created_at": 1795438312,
+        "modified_at": 1795438313,
+        "duration": null,
+        "id": "evalrun_9cc5146c7bea46e78b016a3c466d2461",
+        "eval_id": "eval_4fb46455c33847f0b917d393efedecc0",
+        "status": "in_progress",
+        "data_source": {
+          "type": "jsonl",
+          "source": {
+            "type": "file_id",
+            "id": "file-48eba5ddebbf408f888aa879920afb5f"
+          }
+        },
+        "metadata": {
+          "trigger_type": "oneoff"
+        },
+        "properties": {
+          "eval_id": "eval_4fb46455c33847f0b917d393efedecc0",
+          "runType": "eval_run",
+          "_azureml.evaluation_run": "evaluation.service",
+          "_azureml.evaluate_artifacts": "[{\"path\": \"instance_results.jsonl\", \"type\": \"table\"}]"
+        },
+        "name": "uploaded-jsonl",
+        "report_url": null,
+        "result_counts": {
+          "total": 0,
+          "passed": 0,
+          "failed": 0
+        },
+        "per_model_usage": [],
+        "per_testing_criteria_results": [],
+        "error": null
+      }
+    }
+  },
+  "cleanup": {
+    "verified": true,
+    "group_exists": false,
+    "checked_at": "2026-11-23T12:53:21.288486+00:00"
+  },
+  "model": {
+    "name": "prototype-gpt-41-mini",
+    "model": "gpt-4.1-mini",
+    "version": "2025-04-14",
+    "capacity": 1
+  },
+  "project_endpoint": "https://eval-prototype-88aae1bae5.services.ai.azure.com/api/projects/managed-evals-prototype",
+  "api_versions": {
+    "projects": "v1",
+    "openai_base_url": "https://eval-prototype-88aae1bae5.services.ai.azure.com/api/projects/managed-evals-prototype/openai/v1"
+  },
+  "fatal_error": {
+    "type": "URLError",
+    "message": "TLS UNEXPECTED_EOF_WHILE_READING during polling; incomplete run results"
+  }
+}
