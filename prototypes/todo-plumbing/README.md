@@ -5,7 +5,7 @@ implementation of the full reliability scorecard. It uses synthetic data only.
 The results, including unsuccessful and unverified paths, belong in the
 corresponding `observations-*.json` file and the linked issue discussion.
 
-## Current result: blocked before agent execution
+## Current result: agent execution not yet validated
 
 On 2026-11-23 four disposable account-creation attempts returned Azure
 `InternalServerError`: one in Sweden Central with project management enabled
@@ -22,7 +22,16 @@ partitions, and an injected 503. Those checks do not establish Foundry tool
 integration or isolation. The remaining runner and hosted-agent code are
 unvalidated scaffolding and may require changes when Azure provisioning works.
 All four temporary resource groups were deleted; independent Azure CLI checks
-confirmed that each no longer exists. Final charges were not checked.
+confirmed that each no longer exists.
+
+A targeted account-creation retry in Sweden Central subsequently succeeded
+on 2026-11-23: the account reached provisioning state `Succeeded` at
+approximately 21:00 UTC. Its resource group `rg-todo-retry-6c8eb14eb3` was
+deleted and independently confirmed absent. The prior 20:50 UTC account write
+failed with correlation ID `d553b282-9d20-49df-a0ad-01bf75aa63a7`; the activity
+log supplies no more specific error. The cause of the earlier failures remains
+unknown. This retry tested account creation only, not the agent matrix or the
+remaining scaffold. Final charges were not checked.
 
 ## What this probes
 
