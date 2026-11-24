@@ -198,7 +198,8 @@
       }
       if (combo?.attempts && state.metric.includes("trajectory_consistency")) {
         detail.append(el("p", "Main scores use service-received operations, not a verified complete agent trajectory. " +
-          "Native tool calls are a separate recording; neither source proves completeness."));
+          "Native tool calls are a separate recording; neither source proves completeness. " +
+          "The scores compare operation names, not arguments or correctness."));
         const native = combo.native_trajectory_sensitivity?.scores?.[state.metric];
         if (native) {
           detail.append(el("p", native.reason ? `Native-call sensitivity unavailable: ${native.reason}` :

@@ -74,7 +74,8 @@ agent output is retained and compared where exposed. The main trajectory scores
 measure service activity, not a verified complete agent trajectory. The follow-up
 run additionally calculates both trajectory metrics from native tool-call
 recordings as a separately labelled sensitivity check, without substituting
-service events when native evidence is unavailable. Neither representation proves
+service events when native evidence is unavailable. The scores compare operation
+names, not argument equivalence or correctness, and neither representation proves
 that the platform captured every action.
 Customer elapsed time measures the request wall clock; cloud elapsed time is
 the per-item Foundry target latency when present. Token use, cost attribution,
@@ -241,8 +242,8 @@ not prove any of those features is unsupported.
 
 The local service was exercised with synthetic CRUD operations, separate
 partitions, and an injected 503. Those checks do not establish Foundry tool
-integration or isolation. The remaining runner and hosted-agent code are
-unvalidated scaffolding and may require changes when Azure provisioning works.
+integration or isolation. At that stage, the remaining runner and hosted-agent
+code had not yet been validated.
 All four temporary resource groups were deleted; independent Azure CLI checks
 confirmed that each no longer exists.
 
@@ -268,13 +269,12 @@ Memory may be lost on a service restart; this is not durable storage.
 
 The harness attempts a prompt agent using an OpenAPI tool and a source-deployed
 hosted agent using a function that calls the same service. For each, it attempts
-direct customer-code invocation and Foundry cloud evaluation, with two baseline
-and two fault-condition attempts. Completed executions are grouped by condition,
-and independently sourced binary outcomes are passed to a registered
-Foundry-managed custom evaluator and calculated in the customer process.
-The expected outcome consistency for a group is
-`(2 * successful_attempts / attempt_count - 1) ** 2`. Missing execution evidence
-is unavailable, not a synthetic failed attempt.
+direct customer-code invocation and Foundry cloud evaluation, with five baseline
+attempts and two attempts each for fault, environment and prompt variation.
+The customer process groups the observed evidence and calculates each of the
+twelve metrics; applicable metrics are also submitted to registered
+Foundry-managed custom evaluators. Missing execution evidence is unavailable,
+not a synthetic failed attempt.
 
 The model's response is not authoritative evidence of external state. A
 successful outcome requires the requested CRUD operations, target completion,
@@ -291,11 +291,11 @@ creates a uniquely named resource group in Sweden Central (or East US 2 when
 `TODO_LOCATION=eastus2`). It uses Azure CLI
 2.93, Python 3.13, standard-library REST, a capacity-50 Global Standard
 `gpt-4.1-mini` deployment (capacity 1 and 10 hit 429s), and a Container Apps
-source build. A full run takes roughly 45–60 minutes including cleanup. Hosted agent
+source build. A full run can take over an hour including cleanup. Hosted agent
 dependencies are resolved by the managed remote build and are not pinned.
 
 ```powershell
-$env:TODO_SANDBOX_SUBSCRIPTION_ID = az account show --query id -o tsv
+$env:TODO_SANDBOX_SUBSCRIPTION_ID = az account show --subscription Sandbox --query id -o tsv
 uv run --no-project --python 3.13 python .\prototypes\todo-plumbing\run.py
 ```
 
