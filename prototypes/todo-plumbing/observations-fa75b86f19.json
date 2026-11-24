@@ -36277,7 +36277,9 @@
     }
   },
   "cleanup": {
-    "verified": false
+    "verified": true,
+    "group_exists": false,
+    "checked_at": "2026-11-24T16:11:29.758794+00:00"
   },
   "synthetic_preflight": {
     "outcome_consistency": {

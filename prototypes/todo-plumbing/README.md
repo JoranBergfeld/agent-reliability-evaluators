@@ -118,7 +118,9 @@ runner and an independent Azure CLI check confirmed it no longer exists.
 Values below are rounded customer-process scores. Every available value in
 each column also matched the independent calculation and Foundry-managed
 custom evaluator. The main trajectory values describe received service
-operations, not verified complete agent-action traces.
+operations, not verified complete agent-action traces. Managed graders run a
+packaged copy of the same prototype calculation; the independent oracle runs
+locally, so managed agreement is not an independent validation of the formulas.
 
 | Metric | Prompt / customer | Prompt / cloud | Hosted / customer | Hosted / cloud |
 | --- | --- | --- | --- | --- |
@@ -176,7 +178,9 @@ operations, not verified complete agent-action traces.
 
 This repeat used the corrected tool and separate trace handling from revision
 `518cb77`. The [observations](observations-fa75b86f19.json) retain the
-synthetic evidence and individual Foundry results.
+synthetic evidence and individual Foundry results. The disposable group
+`rg-todo-metrics-fa75b86f19` was deleted; the runner and an independent Azure
+CLI check confirmed it no longer exists.
 
 | Agent / entry point | Baseline | Injected fault | Wrapped read | Prompt variation |
 | --- | --- | --- | --- | --- |
