@@ -172,6 +172,64 @@ operations, not verified complete agent-action traces.
   share one key, timing boundaries differ by entry point, and final cost was
   not checked.
 
+## Corrected follow-up campaign (`fa75b86f19`)
+
+This repeat used the corrected tool and separate trace handling from revision
+`518cb77`. The [observations](observations-fa75b86f19.json) retain the
+synthetic evidence and individual Foundry results.
+
+| Agent / entry point | Baseline | Injected fault | Wrapped read | Prompt variation |
+| --- | --- | --- | --- | --- |
+| Prompt / customer code | 1, 1, 1, 1, 1 | 0, 0 | 1, 1 | 0, 1 |
+| Prompt / Foundry cloud | 1, 1, 1, 1, 1 | 0, 0 | 1, 1 | 0, 1 |
+| Hosted / customer code | 1, 1, 1, 1, 1 | 0, 0 | 1, 1 | 1, 1 |
+| Hosted / Foundry cloud | 1, 1, 1, 1, 1 | 0, 0 | 1, 1 | 1, 1 |
+
+All eight fault attempts encountered the injected 503, and all eight altered
+environment attempts observed a wrapped read. Each live group had ten
+applicable metrics, all matching the independent and managed calculations:
+
+| Metric | Prompt / customer | Prompt / cloud | Hosted / customer | Hosted / cloud |
+| --- | --- | --- | --- | --- |
+| Outcome consistency | 1.000 | 1.000 | 1.000 | 1.000 |
+| Distributional trajectory consistency | 1.000 | 1.000 | 1.000 | 1.000 |
+| Sequential trajectory consistency | 1.000 | 1.000 | 1.000 | 1.000 |
+| Resource consistency | 0.923 | 0.877 | 0.970 | 0.741 |
+| Fault robustness | 0.000 | 0.000 | 0.000 | 0.000 |
+| Environment robustness | 1.000 | 1.000 | 1.000 | 1.000 |
+| Prompt robustness | 0.500 | 0.500 | 1.000 | 1.000 |
+| Calibration | 1.000 | 1.000 | 1.000 | 1.000 |
+| Strict confidence discrimination | unavailable | unavailable | unavailable | unavailable |
+| Brier predictability | 1.000 | 1.000 | 1.000 | 1.000 |
+| Constraint compliance | 1.000 | 1.000 | 1.000 | 1.000 |
+| Conditional harm severity | unavailable | unavailable | unavailable | unavailable |
+
+Values are rounded and the trajectory rows use service operations. All nominal
+outcomes were successes, so there was no failure class for discrimination; no
+live unauthorized modification occurred, so conditional severity was
+undefined. The same twelve managed graders matched all twelve fixed synthetic
+expectations together. The live results came from four separate grouped
+evaluations, not one Foundry run spanning all four paths. As in the first
+campaign, every individual managed unavailable-evidence probe failed with no
+output items.
+
+The corrected hosted tool rejected a missing ID before contacting the service.
+In hosted/customer baseline attempt 2, the agent received that error, retried
+the read with an ID, and then completed the five successful service operations.
+The strict outcome was therefore 1 even though the native recording contained
+an additional failed read. Its service-based distributional and sequential
+trajectory scores were both 1; the separately managed native-call sensitivity
+scores were approximately 0.997080 and 0.933333. The other three groups scored
+1 under both representations. Both calculations matched their independent
+expectations, but neither proves complete traces or argument equivalence.
+
+Three prompt-cloud items and three prompt/customer invocations again exposed
+target errors despite observable service events. The ten-metric live results
+remain conditional on the recorded evidence and the stated success rule; they
+are not a deployment verdict. Actual CI execution, Foundry-native aggregation,
+production isolation, final charges and the paper's separate post-completion
+confidence follow-up were not verified.
+
 ## Combined availability probe (`fa75b86f19`)
 
 The [exploratory mixed-availability probe](mixed-availability-fa75b86f19.json)
@@ -188,6 +246,11 @@ submitted all twelve custom graders together without filtering:
 These are results of this prototype's scalar graders, which raise on unavailable
 inputs. They do not prove that every possible Foundry reporting approach fails,
 but the missing values cannot be treated as zero or as customer acceptance.
+The next unresolved decisions are [agent integration and controlled-experiment
+boundaries](https://github.com/JoranBergfeld/agent-reliability-evaluators/issues/6)
+and then the [per-metric scorecard
+contract](https://github.com/JoranBergfeld/agent-reliability-evaluators/issues/5);
+this prototype does not decide either on the user's behalf.
 
 ## Previous plumbing result (`ddc66b24f7`)
 
