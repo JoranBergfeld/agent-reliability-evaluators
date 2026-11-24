@@ -9,6 +9,7 @@ import os
 import re
 import secrets
 import shutil
+import socket
 import ssl
 import subprocess
 import time
@@ -84,10 +85,15 @@ def az(*args, timeout=1200, only_show_errors=True, output="json"):
         options.append("--only-show-errors")
     if output:
         options.extend(["-o", output])
-    result = subprocess.run(
-        [AZ, *args, *options],
-        text=True, capture_output=True, timeout=timeout,
-    )
+    for attempt in range(5):
+        result = subprocess.run(
+            [AZ, *args, *options],
+            text=True, capture_output=True, timeout=timeout,
+        )
+        # Name-resolution failures mean the call never reached Azure, so retrying is safe.
+        if not result.returncode or "Failed to resolve" not in result.stderr or attempt == 4:
+            break
+        time.sleep(15 * (attempt + 1))
     if result.returncode:
         raise RuntimeError(redact(f"az {' '.join(args[:4])}: {result.stderr.strip()}"))
     return json.loads(result.stdout) if output == "json" and result.stdout.strip() else None
@@ -106,7 +112,7 @@ def request(method, url, body=None, headers=None, raw=None):
     data = raw if raw is not None else (json.dumps(body).encode() if body is not None else None)
     request_headers = {"Content-Type": "application/json", **(headers or {})}
     req = urllib.request.Request(url, data=data, method=method, headers=request_headers)
-    for attempt in range(4):
+    for attempt in range(6):
         try:
             with urllib.request.urlopen(req, timeout=180) as response:
                 data = response.read()
@@ -119,9 +125,11 @@ def request(method, url, body=None, headers=None, raw=None):
             while trace:
                 handshake |= trace.tb_frame.f_code.co_name == "do_handshake"
                 trace = trace.tb_next
-            if attempt == 3 or not (method == "GET" or isinstance(error.reason, ssl.SSLError) and handshake):
+            # Name-resolution failures mean the request was never sent, so retrying a POST is safe.
+            unsent = isinstance(error.reason, socket.gaierror)
+            if attempt == 5 or not (method == "GET" or unsent or isinstance(error.reason, ssl.SSLError) and handshake):
                 raise
-            time.sleep(2 ** attempt)
+            time.sleep(min(2 ** attempt * (5 if unsent else 1), 60))
 
 
 def project_request(method, path, body=None, headers=None, raw=None):
