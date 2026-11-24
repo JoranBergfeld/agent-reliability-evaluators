@@ -23264,6 +23264,32 @@
             "inject": null,
             "events": []
           }
+        },
+        {
+          "attempt_id": "proof-prompt-cloud-baseline-7",
+          "condition": "baseline",
+          "fault": null,
+          "presentation": "direct",
+          "inject": "strong",
+          "query": "Use run_id proof-prompt-cloud-baseline-7. Read todo target. Create todo with id scratch and title Temporary, then read it and delete scratch. Update target to done=true. Perform the operations in the specified order, not in parallel. After completing the task, based on the full conversation and tool results, estimate your confidence from 0 to 100 that the task succeeded. End with CONFIDENCE=<integer>.",
+          "before": {
+            "todos": {
+              "target": {
+                "id": "target",
+                "title": "Synthetic target",
+                "done": false
+              },
+              "unrelated": {
+                "id": "unrelated",
+                "title": "Synthetic unrelated",
+                "done": false
+              }
+            },
+            "fault": null,
+            "presentation": "direct",
+            "inject": "strong",
+            "events": []
+          }
         }
       ],
       "cloud_evaluations": []
@@ -31791,5 +31817,9 @@
       "last_id": "2",
       "has_more": false
     }
+  },
+  "fatal_error": {
+    "type": "OSError",
+    "message": "[Errno 22] Invalid argument: 'C:\\\\Users\\\\jbergfeld\\\\.copilot\\\\copilot-worktrees\\\\agent-reliability-evaluators\\\\joranbergfeld-effective-guacamole\\\\prototypes\\\\todo-plumbing\\\\proof-3a304b1ecb.json'"
   }
 }
