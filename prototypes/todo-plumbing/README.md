@@ -172,6 +172,23 @@ operations, not verified complete agent-action traces.
   share one key, timing boundaries differ by entry point, and final cost was
   not checked.
 
+## Combined availability probe (`fa75b86f19`)
+
+The [exploratory mixed-availability probe](mixed-availability-fa75b86f19.json)
+submitted all twelve custom graders together without filtering:
+
+- The fixed synthetic group had eleven numeric results and unavailable
+  conditional severity. The managed run failed and returned no output items.
+- The follow-up prompt/customer group had ten numeric results and unavailable
+  confidence discrimination and conditional severity. Its all-twelve managed
+  run also failed with no output items; submitting only its ten applicable
+  metrics separately as one managed evaluation succeeded and matched the
+  independent calculations.
+
+These are results of this prototype's scalar graders, which raise on unavailable
+inputs. They do not prove that every possible Foundry reporting approach fails,
+but the missing values cannot be treated as zero or as customer acceptance.
+
 ## Previous plumbing result (`ddc66b24f7`)
 
 Run `observations-ddc66b24f7.json` (started 2026-11-24 01:24 UTC, Sweden
