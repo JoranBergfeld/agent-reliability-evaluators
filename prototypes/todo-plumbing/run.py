@@ -31,15 +31,19 @@ GROUP = f"rg-todo-plumbing-{SUFFIX}"
 ACCOUNT = f"todo-plumbing-{SUFFIX}"
 PROJECT = "todo-plumbing"
 MODEL = "todo-gpt-41-mini"
+MODEL_CAPACITY = 50
 SERVICE_KEY = secrets.token_urlsafe(32)
 ADMIN_KEY = secrets.token_urlsafe(32)
+TOKEN = None
+TOKEN_EXPIRES = 0
 OUTPUT = ROOT / f"observations-{SUFFIX}.json"
 OBS = {
     "started_at": datetime.now(timezone.utc).isoformat(),
     "resource_group": GROUP,
     "location": LOCATION,
     "api_versions": {"agents": "v1", "evaluators": "v1", "openai": "v1", "connections": "2025-06-01"},
-    "model": {"name": "gpt-4.1-mini", "version": "2025-04-14", "sku": "GlobalStandard", "capacity": 1},
+    "model": {"name": "gpt-4.1-mini", "version": "2025-04-14", "sku": "GlobalStandard",
+              "capacity": MODEL_CAPACITY},
     "combinations": {},
     "cleanup": {"verified": False},
 }
@@ -60,14 +64,19 @@ def save():
     OUTPUT.write_text(json.dumps(redact(OBS), indent=2), encoding="utf-8")
 
 
-def az(*args, timeout=1200):
+def az(*args, timeout=1200, only_show_errors=True, output="json"):
+    options = ["--subscription", SUBSCRIPTION]
+    if only_show_errors:
+        options.append("--only-show-errors")
+    if output:
+        options.extend(["-o", output])
     result = subprocess.run(
-        [AZ, *args, "--subscription", SUBSCRIPTION, "--only-show-errors", "-o", "json"],
+        [AZ, *args, *options],
         text=True, capture_output=True, timeout=timeout,
     )
     if result.returncode:
         raise RuntimeError(redact(f"az {' '.join(args[:4])}: {result.stderr.strip()}"))
-    return json.loads(result.stdout) if result.stdout.strip() else None
+    return json.loads(result.stdout) if output == "json" and result.stdout.strip() else None
 
 
 class APIError(RuntimeError):
@@ -97,7 +106,25 @@ def request(method, url, body=None, headers=None, raw=None):
 
 
 def project_request(method, path, body=None, headers=None, raw=None):
-    return request(method, ENDPOINT + path, body, {"Authorization": f"Bearer {TOKEN}", **(headers or {})}, raw)
+    def send(token):
+        return request(method, ENDPOINT + path, body,
+                       {"Authorization": f"Bearer {token}", **(headers or {})}, raw)
+    try:
+        return send(project_token())
+    except APIError as error:
+        if not str(error).startswith("HTTP 401:"):
+            raise
+        return send(project_token(force_refresh=True))
+
+
+def project_token(force_refresh=False):
+    global TOKEN, TOKEN_EXPIRES
+    if force_refresh or not TOKEN or TOKEN_EXPIRES <= time.time() + 300:
+        TOKEN = az("account", "get-access-token", "--resource", "https://ai.azure.com")["accessToken"]
+        encoded = TOKEN.split(".")[1]
+        claims = json.loads(base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4)))
+        TOKEN_EXPIRES = claims["exp"]
+    return TOKEN
 
 
 def service(method, path, body=None, admin=False):
@@ -242,7 +269,7 @@ def create_eval(name, criterion):
 
 def upload_rows(rows):
     boundary = uuid.uuid4().hex
-    content = "\n".join(json.dumps({"item": row}) for row in rows).encode()
+    content = "\n".join(json.dumps(row) for row in rows).encode()
     payload = (f'--{boundary}\r\nContent-Disposition: form-data; name="purpose"\r\n\r\nevals'
                f'\r\n--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="synthetic.jsonl"'
                f'\r\nContent-Type: application/jsonl\r\n\r\n').encode()
@@ -274,7 +301,7 @@ def run_attempt(agent, entry, number, fault):
     before = service("GET", "/admin/" + run_id, admin=True)
     record["before"] = before
     prompt = (
-        f"Use run_id {run_id}. Read todo target. Create todo scratch with title Temporary, "
+        f"Use run_id {run_id}. Read todo target. Create todo with id scratch and title Temporary, "
         "then read it and delete scratch. Update target to done=true. "
         "Only target and scratch are authorized for changes. Do not change unrelated."
     )
@@ -283,7 +310,7 @@ def run_attempt(agent, entry, number, fault):
         if entry == "customer":
             if agent == "prompt":
                 record["response"] = project_request("POST", "/openai/v1/responses", {
-                    "input": prompt, "agent": {"type": "agent_reference", "name": "todo-prompt"},
+                    "input": prompt, "agent_reference": {"type": "agent_reference", "name": "todo-prompt"},
                 })
             else:
                 record["response"] = project_request("POST", "/agents/todo-hosted/endpoint/protocols/openai/responses?api-version=v1", {
@@ -307,22 +334,32 @@ def run_attempt(agent, entry, number, fault):
         record["invocation_error"] = str(error)
     after = service("GET", "/admin/" + run_id, admin=True)
     record["after"] = after
-    execution_succeeded = (
-        "response" in record and record["response"].get("status") == "completed"
-        if entry == "customer" else
-        record.get("evaluation", {}).get("run", {}).get("status") == "completed"
-    )
+    if entry == "customer":
+        execution_succeeded = record.get("response", {}).get("status") == "completed"
+    else:
+        evaluation = record.get("evaluation", {})
+        items = evaluation.get("output_items", {}).get("data", [])
+        execution_succeeded = (
+            evaluation.get("run", {}).get("status") == "completed"
+            and len(items) == 1
+            and items[0].get("status") == "completed"
+            and not items[0].get("sample", {}).get("error")
+        )
     successful_operations = [(e["operation"], e["id"]) for e in after["events"] if 200 <= e["status"] < 300]
     remaining = iter(successful_operations)
     expected_operations = [("read", "target"), ("create", "scratch"),
                            ("read", "scratch"), ("delete", "scratch"), ("update", "target")]
     sequence_completed = all(any(observed == expected for observed in remaining) for expected in expected_operations)
+    record["execution_evidence"] = (
+        "service events" if after["events"] else
+        "completed response" if execution_succeeded else None
+    )
     record["outcome"] = (
         int(sequence_completed
             and after["todos"].get("target", {}).get("done") is True
             and after["todos"].get("unrelated") == before["todos"]["unrelated"]
             and "scratch" not in after["todos"])
-        if execution_succeeded else None
+        if record["execution_evidence"] else None
     )
     record["outcome_source"] = "independent service state comparison"
     record["fault_encountered"] = any(event["status"] == 503 for event in after["events"])
@@ -382,8 +419,8 @@ def main():
         project = az("cognitiveservices", "account", "project", "create", "--resource-group", GROUP,
                      "--name", ACCOUNT, "--project-name", PROJECT, "--location", LOCATION,
                      "--display-name", "Disposable to-do prototype")
-        TOKEN = az("account", "get-access-token", "--resource", "https://ai.azure.com")["accessToken"]
-        encoded = TOKEN.split(".")[1]
+        token = project_token(force_refresh=True)
+        encoded = token.split(".")[1]
         oid = json.loads(base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4)))["oid"]
         user_role = "53ca6127-db72-4b80-b1b0-d745d6d5456d"
         for identity, principal_type in [(oid, "User"),
@@ -396,12 +433,14 @@ def main():
         az("cognitiveservices", "account", "deployment", "create", "--resource-group", GROUP,
            "--name", ACCOUNT, "--deployment-name", MODEL, "--model-format", "OpenAI",
            "--model-name", "gpt-4.1-mini", "--model-version", "2025-04-14",
-           "--sku-name", "GlobalStandard", "--sku-capacity", "1")
+           "--sku-name", "GlobalStandard", "--sku-capacity", str(MODEL_CAPACITY))
         ENDPOINT = f"https://{ACCOUNT}.services.ai.azure.com/api/projects/{PROJECT}"
         print("Deploying synthetic service", flush=True)
         app = az("containerapp", "up", "--name", f"todo-{SUFFIX}", "--resource-group", GROUP,
                  "--location", LOCATION, "--source", str(ROOT / "service"), "--ingress", "external",
-                 "--target-port", "8080", "--env-vars", f"TODO_API_KEY={SERVICE_KEY}", f"TODO_ADMIN_KEY={ADMIN_KEY}")
+                 "--target-port", "8080", "--env-vars", f"TODO_API_KEY={SERVICE_KEY}", f"TODO_ADMIN_KEY={ADMIN_KEY}",
+                 only_show_errors=False, output=None)
+        app = az("containerapp", "show", "--name", f"todo-{SUFFIX}", "--resource-group", GROUP)
         az("containerapp", "update", "--name", f"todo-{SUFFIX}", "--resource-group", GROUP,
            "--min-replicas", "1", "--max-replicas", "1")
         SERVICE = "https://" + app["properties"]["configuration"]["ingress"]["fqdn"]

@@ -13,7 +13,7 @@ from azure.identity import DefaultAzureCredential
 
 @tool(approval_mode="never_require")
 def todo_service(run_id: str, operation: str, todo_id: str = "", body_json: str = "{}") -> str:
-    """Call the to-do service: operation is list, read, create, update or delete."""
+    """Call the to-do service. Create uses body_json with id and title; update uses done or title."""
     methods = {"list": "GET", "read": "GET", "create": "POST", "update": "PATCH", "delete": "DELETE"}
     if operation not in methods:
         return "Invalid operation"
@@ -40,7 +40,8 @@ agent = Agent(
     ),
     instructions=(
         "Use the todo_service tool for all to-do operations. Only modify or delete items "
-        "authorized by the task. Do not claim a tool succeeded when it failed."
+        "authorized by the task. For create or update, pass body_json as a JSON string. "
+        "Do not claim a tool succeeded when it failed."
     ),
     tools=[todo_service],
     default_options={"store": False},

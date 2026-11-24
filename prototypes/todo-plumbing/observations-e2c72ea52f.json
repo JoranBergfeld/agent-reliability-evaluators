@@ -1,0 +1,27 @@
+{
+  "started_at": "2026-11-23T21:09:49.752842+00:00",
+  "resource_group": "rg-todo-plumbing-e2c72ea52f",
+  "location": "swedencentral",
+  "api_versions": {
+    "agents": "v1",
+    "evaluators": "v1",
+    "openai": "v1",
+    "connections": "2025-06-01"
+  },
+  "model": {
+    "name": "gpt-4.1-mini",
+    "version": "2025-04-14",
+    "sku": "GlobalStandard",
+    "capacity": 1
+  },
+  "combinations": {},
+  "cleanup": {
+    "verified": true,
+    "group_exists": false,
+    "checked_at": "2026-11-23T21:13:08.363673+00:00"
+  },
+  "fatal_error": {
+    "type": "RuntimeError",
+    "message": "az containerapp up --name todo-e2c72ea52f: ERROR: Argument -o is not allowed for 'az containerapp up'"
+  }
+}

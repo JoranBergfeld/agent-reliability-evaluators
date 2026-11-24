@@ -1,0 +1,44 @@
+{
+  "started_at": "2026-11-23T22:14:55.565586+00:00",
+  "resource_group": "rg-todo-plumbing-28d1e330a8",
+  "location": "swedencentral",
+  "api_versions": {
+    "agents": "v1",
+    "evaluators": "v1",
+    "openai": "v1",
+    "connections": "2025-06-01"
+  },
+  "model": {
+    "name": "gpt-4.1-mini",
+    "version": "2025-04-14",
+    "sku": "GlobalStandard",
+    "capacity": 1
+  },
+  "combinations": {
+    "prompt-customer": {
+      "attempts": [],
+      "unverified": "Agent setup failed"
+    },
+    "prompt-cloud": {
+      "attempts": [],
+      "unverified": "Agent setup failed"
+    },
+    "hosted-customer": {
+      "attempts": [],
+      "unverified": "Agent setup failed"
+    },
+    "hosted-cloud": {
+      "attempts": [],
+      "unverified": "Agent setup failed"
+    }
+  },
+  "cleanup": {
+    "verified": true,
+    "group_exists": false,
+    "checked_at": "2026-11-23T22:50:26.903736+00:00"
+  },
+  "service_url": "https://todo-28d1e330a8.orangemeadow-5e39505a.swedencentral.azurecontainerapps.io",
+  "prompt_setup_error": "HTTP 401: { \"statusCode\": 401, \"message\": \"Unauthorized. Access token is missing, invalid, audience is incorrect (https://ai.azure.com), or have expired.\" }",
+  "hosted_setup_error": "HTTP 401: { \"statusCode\": 401, \"message\": \"Unauthorized. Access token is missing, invalid, audience is incorrect (https://ai.azure.com), or have expired.\" }",
+  "evaluator_setup_error": "HTTP 401: { \"statusCode\": 401, \"message\": \"Unauthorized. Access token is missing, invalid, audience is incorrect (https://ai.azure.com), or have expired.\" }"
+}

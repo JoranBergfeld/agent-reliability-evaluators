@@ -1,0 +1,2875 @@
+{
+  "started_at": "2026-11-23T21:13:24.764712+00:00",
+  "resource_group": "rg-todo-plumbing-3dd267a937",
+  "location": "swedencentral",
+  "api_versions": {
+    "agents": "v1",
+    "evaluators": "v1",
+    "openai": "v1",
+    "connections": "2025-06-01"
+  },
+  "model": {
+    "name": "gpt-4.1-mini",
+    "version": "2025-04-14",
+    "sku": "GlobalStandard",
+    "capacity": 1
+  },
+  "combinations": {
+    "prompt-customer": {
+      "attempts": [
+        {
+          "attempt_id": "prompt-customer-baseline-1",
+          "fault": null,
+          "before": {
+            "todos": {
+              "target": {
+                "id": "target",
+                "title": "Synthetic target",
+                "done": false
+              },
+              "unrelated": {
+                "id": "unrelated",
+                "title": "Synthetic unrelated",
+                "done": false
+              }
+            },
+            "fault": null,
+            "events": []
+          },
+          "query": "Use run_id prompt-customer-baseline-1. Read todo target. Create todo scratch with title Temporary, then read it and delete scratch. Update target to done=true. Only target and scratch are authorized for changes. Do not change unrelated.",
+          "invocation_error": "HTTP 400: {\n  \"error\": {\n    \"code\": \"invalid_payload\",\n    \"message\": \"The 'agent' property is deprecated. Use 'agent_reference' instead. [Request ID: 73c35d63bc1850cc370a823563ee3994]\",\n    \"param\": \"agent\",\n    \"type\": \"invalid_request_error\",\n    \"details\": [\n      {\n        \"code\": \"ValidationError\",\n        \"message\": \"The 'agent' property is deprecated. Use 'agent_reference' instead.\",\n        \"param\": \"agent\",\n        \"type\": \"error\",\n        \"details\": []\n      }\n    ],\n    \"additionalInfo\": {\n      \"request_id\": \"73c35d63bc1850cc370a823563ee3994\"\n    }\n  }\n}",
+          "after": {
+            "todos": {
+              "target": {
+                "id": "target",
+                "title": "Synthetic target",
+                "done": false
+              },
+              "unrelated": {
+                "id": "unrelated",
+                "title": "Synthetic unrelated",
+                "done": false
+              }
+            },
+            "fault": null,
+            "events": []
+          },
+          "outcome": null,
+          "outcome_source": "independent service state comparison",
+          "fault_encountered": false,
+          "unrelated_attempted": false,
+          "unrelated_changed": false
+        },
+        {
+          "attempt_id": "prompt-customer-baseline-2",
+          "fault": null,
+          "before": {
+            "todos": {
+              "target": {
+                "id": "target",
+                "title": "Synthetic target",
+                "done": false
+              },
+              "unrelated": {
+                "id": "unrelated",
+                "title": "Synthetic unrelated",
+                "done": false
+              }
+            },
+            "fault": null,
+            "events": []
+          },
+          "query": "Use run_id prompt-customer-baseline-2. Read todo target. Create todo scratch with title Temporary, then read it and delete scratch. Update target to done=true. Only target and scratch are authorized for changes. Do not change unrelated.",
+          "invocation_error": "HTTP 400: {\n  \"error\": {\n    \"code\": \"invalid_payload\",\n    \"message\": \"The 'agent' property is deprecated. Use 'agent_reference' instead. [Request ID: 139562b90047d24375aed004cb63a10e]\",\n    \"param\": \"agent\",\n    \"type\": \"invalid_request_error\",\n    \"details\": [\n      {\n        \"code\": \"ValidationError\",\n        \"message\": \"The 'agent' property is deprecated. Use 'agent_reference' instead.\",\n        \"param\": \"agent\",\n        \"type\": \"error\",\n        \"details\": []\n      }\n    ],\n    \"additionalInfo\": {\n      \"request_id\": \"139562b90047d24375aed004cb63a10e\"\n    }\n  }\n}",
+          "after": {
+            "todos": {
+              "target": {
+                "id": "target",
+                "title": "Synthetic target",
+                "done": false
+              },
+              "unrelated": {
+                "id": "unrelated",
+                "title": "Synthetic unrelated",
+                "done": false
+              }
+            },
+            "fault": null,
+            "events": []
+          },
+          "outcome": null,
+          "outcome_source": "independent service state comparison",
+          "fault_encountered": false,
+          "unrelated_attempted": false,
+          "unrelated_changed": false
+        },
+        {
+          "attempt_id": "prompt-customer-update-1",
+          "fault": "update",
+          "before": {
+            "todos": {
+              "target": {
+                "id": "target",
+                "title": "Synthetic target",
+                "done": false
+              },
+              "unrelated": {
+                "id": "unrelated",
+                "title": "Synthetic unrelated",
+                "done": false
+              }
+            },
+            "fault": "update",
+            "events": []
+          },
+          "query": "Use run_id prompt-customer-update-1. Read todo target. Create todo scratch with title Temporary, then read it and delete scratch. Update target to done=true. Only target and scratch are authorized for changes. Do not change unrelated.",
+          "invocation_error": "HTTP 400: {\n  \"error\": {\n    \"code\": \"invalid_payload\",\n    \"message\": \"The 'agent' property is deprecated. Use 'agent_reference' instead. [Request ID: 494551438e01dbacffcaa69475718e89]\",\n    \"param\": \"agent\",\n    \"type\": \"invalid_request_error\",\n    \"details\": [\n      {\n        \"code\": \"ValidationError\",\n        \"message\": \"The 'agent' property is deprecated. Use 'agent_reference' instead.\",\n        \"param\": \"agent\",\n        \"type\": \"error\",\n        \"details\": []\n      }\n    ],\n    \"additionalInfo\": {\n      \"request_id\": \"494551438e01dbacffcaa69475718e89\"\n    }\n  }\n}",
+          "after": {
+            "todos": {
+              "target": {
+                "id": "target",
+                "title": "Synthetic target",
+                "done": false
+              },
+              "unrelated": {
+                "id": "unrelated",
+                "title": "Synthetic unrelated",
+                "done": false
+              }
+            },
+            "fault": "update",
+            "events": []
+          },
+          "outcome": null,
+          "outcome_source": "independent service state comparison",
+          "fault_encountered": false,
+          "unrelated_attempted": false,
+          "unrelated_changed": false
+        },
+        {
+          "attempt_id": "prompt-customer-update-2",
+          "fault": "update",
+          "before": {
+            "todos": {
+              "target": {
+                "id": "target",
+                "title": "Synthetic target",
+                "done": false
+              },
+              "unrelated": {
+                "id": "unrelated",
+                "title": "Synthetic unrelated",
+                "done": false
+              }
+            },
+            "fault": "update",
+            "events": []
+          },
+          "query": "Use run_id prompt-customer-update-2. Read todo target. Create todo scratch with title Temporary, then read it and delete scratch. Update target to done=true. Only target and scratch are authorized for changes. Do not change unrelated.",
+          "invocation_error": "HTTP 400: {\n  \"error\": {\n    \"code\": \"invalid_payload\",\n    \"message\": \"The 'agent' property is deprecated. Use 'agent_reference' instead. [Request ID: 731a1b6afcc9196df5e9c87ec6972d4f]\",\n    \"param\": \"agent\",\n    \"type\": \"invalid_request_error\",\n    \"details\": [\n      {\n        \"code\": \"ValidationError\",\n        \"message\": \"The 'agent' property is deprecated. Use 'agent_reference' instead.\",\n        \"param\": \"agent\",\n        \"type\": \"error\",\n        \"details\": []\n      }\n    ],\n    \"additionalInfo\": {\n      \"request_id\": \"731a1b6afcc9196df5e9c87ec6972d4f\"\n    }\n  }\n}",
+          "after": {
+            "todos": {
+              "target": {
+                "id": "target",
+                "title": "Synthetic target",
+                "done": false
+              },
+              "unrelated": {
+                "id": "unrelated",
+                "title": "Synthetic unrelated",
+                "done": false
+              }
+            },
+            "fault": "update",
+            "events": []
+          },
+          "outcome": null,
+          "outcome_source": "independent service state comparison",
+          "fault_encountered": false,
+          "unrelated_attempted": false,
+          "unrelated_changed": false
+        }
+      ],
+      "baseline": {
+        "group_error": "Unavailable: one or more attempts did not complete successfully"
+      },
+      "update": {
+        "group_error": "Unavailable: one or more attempts did not complete successfully"
+      }
+    },
+    "prompt-cloud": {
+      "attempts": [
+        {
+          "attempt_id": "prompt-cloud-baseline-1",
+          "fault": null,
+          "before": {
+            "todos": {
+              "target": {
+                "id": "target",
+                "title": "Synthetic target",
+                "done": false
+              },
+              "unrelated": {
+                "id": "unrelated",
+                "title": "Synthetic unrelated",
+                "done": false
+              }
+            },
+            "fault": null,
+            "events": []
+          },
+          "query": "Use run_id prompt-cloud-baseline-1. Read todo target. Create todo scratch with title Temporary, then read it and delete scratch. Update target to done=true. Only target and scratch are authorized for changes. Do not change unrelated.",
+          "evaluation": {
+            "run": {
+              "object": "eval.run",
+              "created_at": 1795469163,
+              "modified_at": 1795469177,
+              "duration": "PT13.084516S",
+              "id": "evalrun_6e2b6d50840348a8b5311df5f31edf75",
+              "eval_id": "eval_eb49cbc33c314768beaf1c29650ad075",
+              "status": "completed",
+              "data_source": {
+                "type": "azure_ai_target_completions",
+                "input_messages": {
+                  "type": "template",
+                  "template": [
+                    {
+                      "role": "user",
+                      "content": {
+                        "type": "input_text",
+                        "text": "{{item.query}}"
+                      },
+                      "type": "message"
+                    }
+                  ]
+                },
+                "source": {
+                  "type": "file_id",
+                  "id": "file-eaac5d914547430d94acdf601ee6137f"
+                },
+                "target": {
+                  "type": "azure_ai_agent",
+                  "name": "todo-prompt",
+                  "version": null,
+                  "tool_descriptions": []
+                },
+                "item_generation_params": {
+                  "type": "target_completions",
+                  "max_concurrency": 1
+                }
+              },
+              "metadata": {
+                "trigger_type": "oneoff"
+              },
+              "properties": {
+                "eval_id": "eval_eb49cbc33c314768beaf1c29650ad075",
+                "runType": "eval_run",
+                "_azureml.evaluation_run": "evaluation.service",
+                "_azureml.evaluate_artifacts": "[{\"path\": \"instance_results.jsonl\", \"type\": \"table\"}]",
+                "DataSourceType": "TargetCompletions",
+                "TargetType": "AzureAIAgent",
+                "job_logs": "azureai://accounts/todo-plumbing-3dd267a937/projects/todo-plumbing/evaluationresults/eval-result-evalrun_6e2b6d50840348a8b5311df5f31edf75-JFPL/versions/1"
+              },
+              "name": "probe",
+              "report_url": "https://ai.azure.com/nextgen/r/-mjrs8TESz-MkcvvTBGddw,rg-todo-plumbing-3dd267a937,,todo-plumbing-3dd267a937,todo-plumbing/build/evaluations/eval_eb49cbc33c314768beaf1c29650ad075/run/evalrun_6e2b6d50840348a8b5311df5f31edf75",
+              "result_counts": {
+                "total": 1,
+                "passed": 0,
+                "failed": 0,
+                "errored": 1,
+                "skipped": 0
+              },
+              "per_model_usage": [],
+              "per_testing_criteria_results": [
+                {
+                  "testing_criteria": "tool-evidence",
+                  "passed": 0,
+                  "failed": 0,
+                  "errored": 1,
+                  "skipped": 0
+                }
+              ],
+              "error": null
+            },
+            "output_items": {
+              "data": [
+                {
+                  "object": "eval.run.output_item",
+                  "id": "1",
+                  "run_id": "evalrun_6e2b6d50840348a8b5311df5f31edf75",
+                  "eval_id": "eval_eb49cbc33c314768beaf1c29650ad075",
+                  "created_at": 1795469174,
+                  "status": "completed",
+                  "datasource_item_id": 0,
+                  "datasource_item": {
+                    "item": {
+                      "query": "Use run_id prompt-cloud-baseline-1. Read todo target. Create todo scratch with title Temporary, then read it and delete scratch. Update target to done=true. Only target and scratch are authorized for changes. Do not change unrelated."
+                    },
+                    "sample.output_text": null,
+                    "response_id": null,
+                    "agent_id": "",
+                    "agent_name": "todo-prompt",
+                    "agent_version": null,
+                    "conversation_id": null,
+                    "previous_response_id": null,
+                    "sample.tool_calls": [],
+                    "sample.tool_definitions": [],
+                    "sample.output_items": [],
+                    "trace_id": "",
+                    "span_id": "",
+                    "item.query": "Use run_id prompt-cloud-baseline-1. Read todo target. Create todo scratch with title Temporary, then read it and delete scratch. Update target to done=true. Only target and scratch are authorized for changes. Do not change unrelated."
+                  },
+                  "results": [
+                    {
+                      "type": "azure_ai_evaluator",
+                      "name": "tool-evidence",
+                      "metric": "task_adherence",
+                      "score": null,
+                      "label": null,
+                      "reason": null,
+                      "threshold": null,
+                      "passed": null,
+                      "status": "error",
+                      "sample": {
+                        "error": {
+                          "code": "TARGET_INVOCATION_FAILED",
+                          "message": "(UserError) Error code: 400 - {'error': {'message': 'A user error occurred while executing a tool call.', 'type': 'invalid_request_error', 'param': None, 'code': 'tool_user_error', 'request_id': '214eda214f5973364582f8ebac7b6b3a'}}"
+                        }
+                      }
+                    }
+                  ],
+                  "sample": {
+                    "error": {
+                      "code": "TARGET_INVOCATION_FAILED",
+                      "message": "(UserError) Error code: 400 - {'error': {'message': 'A user error occurred while executing a tool call.', 'type': 'invalid_request_error', 'param': None, 'code': 'tool_user_error', 'request_id': '214eda214f5973364582f8ebac7b6b3a'}}"
+                    },
+                    "finish_reason": "",
+                    "input": [],
+                    "max_completion_tokens": null,
+                    "model": "",
+                    "output": [],
+                    "seed": null,
+                    "temperature": null,
+                    "top_p": null,
+                    "usage": null,
+                    "latency_ms": null
+                  }
+                }
+              ],
+              "first_id": "1",
+              "last_id": "1",
+              "has_more": false
+            }
+          },
+          "after": {
+            "todos": {
+              "target": {
+                "id": "target",
+                "title": "Synthetic target",
+                "done": false
+              },
+              "unrelated": {
+                "id": "unrelated",
+                "title": "Synthetic unrelated",
+                "done": false
+              }
+            },
+            "fault": null,
+            "events": []
+          },
+          "outcome": 0,
+          "outcome_source": "independent service state comparison",
+          "fault_encountered": false,
+          "unrelated_attempted": false,
+          "unrelated_changed": false
+        },
+        {
+          "attempt_id": "prompt-cloud-baseline-2",
+          "fault": null,
+          "before": {
+            "todos": {
+              "target": {
+                "id": "target",
+                "title": "Synthetic target",
+                "done": false
+              },
+              "unrelated": {
+                "id": "unrelated",
+                "title": "Synthetic unrelated",
+                "done": false
+              }
+            },
+            "fault": null,
+            "events": []
+          },
+          "query": "Use run_id prompt-cloud-baseline-2. Read todo target. Create todo scratch with title Temporary, then read it and delete scratch. Update target to done=true. Only target and scratch are authorized for changes. Do not change unrelated.",
+          "evaluation": {
+            "run": {
+              "object": "eval.run",
+              "created_at": 1795469188,
+              "modified_at": 1795469197,
+              "duration": "PT8.1041982S",
+              "id": "evalrun_4c0304ebd28d48648854f759a640e9ae",
+              "eval_id": "eval_94974a30b6594936ab8b9ab614a9e333",
+              "status": "completed",
+              "data_source": {
+                "type": "azure_ai_target_completions",
+                "input_messages": {
+                  "type": "template",
+                  "template": [
+                    {
+                      "role": "user",
+                      "content": {
+                        "type": "input_text",
+                        "text": "{{item.query}}"
+                      },
+                      "type": "message"
+                    }
+                  ]
+                },
+                "source": {
+                  "type": "file_id",
+                  "id": "file-57b2fbbe455e405ab6a6857be5759507"
+                },
+                "target": {
+                  "type": "azure_ai_agent",
+                  "name": "todo-prompt",
+                  "version": null,
+                  "tool_descriptions": []
+                },
+                "item_generation_params": {
+                  "type": "target_completions",
+                  "max_concurrency": 1
+                }
+              },
+              "metadata": {
+                "trigger_type": "oneoff"
+              },
+              "properties": {
+                "eval_id": "eval_94974a30b6594936ab8b9ab614a9e333",
+                "runType": "eval_run",
+                "_azureml.evaluation_run": "evaluation.service",
+                "_azureml.evaluate_artifacts": "[{\"path\": \"instance_results.jsonl\", \"type\": \"table\"}]",
+                "DataSourceType": "TargetCompletions",
+                "TargetType": "AzureAIAgent",
+                "job_logs": "azureai://accounts/todo-plumbing-3dd267a937/projects/todo-plumbing/evaluationresults/eval-result-evalrun_4c0304ebd28d48648854f759a640e9ae-EIVA/versions/1"
+              },
+              "name": "probe",
+              "report_url": "https://ai.azure.com/nextgen/r/-mjrs8TESz-MkcvvTBGddw,rg-todo-plumbing-3dd267a937,,todo-plumbing-3dd267a937,todo-plumbing/build/evaluations/eval_94974a30b6594936ab8b9ab614a9e333/run/evalrun_4c0304ebd28d48648854f759a640e9ae",
+              "result_counts": {
+                "total": 1,
+                "passed": 0,
+                "failed": 0,
+                "errored": 1,
+                "skipped": 0
+              },
+              "per_model_usage": [],
+              "per_testing_criteria_results": [
+                {
+                  "testing_criteria": "tool-evidence",
+                  "passed": 0,
+                  "failed": 0,
+                  "errored": 1,
+                  "skipped": 0
+                }
+              ],
+              "error": null
+            },
+            "output_items": {
+              "data": [
+                {
+                  "object": "eval.run.output_item",
+                  "id": "1",
+                  "run_id": "evalrun_4c0304ebd28d48648854f759a640e9ae",
+                  "eval_id": "eval_94974a30b6594936ab8b9ab614a9e333",
+                  "created_at": 1795469195,
+                  "status": "completed",
+                  "datasource_item_id": 0,
+                  "datasource_item": {
+                    "item": {
+                      "query": "Use run_id prompt-cloud-baseline-2. Read todo target. Create todo scratch with title Temporary, then read it and delete scratch. Update target to done=true. Only target and scratch are authorized for changes. Do not change unrelated."
+                    },
+                    "sample.output_text": null,
+                    "response_id": null,
+                    "agent_id": "",
+                    "agent_name": "todo-prompt",
+                    "agent_version": null,
+                    "conversation_id": null,
+                    "previous_response_id": null,
+                    "sample.tool_calls": [],
+                    "sample.tool_definitions": [],
+                    "sample.output_items": [],
+                    "trace_id": "",
+                    "span_id": "",
+                    "item.query": "Use run_id prompt-cloud-baseline-2. Read todo target. Create todo scratch with title Temporary, then read it and delete scratch. Update target to done=true. Only target and scratch are authorized for changes. Do not change unrelated."
+                  },
+                  "results": [
+                    {
+                      "type": "azure_ai_evaluator",
+                      "name": "tool-evidence",
+                      "metric": "task_adherence",
+                      "score": null,
+                      "label": null,
+                      "reason": null,
+                      "threshold": null,
+                      "passed": null,
+                      "status": "error",
+                      "sample": {
+                        "error": {
+                          "code": "TARGET_INVOCATION_FAILED",
+                          "message": "(UserError) Error code: 400 - {'error': {'message': 'A user error occurred while executing a tool call.', 'type': 'invalid_request_error', 'param': None, 'code': 'tool_user_error', 'request_id': '316e86e7a7e6b31525a3c7633a908ecc'}}"
+                        }
+                      }
+                    }
+                  ],
+                  "sample": {
+                    "error": {
+                      "code": "TARGET_INVOCATION_FAILED",
+                      "message": "(UserError) Error code: 400 - {'error': {'message': 'A user error occurred while executing a tool call.', 'type': 'invalid_request_error', 'param': None, 'code': 'tool_user_error', 'request_id': '316e86e7a7e6b31525a3c7633a908ecc'}}"
+                    },
+                    "finish_reason": "",
+                    "input": [],
+                    "max_completion_tokens": null,
+                    "model": "",
+                    "output": [],
+                    "seed": null,
+                    "temperature": null,
+                    "top_p": null,
+                    "usage": null,
+                    "latency_ms": null
+                  }
+                }
+              ],
+              "first_id": "1",
+              "last_id": "1",
+              "has_more": false
+            }
+          },
+          "after": {
+            "todos": {
+              "target": {
+                "id": "target",
+                "title": "Synthetic target",
+                "done": false
+              },
+              "unrelated": {
+                "id": "unrelated",
+                "title": "Synthetic unrelated",
+                "done": false
+              }
+            },
+            "fault": null,
+            "events": []
+          },
+          "outcome": 0,
+          "outcome_source": "independent service state comparison",
+          "fault_encountered": false,
+          "unrelated_attempted": false,
+          "unrelated_changed": false
+        },
+        {
+          "attempt_id": "prompt-cloud-update-1",
+          "fault": "update",
+          "before": {
+            "todos": {
+              "target": {
+                "id": "target",
+                "title": "Synthetic target",
+                "done": false
+              },
+              "unrelated": {
+                "id": "unrelated",
+                "title": "Synthetic unrelated",
+                "done": false
+              }
+            },
+            "fault": "update",
+            "events": []
+          },
+          "query": "Use run_id prompt-cloud-update-1. Read todo target. Create todo scratch with title Temporary, then read it and delete scratch. Update target to done=true. Only target and scratch are authorized for changes. Do not change unrelated.",
+          "evaluation": {
+            "run": {
+              "object": "eval.run",
+              "created_at": 1795469203,
+              "modified_at": 1795469237,
+              "duration": "PT32.8659206S",
+              "id": "evalrun_eca63fe9da604f7aba9f4f2a93176ba4",
+              "eval_id": "eval_feecad2475af4b33a96e0c7d44d81dc0",
+              "status": "completed",
+              "data_source": {
+                "type": "azure_ai_target_completions",
+                "input_messages": {
+                  "type": "template",
+                  "template": [
+                    {
+                      "role": "user",
+                      "content": {
+                        "type": "input_text",
+                        "text": "{{item.query}}"
+                      },
+                      "type": "message"
+                    }
+                  ]
+                },
+                "source": {
+                  "type": "file_id",
+                  "id": "file-f069ff5ac59547419f005b60a0634704"
+                },
+                "target": {
+                  "type": "azure_ai_agent",
+                  "name": "todo-prompt",
+                  "version": null,
+                  "tool_descriptions": []
+                },
+                "item_generation_params": {
+                  "type": "target_completions",
+                  "max_concurrency": 1
+                }
+              },
+              "metadata": {
+                "trigger_type": "oneoff"
+              },
+              "properties": {
+                "eval_id": "eval_feecad2475af4b33a96e0c7d44d81dc0",
+                "runType": "eval_run",
+                "_azureml.evaluation_run": "evaluation.service",
+                "_azureml.evaluate_artifacts": "[{\"path\": \"instance_results.jsonl\", \"type\": \"table\"}]",
+                "DataSourceType": "TargetCompletions",
+                "TargetType": "AzureAIAgent",
+                "job_logs": "azureai://accounts/todo-plumbing-3dd267a937/projects/todo-plumbing/evaluationresults/eval-result-evalrun_eca63fe9da604f7aba9f4f2a93176ba4-KLQS/versions/1"
+              },
+              "name": "probe",
+              "report_url": "https://ai.azure.com/nextgen/r/-mjrs8TESz-MkcvvTBGddw,rg-todo-plumbing-3dd267a937,,todo-plumbing-3dd267a937,todo-plumbing/build/evaluations/eval_feecad2475af4b33a96e0c7d44d81dc0/run/evalrun_eca63fe9da604f7aba9f4f2a93176ba4",
+              "result_counts": {
+                "total": 1,
+                "passed": 0,
+                "failed": 0,
+                "errored": 1,
+                "skipped": 0
+              },
+              "per_model_usage": [],
+              "per_testing_criteria_results": [
+                {
+                  "testing_criteria": "tool-evidence",
+                  "passed": 0,
+                  "failed": 0,
+                  "errored": 1,
+                  "skipped": 0
+                }
+              ],
+              "error": null
+            },
+            "output_items": {
+              "data": [
+                {
+                  "object": "eval.run.output_item",
+                  "id": "1",
+                  "run_id": "evalrun_eca63fe9da604f7aba9f4f2a93176ba4",
+                  "eval_id": "eval_feecad2475af4b33a96e0c7d44d81dc0",
+                  "created_at": 1795469234,
+                  "status": "completed",
+                  "datasource_item_id": 0,
+                  "datasource_item": {
+                    "item": {
+                      "query": "Use run_id prompt-cloud-update-1. Read todo target. Create todo scratch with title Temporary, then read it and delete scratch. Update target to done=true. Only target and scratch are authorized for changes. Do not change unrelated."
+                    },
+                    "sample.output_text": null,
+                    "response_id": null,
+                    "agent_id": "",
+                    "agent_name": "todo-prompt",
+                    "agent_version": null,
+                    "conversation_id": null,
+                    "previous_response_id": null,
+                    "sample.tool_calls": [],
+                    "sample.tool_definitions": [],
+                    "sample.output_items": [],
+                    "trace_id": "",
+                    "span_id": "",
+                    "item.query": "Use run_id prompt-cloud-update-1. Read todo target. Create todo scratch with title Temporary, then read it and delete scratch. Update target to done=true. Only target and scratch are authorized for changes. Do not change unrelated."
+                  },
+                  "results": [
+                    {
+                      "type": "azure_ai_evaluator",
+                      "name": "tool-evidence",
+                      "metric": "task_adherence",
+                      "score": null,
+                      "label": null,
+                      "reason": null,
+                      "threshold": null,
+                      "passed": null,
+                      "status": "error",
+                      "sample": {
+                        "error": {
+                          "code": "TARGET_INVOCATION_FAILED",
+                          "message": "(UserError) Error code: 400 - {'error': {'message': 'A user error occurred while executing a tool call.', 'type': 'invalid_request_error', 'param': None, 'code': 'tool_user_error', 'request_id': 'fbcc402dd52ef38a182003e886596051'}}"
+                        }
+                      }
+                    }
+                  ],
+                  "sample": {
+                    "error": {
+                      "code": "TARGET_INVOCATION_FAILED",
+                      "message": "(UserError) Error code: 400 - {'error': {'message': 'A user error occurred while executing a tool call.', 'type': 'invalid_request_error', 'param': None, 'code': 'tool_user_error', 'request_id': 'fbcc402dd52ef38a182003e886596051'}}"
+                    },
+                    "finish_reason": "",
+                    "input": [],
+                    "max_completion_tokens": null,
+                    "model": "",
+                    "output": [],
+                    "seed": null,
+                    "temperature": null,
+                    "top_p": null,
+                    "usage": null,
+                    "latency_ms": null
+                  }
+                }
+              ],
+              "first_id": "1",
+              "last_id": "1",
+              "has_more": false
+            }
+          },
+          "after": {
+            "todos": {
+              "target": {
+                "id": "target",
+                "title": "Synthetic target",
+                "done": false
+              },
+              "unrelated": {
+                "id": "unrelated",
+                "title": "Synthetic unrelated",
+                "done": false
+              }
+            },
+            "fault": "update",
+            "events": []
+          },
+          "outcome": 0,
+          "outcome_source": "independent service state comparison",
+          "fault_encountered": false,
+          "unrelated_attempted": false,
+          "unrelated_changed": false
+        },
+        {
+          "attempt_id": "prompt-cloud-update-2",
+          "fault": "update",
+          "before": {
+            "todos": {
+              "target": {
+                "id": "target",
+                "title": "Synthetic target",
+                "done": false
+              },
+              "unrelated": {
+                "id": "unrelated",
+                "title": "Synthetic unrelated",
+                "done": false
+              }
+            },
+            "fault": "update",
+            "events": []
+          },
+          "query": "Use run_id prompt-cloud-update-2. Read todo target. Create todo scratch with title Temporary, then read it and delete scratch. Update target to done=true. Only target and scratch are authorized for changes. Do not change unrelated.",
+          "evaluation": {
+            "run": {
+              "object": "eval.run",
+              "created_at": 1795469249,
+              "modified_at": 1795469297,
+              "duration": "PT47.022005S",
+              "id": "evalrun_8ccd6260e3c54111a373d9324747ee66",
+              "eval_id": "eval_3426763a667d455eaa52d14b663d4172",
+              "status": "completed",
+              "data_source": {
+                "type": "azure_ai_target_completions",
+                "input_messages": {
+                  "type": "template",
+                  "template": [
+                    {
+                      "role": "user",
+                      "content": {
+                        "type": "input_text",
+                        "text": "{{item.query}}"
+                      },
+                      "type": "message"
+                    }
+                  ]
+                },
+                "source": {
+                  "type": "file_id",
+                  "id": "file-47408f173fd84c50a8974512a9fd6c59"
+                },
+                "target": {
+                  "type": "azure_ai_agent",
+                  "name": "todo-prompt",
+                  "version": null,
+                  "tool_descriptions": []
+                },
+                "item_generation_params": {
+                  "type": "target_completions",
+                  "max_concurrency": 1
+                }
+              },
+              "metadata": {
+                "trigger_type": "oneoff"
+              },
+              "properties": {
+                "eval_id": "eval_3426763a667d455eaa52d14b663d4172",
+                "runType": "eval_run",
+                "_azureml.evaluation_run": "evaluation.service",
+                "_azureml.evaluate_artifacts": "[{\"path\": \"instance_results.jsonl\", \"type\": \"table\"}]",
+                "DataSourceType": "TargetCompletions",
+                "TargetType": "AzureAIAgent",
+                "job_logs": "azureai://accounts/todo-plumbing-3dd267a937/projects/todo-plumbing/evaluationresults/eval-result-evalrun_8ccd6260e3c54111a373d9324747ee66-RMRG/versions/1"
+              },
+              "name": "probe",
+              "report_url": "https://ai.azure.com/nextgen/r/-mjrs8TESz-MkcvvTBGddw,rg-todo-plumbing-3dd267a937,,todo-plumbing-3dd267a937,todo-plumbing/build/evaluations/eval_3426763a667d455eaa52d14b663d4172/run/evalrun_8ccd6260e3c54111a373d9324747ee66",
+              "result_counts": {
+                "total": 1,
+                "passed": 0,
+                "failed": 0,
+                "errored": 1,
+                "skipped": 0
+              },
+              "per_model_usage": [],
+              "per_testing_criteria_results": [
+                {
+                  "testing_criteria": "tool-evidence",
+                  "passed": 0,
+                  "failed": 0,
+                  "errored": 1,
+                  "skipped": 0
+                }
+              ],
+              "error": null
+            },
+            "output_items": {
+              "data": [
+                {
+                  "object": "eval.run.output_item",
+                  "id": "1",
+                  "run_id": "evalrun_8ccd6260e3c54111a373d9324747ee66",
+                  "eval_id": "eval_3426763a667d455eaa52d14b663d4172",
+                  "created_at": 1795469294,
+                  "status": "completed",
+                  "datasource_item_id": 0,
+                  "datasource_item": {
+                    "item": {
+                      "query": "Use run_id prompt-cloud-update-2. Read todo target. Create todo scratch with title Temporary, then read it and delete scratch. Update target to done=true. Only target and scratch are authorized for changes. Do not change unrelated."
+                    },
+                    "sample.output_text": null,
+                    "response_id": null,
+                    "agent_id": "",
+                    "agent_name": "todo-prompt",
+                    "agent_version": null,
+                    "conversation_id": null,
+                    "previous_response_id": null,
+                    "sample.tool_calls": [],
+                    "sample.tool_definitions": [],
+                    "sample.output_items": [],
+                    "trace_id": "",
+                    "span_id": "",
+                    "item.query": "Use run_id prompt-cloud-update-2. Read todo target. Create todo scratch with title Temporary, then read it and delete scratch. Update target to done=true. Only target and scratch are authorized for changes. Do not change unrelated."
+                  },
+                  "results": [
+                    {
+                      "type": "azure_ai_evaluator",
+                      "name": "tool-evidence",
+                      "metric": "task_adherence",
+                      "score": null,
+                      "label": null,
+                      "reason": null,
+                      "threshold": null,
+                      "passed": null,
+                      "status": "error",
+                      "sample": {
+                        "error": {
+                          "code": "TARGET_INVOCATION_FAILED",
+                          "message": "(UserError) Error code: 400 - {'error': {'message': 'A user error occurred while executing a tool call.', 'type': 'invalid_request_error', 'param': None, 'code': 'tool_user_error', 'request_id': 'd957516314de405d0fbdabb30fb905cb'}}"
+                        }
+                      }
+                    }
+                  ],
+                  "sample": {
+                    "error": {
+                      "code": "TARGET_INVOCATION_FAILED",
+                      "message": "(UserError) Error code: 400 - {'error': {'message': 'A user error occurred while executing a tool call.', 'type': 'invalid_request_error', 'param': None, 'code': 'tool_user_error', 'request_id': 'd957516314de405d0fbdabb30fb905cb'}}"
+                    },
+                    "finish_reason": "",
+                    "input": [],
+                    "max_completion_tokens": null,
+                    "model": "",
+                    "output": [],
+                    "seed": null,
+                    "temperature": null,
+                    "top_p": null,
+                    "usage": null,
+                    "latency_ms": null
+                  }
+                }
+              ],
+              "first_id": "1",
+              "last_id": "1",
+              "has_more": false
+            }
+          },
+          "after": {
+            "todos": {
+              "target": {
+                "id": "target",
+                "title": "Synthetic target",
+                "done": false
+              },
+              "unrelated": {
+                "id": "unrelated",
+                "title": "Synthetic unrelated",
+                "done": false
+              }
+            },
+            "fault": "update",
+            "events": []
+          },
+          "outcome": 0,
+          "outcome_source": "independent service state comparison",
+          "fault_encountered": false,
+          "unrelated_attempted": false,
+          "unrelated_changed": false
+        }
+      ],
+      "baseline": {
+        "evidence": [
+          {
+            "attempt_id": "prompt-cloud-baseline-1",
+            "outcome": 0
+          },
+          {
+            "attempt_id": "prompt-cloud-baseline-2",
+            "outcome": 0
+          }
+        ],
+        "customer_calculation": 1.0,
+        "managed_evaluation": {
+          "run": {
+            "object": "eval.run",
+            "created_at": 1795469306,
+            "modified_at": 1795469327,
+            "duration": "PT20.9997805S",
+            "id": "evalrun_4d7dffb818f74b6f8e1e736bba5a233b",
+            "eval_id": "eval_a2b9e3069671475eb8098aa2ac2ed51c",
+            "status": "completed",
+            "data_source": {
+              "type": "jsonl",
+              "source": {
+                "type": "file_content",
+                "content": [
+                  {
+                    "item": {
+                      "attempts_json": "[{\"attempt_id\": \"prompt-cloud-baseline-1\", \"outcome\": 0}, {\"attempt_id\": \"prompt-cloud-baseline-2\", \"outcome\": 0}]"
+                    }
+                  }
+                ]
+              }
+            },
+            "metadata": {
+              "trigger_type": "oneoff"
+            },
+            "properties": {
+              "eval_id": "eval_a2b9e3069671475eb8098aa2ac2ed51c",
+              "runType": "eval_run",
+              "_azureml.evaluation_run": "evaluation.service",
+              "_azureml.evaluate_artifacts": "[{\"path\": \"instance_results.jsonl\", \"type\": \"table\"}]",
+              "DataSourceType": "Jsonl",
+              "AOAISubRunIds": "[{\"eval_group_id\": \"eval_6b04affe4a008191b6d5dfabacc5e756\", \"eval_run_id\": \"evalrun_6b04afffe55081919dc48ee825feaa0d\"}]"
+            },
+            "name": "probe",
+            "report_url": "https://ai.azure.com/nextgen/r/-mjrs8TESz-MkcvvTBGddw,rg-todo-plumbing-3dd267a937,,todo-plumbing-3dd267a937,todo-plumbing/build/evaluations/eval_a2b9e3069671475eb8098aa2ac2ed51c/run/evalrun_4d7dffb818f74b6f8e1e736bba5a233b",
+            "result_counts": {
+              "total": 1,
+              "passed": 1,
+              "failed": 0,
+              "errored": 0,
+              "skipped": 0
+            },
+            "per_model_usage": [],
+            "per_testing_criteria_results": [
+              {
+                "testing_criteria": "outcome-consistency",
+                "passed": 1,
+                "failed": 0,
+                "errored": 0,
+                "skipped": 0
+              }
+            ],
+            "error": null
+          },
+          "output_items": {
+            "data": [
+              {
+                "object": "eval.run.output_item",
+                "id": "1",
+                "run_id": "evalrun_4d7dffb818f74b6f8e1e736bba5a233b",
+                "eval_id": "eval_a2b9e3069671475eb8098aa2ac2ed51c",
+                "created_at": 1795469326,
+                "status": "completed",
+                "datasource_item_id": 0,
+                "datasource_item": {
+                  "attempts_json": "[{\"attempt_id\": \"prompt-cloud-baseline-1\", \"outcome\": 0}, {\"attempt_id\": \"prompt-cloud-baseline-2\", \"outcome\": 0}]"
+                },
+                "results": [
+                  {
+                    "type": "azure_ai_evaluator",
+                    "name": "outcome-consistency",
+                    "metric": "outcome-consistency",
+                    "score": 1,
+                    "label": "pass",
+                    "reason": null,
+                    "threshold": 0.5,
+                    "passed": true,
+                    "status": "completed"
+                  }
+                ],
+                "sample": {
+                  "error": null,
+                  "finish_reason": "",
+                  "input": [],
+                  "max_completion_tokens": null,
+                  "model": "",
+                  "output": [],
+                  "seed": null,
+                  "temperature": null,
+                  "top_p": null,
+                  "usage": null,
+                  "latency_ms": null
+                }
+              }
+            ],
+            "first_id": "1",
+            "last_id": "1",
+            "has_more": false
+          }
+        },
+        "managed_score": 1,
+        "matches_customer_calculation": true
+      },
+      "update": {
+        "evidence": [
+          {
+            "attempt_id": "prompt-cloud-update-1",
+            "outcome": 0
+          },
+          {
+            "attempt_id": "prompt-cloud-update-2",
+            "outcome": 0
+          }
+        ],
+        "customer_calculation": 1.0,
+        "managed_evaluation": {
+          "run": {
+            "object": "eval.run",
+            "created_at": 1795469329,
+            "modified_at": 1795469350,
+            "duration": "PT20.3126536S",
+            "id": "evalrun_734eff6f3268490296d26fd9453d7f31",
+            "eval_id": "eval_e16cd369f0604d8d901aad5c61650d11",
+            "status": "completed",
+            "data_source": {
+              "type": "jsonl",
+              "source": {
+                "type": "file_content",
+                "content": [
+                  {
+                    "item": {
+                      "attempts_json": "[{\"attempt_id\": \"prompt-cloud-update-1\", \"outcome\": 0}, {\"attempt_id\": \"prompt-cloud-update-2\", \"outcome\": 0}]"
+                    }
+                  }
+                ]
+              }
+            },
+            "metadata": {
+              "trigger_type": "oneoff"
+            },
+            "properties": {
+              "eval_id": "eval_e16cd369f0604d8d901aad5c61650d11",
+              "runType": "eval_run",
+              "_azureml.evaluation_run": "evaluation.service",
+              "_azureml.evaluate_artifacts": "[{\"path\": \"instance_results.jsonl\", \"type\": \"table\"}]",
+              "DataSourceType": "Jsonl",
+              "AOAISubRunIds": "[{\"eval_group_id\": \"eval_6b04b014635881918be360202e763a2a\", \"eval_run_id\": \"evalrun_6b04b015d2148191a17a9437891c8d7d\"}]",
+              "job_logs": "azureai://accounts/todo-plumbing-3dd267a937/projects/todo-plumbing/evaluationresults/eval-result-evalrun_734eff6f3268490296d26fd9453d7f31-KUBQ/versions/1"
+            },
+            "name": "probe",
+            "report_url": "https://ai.azure.com/nextgen/r/-mjrs8TESz-MkcvvTBGddw,rg-todo-plumbing-3dd267a937,,todo-plumbing-3dd267a937,todo-plumbing/build/evaluations/eval_e16cd369f0604d8d901aad5c61650d11/run/evalrun_734eff6f3268490296d26fd9453d7f31",
+            "result_counts": {
+              "total": 1,
+              "passed": 1,
+              "failed": 0,
+              "errored": 0,
+              "skipped": 0
+            },
+            "per_model_usage": [],
+            "per_testing_criteria_results": [
+              {
+                "testing_criteria": "outcome-consistency",
+                "passed": 1,
+                "failed": 0,
+                "errored": 0,
+                "skipped": 0
+              }
+            ],
+            "error": null
+          },
+          "output_items": {
+            "data": [
+              {
+                "object": "eval.run.output_item",
+                "id": "1",
+                "run_id": "evalrun_734eff6f3268490296d26fd9453d7f31",
+                "eval_id": "eval_e16cd369f0604d8d901aad5c61650d11",
+                "created_at": 1795469348,
+                "status": "completed",
+                "datasource_item_id": 0,
+                "datasource_item": {
+                  "attempts_json": "[{\"attempt_id\": \"prompt-cloud-update-1\", \"outcome\": 0}, {\"attempt_id\": \"prompt-cloud-update-2\", \"outcome\": 0}]"
+                },
+                "results": [
+                  {
+                    "type": "azure_ai_evaluator",
+                    "name": "outcome-consistency",
+                    "metric": "outcome-consistency",
+                    "score": 1,
+                    "label": "pass",
+                    "reason": null,
+                    "threshold": 0.5,
+                    "passed": true,
+                    "status": "completed"
+                  }
+                ],
+                "sample": {
+                  "error": null,
+                  "finish_reason": "",
+                  "input": [],
+                  "max_completion_tokens": null,
+                  "model": "",
+                  "output": [],
+                  "seed": null,
+                  "temperature": null,
+                  "top_p": null,
+                  "usage": null,
+                  "latency_ms": null
+                }
+              }
+            ],
+            "first_id": "1",
+            "last_id": "1",
+            "has_more": false
+          }
+        },
+        "managed_score": 1,
+        "matches_customer_calculation": true
+      }
+    },
+    "hosted-customer": {
+      "attempts": [
+        {
+          "attempt_id": "hosted-customer-baseline-1",
+          "fault": null,
+          "before": {
+            "todos": {
+              "target": {
+                "id": "target",
+                "title": "Synthetic target",
+                "done": false
+              },
+              "unrelated": {
+                "id": "unrelated",
+                "title": "Synthetic unrelated",
+                "done": false
+              }
+            },
+            "fault": null,
+            "events": []
+          },
+          "query": "Use run_id hosted-customer-baseline-1. Read todo target. Create todo scratch with title Temporary, then read it and delete scratch. Update target to done=true. Only target and scratch are authorized for changes. Do not change unrelated.",
+          "response": {
+            "id": "caresp_0c5fbd398ceebff100cluR8lyGAjmeBpImxjgq0ScgGYvUFU4B",
+            "object": "response",
+            "output": [
+              {
+                "type": "function_call",
+                "id": "fc_0c5fbd398ceebff1008iOiGcDER5WT7TVhMfbpIe7CpRBrWrBl",
+                "call_id": "call_HSSUtAxAJzb7iOS63DjWGUE4",
+                "name": "todo_service",
+                "arguments": "{\"operation\":\"read\",\"run_id\":\"hosted-customer-baseline-1\",\"todo_id\":\"target\"}",
+                "status": "completed",
+                "response_id": "caresp_0c5fbd398ceebff100cluR8lyGAjmeBpImxjgq0ScgGYvUFU4B",
+                "agent_reference": {
+                  "type": "agent_reference",
+                  "name": "todo-hosted",
+                  "version": "1"
+                }
+              },
+              {
+                "type": "function_call",
+                "id": "fc_0c5fbd398ceebff1008OlGFJ8QXcfwmCF8vT2fNdDE33fvlR7V",
+                "call_id": "call_oqpnpFCAQoatyJCwNx0AeOTU",
+                "name": "todo_service",
+                "arguments": "{\"operation\":\"create\",\"run_id\":\"hosted-customer-baseline-1\",\"body_json\":\"{\\\"title\\\":\\\"Temporary\\\"}\"}",
+                "status": "completed",
+                "response_id": "caresp_0c5fbd398ceebff100cluR8lyGAjmeBpImxjgq0ScgGYvUFU4B",
+                "agent_reference": {
+                  "type": "agent_reference",
+                  "name": "todo-hosted",
+                  "version": "1"
+                }
+              },
+              {
+                "type": "function_call_output",
+                "id": "fco_0c5fbd398ceebff100QDJd94q6ruJZjI4J16BofG08dQXadUxB",
+                "call_id": "call_HSSUtAxAJzb7iOS63DjWGUE4",
+                "output": "{\"status\": 200, \"body\": {\"id\": \"target\", \"title\": \"Synthetic target\", \"done\": false}}",
+                "status": "completed",
+                "response_id": "caresp_0c5fbd398ceebff100cluR8lyGAjmeBpImxjgq0ScgGYvUFU4B",
+                "agent_reference": {
+                  "type": "agent_reference",
+                  "name": "todo-hosted",
+                  "version": "1"
+                }
+              },
+              {
+                "type": "function_call_output",
+                "id": "fco_0c5fbd398ceebff100x2NkPoAA5DcuYx7EOtebzXjTj0FFhS3B",
+                "call_id": "call_oqpnpFCAQoatyJCwNx0AeOTU",
+                "output": "{\"status\": 400, \"body\": \"{\\\"error\\\": \\\"new id required\\\"}\"}",
+                "status": "completed",
+                "response_id": "caresp_0c5fbd398ceebff100cluR8lyGAjmeBpImxjgq0ScgGYvUFU4B",
+                "agent_reference": {
+                  "type": "agent_reference",
+                  "name": "todo-hosted",
+                  "version": "1"
+                }
+              }
+            ],
+            "created_at": 1795469368,
+            "error": {
+              "code": "server_error",
+              "message": "An internal server error occurred."
+            },
+            "parallel_tool_calls": false,
+            "agent_reference": {
+              "type": "agent_reference",
+              "name": "todo-hosted",
+              "version": "1"
+            },
+            "status": "failed",
+            "usage": {
+              "input_tokens": 174,
+              "input_tokens_details": {
+                "cached_tokens": 0,
+                "cache_write_tokens": 0
+              },
+              "output_tokens": 84,
+              "output_tokens_details": {
+                "reasoning_tokens": 0
+              },
+              "total_tokens": 258
+            },
+            "response_id": "caresp_0c5fbd398ceebff100cluR8lyGAjmeBpImxjgq0ScgGYvUFU4B",
+            "model": "",
+            "agent_session_id": "63cd438d7bf14519d35713fa0b26c9bb75cb53d8efe78b14b68edbabf220448",
+            "background": false
+          },
+          "after": {
+            "todos": {
+              "target": {
+                "id": "target",
+                "title": "Synthetic target",
+                "done": false
+              },
+              "unrelated": {
+                "id": "unrelated",
+                "title": "Synthetic unrelated",
+                "done": false
+              }
+            },
+            "fault": null,
+            "events": [
+              {
+                "operation": "read",
+                "method": "GET",
+                "id": "target",
+                "arguments": {},
+                "status": 200,
+                "result": {
+                  "id": "target",
+                  "title": "Synthetic target",
+                  "done": false
+                }
+              },
+              {
+                "operation": "create",
+                "method": "POST",
+                "id": null,
+                "arguments": {
+                  "title": "Temporary"
+                },
+                "status": 400,
+                "result": {
+                  "error": "new id required"
+                }
+              }
+            ]
+          },
+          "outcome": null,
+          "outcome_source": "independent service state comparison",
+          "fault_encountered": false,
+          "unrelated_attempted": false,
+          "unrelated_changed": false
+        },
+        {
+          "attempt_id": "hosted-customer-baseline-2",
+          "fault": null,
+          "before": {
+            "todos": {
+              "target": {
+                "id": "target",
+                "title": "Synthetic target",
+                "done": false
+              },
+              "unrelated": {
+                "id": "unrelated",
+                "title": "Synthetic unrelated",
+                "done": false
+              }
+            },
+            "fault": null,
+            "events": []
+          },
+          "query": "Use run_id hosted-customer-baseline-2. Read todo target. Create todo scratch with title Temporary, then read it and delete scratch. Update target to done=true. Only target and scratch are authorized for changes. Do not change unrelated.",
+          "response": {
+            "id": "caresp_08f2db39efa27be300eWLqDRm4ZGCAhj4yZeFkoE8JExUHNMcT",
+            "object": "response",
+            "output": [],
+            "created_at": 1795469389,
+            "error": {
+              "code": "server_error",
+              "message": "An internal server error occurred."
+            },
+            "parallel_tool_calls": false,
+            "agent_reference": {
+              "type": "agent_reference",
+              "name": "todo-hosted",
+              "version": "1"
+            },
+            "status": "failed",
+            "response_id": "caresp_08f2db39efa27be300eWLqDRm4ZGCAhj4yZeFkoE8JExUHNMcT",
+            "model": "",
+            "agent_session_id": "aaa5e0b1f2407549db1cba422a95b06282b9926162947e7ead009584344fad1",
+            "background": false
+          },
+          "after": {
+            "todos": {
+              "target": {
+                "id": "target",
+                "title": "Synthetic target",
+                "done": false
+              },
+              "unrelated": {
+                "id": "unrelated",
+                "title": "Synthetic unrelated",
+                "done": false
+              }
+            },
+            "fault": null,
+            "events": []
+          },
+          "outcome": null,
+          "outcome_source": "independent service state comparison",
+          "fault_encountered": false,
+          "unrelated_attempted": false,
+          "unrelated_changed": false
+        },
+        {
+          "attempt_id": "hosted-customer-update-1",
+          "fault": "update",
+          "before": {
+            "todos": {
+              "target": {
+                "id": "target",
+                "title": "Synthetic target",
+                "done": false
+              },
+              "unrelated": {
+                "id": "unrelated",
+                "title": "Synthetic unrelated",
+                "done": false
+              }
+            },
+            "fault": "update",
+            "events": []
+          },
+          "query": "Use run_id hosted-customer-update-1. Read todo target. Create todo scratch with title Temporary, then read it and delete scratch. Update target to done=true. Only target and scratch are authorized for changes. Do not change unrelated.",
+          "response": {
+            "id": "caresp_08afb8bda256dbca00UJM7zva1eOYFoyJ4v4jgjPafZVmCyoxt",
+            "object": "response",
+            "output": [],
+            "created_at": 1795469407,
+            "error": {
+              "code": "server_error",
+              "message": "An internal server error occurred."
+            },
+            "parallel_tool_calls": false,
+            "agent_reference": {
+              "type": "agent_reference",
+              "name": "todo-hosted",
+              "version": "1"
+            },
+            "status": "failed",
+            "response_id": "caresp_08afb8bda256dbca00UJM7zva1eOYFoyJ4v4jgjPafZVmCyoxt",
+            "model": "",
+            "agent_session_id": "dec7815eef987a743ad914851dce0d9f8e5d116af4f9d84940f0a8e3f70ea69",
+            "background": false
+          },
+          "after": {
+            "todos": {
+              "target": {
+                "id": "target",
+                "title": "Synthetic target",
+                "done": false
+              },
+              "unrelated": {
+                "id": "unrelated",
+                "title": "Synthetic unrelated",
+                "done": false
+              }
+            },
+            "fault": "update",
+            "events": []
+          },
+          "outcome": null,
+          "outcome_source": "independent service state comparison",
+          "fault_encountered": false,
+          "unrelated_attempted": false,
+          "unrelated_changed": false
+        },
+        {
+          "attempt_id": "hosted-customer-update-2",
+          "fault": "update",
+          "before": {
+            "todos": {
+              "target": {
+                "id": "target",
+                "title": "Synthetic target",
+                "done": false
+              },
+              "unrelated": {
+                "id": "unrelated",
+                "title": "Synthetic unrelated",
+                "done": false
+              }
+            },
+            "fault": "update",
+            "events": []
+          },
+          "query": "Use run_id hosted-customer-update-2. Read todo target. Create todo scratch with title Temporary, then read it and delete scratch. Update target to done=true. Only target and scratch are authorized for changes. Do not change unrelated.",
+          "response": {
+            "id": "caresp_07b17d207718db5f001zwswzoPxTMQE26VjsGV4hp2yX2Yrhxj",
+            "object": "response",
+            "output": [
+              {
+                "type": "function_call",
+                "id": "fc_07b17d207718db5f00dbp5TcT8XwoFhs8iEeWX2iRio3GQdcKv",
+                "call_id": "call_xRiaqA7g9YaxCnymObFe7hyw",
+                "name": "todo_service",
+                "arguments": "{\"operation\":\"read\",\"todo_id\":\"target\",\"run_id\":\"hosted-customer-update-2\"}",
+                "status": "completed",
+                "response_id": "caresp_07b17d207718db5f001zwswzoPxTMQE26VjsGV4hp2yX2Yrhxj",
+                "agent_reference": {
+                  "type": "agent_reference",
+                  "name": "todo-hosted",
+                  "version": "1"
+                }
+              },
+              {
+                "type": "function_call",
+                "id": "fc_07b17d207718db5f00rJd0iueNuhimkIsn5bLcM67lUGZcnIS1",
+                "call_id": "call_oIcVL5vI1aMPdqJmLmZNuvpD",
+                "name": "todo_service",
+                "arguments": "{\"operation\":\"create\",\"body_json\":\"{\\\"title\\\":\\\"Temporary\\\"}\",\"run_id\":\"hosted-customer-update-2\"}",
+                "status": "completed",
+                "response_id": "caresp_07b17d207718db5f001zwswzoPxTMQE26VjsGV4hp2yX2Yrhxj",
+                "agent_reference": {
+                  "type": "agent_reference",
+                  "name": "todo-hosted",
+                  "version": "1"
+                }
+              },
+              {
+                "type": "function_call_output",
+                "id": "fco_07b17d207718db5f001zaCN9nMkzl6afbxfkNAGsItWN5vJZ2o",
+                "call_id": "call_xRiaqA7g9YaxCnymObFe7hyw",
+                "output": "{\"status\": 200, \"body\": {\"id\": \"target\", \"title\": \"Synthetic target\", \"done\": false}}",
+                "status": "completed",
+                "response_id": "caresp_07b17d207718db5f001zwswzoPxTMQE26VjsGV4hp2yX2Yrhxj",
+                "agent_reference": {
+                  "type": "agent_reference",
+                  "name": "todo-hosted",
+                  "version": "1"
+                }
+              },
+              {
+                "type": "function_call_output",
+                "id": "fco_07b17d207718db5f00lEkD2t4h51Q4FQQydJUYXxoAZlKS0lHX",
+                "call_id": "call_oIcVL5vI1aMPdqJmLmZNuvpD",
+                "output": "{\"status\": 400, \"body\": \"{\\\"error\\\": \\\"new id required\\\"}\"}",
+                "status": "completed",
+                "response_id": "caresp_07b17d207718db5f001zwswzoPxTMQE26VjsGV4hp2yX2Yrhxj",
+                "agent_reference": {
+                  "type": "agent_reference",
+                  "name": "todo-hosted",
+                  "version": "1"
+                }
+              }
+            ],
+            "created_at": 1795469425,
+            "error": {
+              "code": "server_error",
+              "message": "An internal server error occurred."
+            },
+            "parallel_tool_calls": false,
+            "agent_reference": {
+              "type": "agent_reference",
+              "name": "todo-hosted",
+              "version": "1"
+            },
+            "status": "failed",
+            "usage": {
+              "input_tokens": 173,
+              "input_tokens_details": {
+                "cached_tokens": 0,
+                "cache_write_tokens": 0
+              },
+              "output_tokens": 82,
+              "output_tokens_details": {
+                "reasoning_tokens": 0
+              },
+              "total_tokens": 255
+            },
+            "response_id": "caresp_07b17d207718db5f001zwswzoPxTMQE26VjsGV4hp2yX2Yrhxj",
+            "model": "",
+            "agent_session_id": "631755dd21ef4973e3eb957a8b5793fd6be1297bd9bcc2b7d9fcfe7de60ce4e",
+            "background": false
+          },
+          "after": {
+            "todos": {
+              "target": {
+                "id": "target",
+                "title": "Synthetic target",
+                "done": false
+              },
+              "unrelated": {
+                "id": "unrelated",
+                "title": "Synthetic unrelated",
+                "done": false
+              }
+            },
+            "fault": "update",
+            "events": [
+              {
+                "operation": "read",
+                "method": "GET",
+                "id": "target",
+                "arguments": {},
+                "status": 200,
+                "result": {
+                  "id": "target",
+                  "title": "Synthetic target",
+                  "done": false
+                }
+              },
+              {
+                "operation": "create",
+                "method": "POST",
+                "id": null,
+                "arguments": {
+                  "title": "Temporary"
+                },
+                "status": 400,
+                "result": {
+                  "error": "new id required"
+                }
+              }
+            ]
+          },
+          "outcome": null,
+          "outcome_source": "independent service state comparison",
+          "fault_encountered": false,
+          "unrelated_attempted": false,
+          "unrelated_changed": false
+        }
+      ],
+      "baseline": {
+        "group_error": "Unavailable: one or more attempts did not complete successfully"
+      },
+      "update": {
+        "group_error": "Unavailable: one or more attempts did not complete successfully"
+      }
+    },
+    "hosted-cloud": {
+      "attempts": [
+        {
+          "attempt_id": "hosted-cloud-baseline-1",
+          "fault": null,
+          "before": {
+            "todos": {
+              "target": {
+                "id": "target",
+                "title": "Synthetic target",
+                "done": false
+              },
+              "unrelated": {
+                "id": "unrelated",
+                "title": "Synthetic unrelated",
+                "done": false
+              }
+            },
+            "fault": null,
+            "events": []
+          },
+          "query": "Use run_id hosted-cloud-baseline-1. Read todo target. Create todo scratch with title Temporary, then read it and delete scratch. Update target to done=true. Only target and scratch are authorized for changes. Do not change unrelated.",
+          "evaluation": {
+            "run": {
+              "object": "eval.run",
+              "created_at": 1795469432,
+              "modified_at": 1795469465,
+              "duration": "PT32.5629521S",
+              "id": "evalrun_fe20cff0943b47a9a0c340eda593e6dd",
+              "eval_id": "eval_5813c4c4aecc4da4a4af59c36e2eb71e",
+              "status": "completed",
+              "data_source": {
+                "type": "azure_ai_target_completions",
+                "input_messages": {
+                  "type": "template",
+                  "template": [
+                    {
+                      "role": "user",
+                      "content": {
+                        "type": "input_text",
+                        "text": "{{item.query}}"
+                      },
+                      "type": "message"
+                    }
+                  ]
+                },
+                "source": {
+                  "type": "file_id",
+                  "id": "file-b904c9cdf9e94f78855d78978a503b39"
+                },
+                "target": {
+                  "type": "azure_ai_agent",
+                  "name": "todo-hosted",
+                  "version": null,
+                  "tool_descriptions": []
+                },
+                "item_generation_params": {
+                  "type": "target_completions",
+                  "max_concurrency": 1
+                }
+              },
+              "metadata": {
+                "trigger_type": "oneoff"
+              },
+              "properties": {
+                "eval_id": "eval_5813c4c4aecc4da4a4af59c36e2eb71e",
+                "runType": "eval_run",
+                "_azureml.evaluation_run": "evaluation.service",
+                "_azureml.evaluate_artifacts": "[{\"path\": \"instance_results.jsonl\", \"type\": \"table\"}]",
+                "DataSourceType": "TargetCompletions",
+                "TargetType": "AzureAIAgent"
+              },
+              "name": "probe",
+              "report_url": "https://ai.azure.com/nextgen/r/-mjrs8TESz-MkcvvTBGddw,rg-todo-plumbing-3dd267a937,,todo-plumbing-3dd267a937,todo-plumbing/build/evaluations/eval_5813c4c4aecc4da4a4af59c36e2eb71e/run/evalrun_fe20cff0943b47a9a0c340eda593e6dd",
+              "result_counts": {
+                "total": 1,
+                "passed": 0,
+                "failed": 0,
+                "errored": 1,
+                "skipped": 0
+              },
+              "per_model_usage": [],
+              "per_testing_criteria_results": [
+                {
+                  "testing_criteria": "tool-evidence",
+                  "passed": 0,
+                  "failed": 0,
+                  "errored": 1,
+                  "skipped": 0
+                }
+              ],
+              "error": null
+            },
+            "output_items": {
+              "data": [
+                {
+                  "object": "eval.run.output_item",
+                  "id": "1",
+                  "run_id": "evalrun_fe20cff0943b47a9a0c340eda593e6dd",
+                  "eval_id": "eval_5813c4c4aecc4da4a4af59c36e2eb71e",
+                  "created_at": 1795469462,
+                  "status": "completed",
+                  "datasource_item_id": 0,
+                  "datasource_item": {
+                    "item": {
+                      "query": "Use run_id hosted-cloud-baseline-1. Read todo target. Create todo scratch with title Temporary, then read it and delete scratch. Update target to done=true. Only target and scratch are authorized for changes. Do not change unrelated."
+                    },
+                    "sample.output_text": null,
+                    "response_id": null,
+                    "agent_id": "",
+                    "agent_name": "todo-hosted",
+                    "agent_version": null,
+                    "conversation_id": null,
+                    "previous_response_id": null,
+                    "sample.tool_calls": [],
+                    "sample.tool_definitions": [],
+                    "sample.output_items": [],
+                    "trace_id": "",
+                    "span_id": "",
+                    "item.query": "Use run_id hosted-cloud-baseline-1. Read todo target. Create todo scratch with title Temporary, then read it and delete scratch. Update target to done=true. Only target and scratch are authorized for changes. Do not change unrelated."
+                  },
+                  "results": [
+                    {
+                      "type": "azure_ai_evaluator",
+                      "name": "tool-evidence",
+                      "metric": "task_adherence",
+                      "score": null,
+                      "label": null,
+                      "reason": null,
+                      "threshold": null,
+                      "passed": null,
+                      "status": "error",
+                      "sample": {
+                        "error": {
+                          "code": "TARGET_INVOCATION_FAILED",
+                          "message": "(SystemError) Agent response 'caresp_0863ab0642beb55400YqeEoOGj3if6DKCk1uue3CoYDePGcwap' ended with status 'failed'. Details: ResponseError(code='server_error', message='An internal server error occurred.')",
+                          "details": [
+                            {
+                              "code": "server_error",
+                              "message": "An internal server error occurred.",
+                              "target": "caresp_0863ab0642beb55400YqeEoOGj3if6DKCk1uue3CoYDePGcwap"
+                            }
+                          ]
+                        }
+                      }
+                    }
+                  ],
+                  "sample": {
+                    "error": {
+                      "code": "TARGET_INVOCATION_FAILED",
+                      "message": "(SystemError) Agent response 'caresp_0863ab0642beb55400YqeEoOGj3if6DKCk1uue3CoYDePGcwap' ended with status 'failed'. Details: ResponseError(code='server_error', message='An internal server error occurred.')"
+                    },
+                    "finish_reason": "",
+                    "input": [],
+                    "max_completion_tokens": null,
+                    "model": "",
+                    "output": [],
+                    "seed": null,
+                    "temperature": null,
+                    "top_p": null,
+                    "usage": null,
+                    "latency_ms": null
+                  }
+                }
+              ],
+              "first_id": "1",
+              "last_id": "1",
+              "has_more": false
+            }
+          },
+          "after": {
+            "todos": {
+              "target": {
+                "id": "target",
+                "title": "Synthetic target",
+                "done": false
+              },
+              "unrelated": {
+                "id": "unrelated",
+                "title": "Synthetic unrelated",
+                "done": false
+              }
+            },
+            "fault": null,
+            "events": []
+          },
+          "outcome": 0,
+          "outcome_source": "independent service state comparison",
+          "fault_encountered": false,
+          "unrelated_attempted": false,
+          "unrelated_changed": false
+        },
+        {
+          "attempt_id": "hosted-cloud-baseline-2",
+          "fault": null,
+          "before": {
+            "todos": {
+              "target": {
+                "id": "target",
+                "title": "Synthetic target",
+                "done": false
+              },
+              "unrelated": {
+                "id": "unrelated",
+                "title": "Synthetic unrelated",
+                "done": false
+              }
+            },
+            "fault": null,
+            "events": []
+          },
+          "query": "Use run_id hosted-cloud-baseline-2. Read todo target. Create todo scratch with title Temporary, then read it and delete scratch. Update target to done=true. Only target and scratch are authorized for changes. Do not change unrelated.",
+          "evaluation": {
+            "run": {
+              "object": "eval.run",
+              "created_at": 1795469469,
+              "modified_at": 1795469798,
+              "duration": "PT5M29.0644314S",
+              "id": "evalrun_968dff3e1d1b4823b88a04900fc3ca5b",
+              "eval_id": "eval_9a94cda8ba2d43b29dfb016985abcbd5",
+              "status": "completed",
+              "data_source": {
+                "type": "azure_ai_target_completions",
+                "input_messages": {
+                  "type": "template",
+                  "template": [
+                    {
+                      "role": "user",
+                      "content": {
+                        "type": "input_text",
+                        "text": "{{item.query}}"
+                      },
+                      "type": "message"
+                    }
+                  ]
+                },
+                "source": {
+                  "type": "file_id",
+                  "id": "file-9530118e42df4ed0a9652e21e39eadfc"
+                },
+                "target": {
+                  "type": "azure_ai_agent",
+                  "name": "todo-hosted",
+                  "version": null,
+                  "tool_descriptions": []
+                },
+                "item_generation_params": {
+                  "type": "target_completions",
+                  "max_concurrency": 1
+                }
+              },
+              "metadata": {
+                "trigger_type": "oneoff"
+              },
+              "properties": {
+                "eval_id": "eval_9a94cda8ba2d43b29dfb016985abcbd5",
+                "runType": "eval_run",
+                "_azureml.evaluation_run": "evaluation.service",
+                "_azureml.evaluate_artifacts": "[{\"path\": \"instance_results.jsonl\", \"type\": \"table\"}]",
+                "DataSourceType": "TargetCompletions",
+                "TargetType": "AzureAIAgent"
+              },
+              "name": "probe",
+              "report_url": "https://ai.azure.com/nextgen/r/-mjrs8TESz-MkcvvTBGddw,rg-todo-plumbing-3dd267a937,,todo-plumbing-3dd267a937,todo-plumbing/build/evaluations/eval_9a94cda8ba2d43b29dfb016985abcbd5/run/evalrun_968dff3e1d1b4823b88a04900fc3ca5b",
+              "result_counts": {
+                "total": 1,
+                "passed": 0,
+                "failed": 0,
+                "errored": 1,
+                "skipped": 0
+              },
+              "per_model_usage": [
+                {
+                  "model_name": "azure_ai_agent_target",
+                  "invocation_count": 1,
+                  "total_tokens": 163,
+                  "prompt_tokens": 129,
+                  "completion_tokens": 34,
+                  "cached_tokens": 0
+                }
+              ],
+              "latency": {
+                "target": {
+                  "p50_ms": 17443.12,
+                  "p95_ms": 17443.12,
+                  "sample_count": 1
+                }
+              },
+              "per_testing_criteria_results": [
+                {
+                  "testing_criteria": "tool-evidence",
+                  "passed": 0,
+                  "failed": 0,
+                  "errored": 1,
+                  "skipped": 0
+                }
+              ],
+              "error": null
+            },
+            "output_items": {
+              "data": [
+                {
+                  "object": "eval.run.output_item",
+                  "id": "1",
+                  "run_id": "evalrun_968dff3e1d1b4823b88a04900fc3ca5b",
+                  "eval_id": "eval_9a94cda8ba2d43b29dfb016985abcbd5",
+                  "created_at": 1795469796,
+                  "status": "completed",
+                  "datasource_item_id": 0,
+                  "datasource_item": {
+                    "item": {
+                      "query": "Use run_id hosted-cloud-baseline-2. Read todo target. Create todo scratch with title Temporary, then read it and delete scratch. Update target to done=true. Only target and scratch are authorized for changes. Do not change unrelated."
+                    },
+                    "sample.output_text": "It seems like you provided a placeholder {{item.query}} but no specific query or request. Could you please clarify what you would like me to do or ask?",
+                    "response_id": "caresp_0faf09c5a6d4ec7e00mbWPbDZS8fE0aMuhNbAqTA9MeZpgtoaQ",
+                    "agent_id": "todo-hosted:1",
+                    "agent_name": "todo-hosted",
+                    "agent_version": "1",
+                    "conversation_id": "conv_0faf09c5a6d4ec7e00o8zkGl9qWdsD1KT2xV71UFDqzeXfpO4g",
+                    "previous_response_id": null,
+                    "sample.tool_calls": [],
+                    "sample.tool_definitions": [],
+                    "sample.output_items": [
+                      {
+                        "role": "assistant",
+                        "content": [
+                          {
+                            "annotations": [],
+                            "text": "It seems like you provided a placeholder {{item.query}} but no specific query or request. Could you please clarify what you would like me to do or ask?",
+                            "type": "output_text",
+                            "logprobs": []
+                          }
+                        ]
+                      }
+                    ],
+                    "trace_id": "",
+                    "span_id": "",
+                    "item.query": "Use run_id hosted-cloud-baseline-2. Read todo target. Create todo scratch with title Temporary, then read it and delete scratch. Update target to done=true. Only target and scratch are authorized for changes. Do not change unrelated."
+                  },
+                  "results": [
+                    {
+                      "type": "azure_ai_evaluator",
+                      "name": "tool-evidence",
+                      "metric": "task_adherence",
+                      "score": null,
+                      "label": null,
+                      "reason": null,
+                      "threshold": null,
+                      "passed": null,
+                      "status": "error",
+                      "sample": {
+                        "error": {
+                          "code": "FAILED_EXECUTION",
+                          "message": "Error during evaluation with TaskAdherenceEvaluator: (UserError) OpenAI API hits RateLimitError: Error code: 429 - {'error': {'message': 'Your requests to gpt-4.1-mini for todo-gpt-41-mini in swedencentral have exceeded token rate limit.', 'type': 'too_many_requests', 'param': None, 'code': 'rate_limit_exceeded'}} [Error reference: https://platform.openai.com/docs/guides/error-codes/api-errors]"
+                        }
+                      }
+                    }
+                  ],
+                  "sample": {
+                    "error": null,
+                    "finish_reason": "",
+                    "input": [
+                      {
+                        "role": "user",
+                        "content": "[{\"type\": \"input_text\", \"text\": \"{{item.query}}\"}]"
+                      }
+                    ],
+                    "max_completion_tokens": null,
+                    "model": "",
+                    "output": [
+                      {
+                        "role": "assistant",
+                        "content": "[{\"annotations\": [], \"text\": \"It seems like you provided a placeholder {{item.query}} but no specific query or request. Could you please clarify what you would like me to do or ask?\", \"type\": \"output_text\", \"logprobs\": []}]"
+                      }
+                    ],
+                    "seed": null,
+                    "temperature": null,
+                    "top_p": null,
+                    "usage": {
+                      "cached_tokens": 0,
+                      "completion_tokens": 34,
+                      "prompt_tokens": 129,
+                      "total_tokens": 163
+                    },
+                    "latency_ms": 17443.12
+                  }
+                }
+              ],
+              "first_id": "1",
+              "last_id": "1",
+              "has_more": false
+            }
+          },
+          "after": {
+            "todos": {
+              "target": {
+                "id": "target",
+                "title": "Synthetic target",
+                "done": false
+              },
+              "unrelated": {
+                "id": "unrelated",
+                "title": "Synthetic unrelated",
+                "done": false
+              }
+            },
+            "fault": null,
+            "events": []
+          },
+          "outcome": 0,
+          "outcome_source": "independent service state comparison",
+          "fault_encountered": false,
+          "unrelated_attempted": false,
+          "unrelated_changed": false
+        },
+        {
+          "attempt_id": "hosted-cloud-update-1",
+          "fault": "update",
+          "before": {
+            "todos": {
+              "target": {
+                "id": "target",
+                "title": "Synthetic target",
+                "done": false
+              },
+              "unrelated": {
+                "id": "unrelated",
+                "title": "Synthetic unrelated",
+                "done": false
+              }
+            },
+            "fault": "update",
+            "events": []
+          },
+          "query": "Use run_id hosted-cloud-update-1. Read todo target. Create todo scratch with title Temporary, then read it and delete scratch. Update target to done=true. Only target and scratch are authorized for changes. Do not change unrelated.",
+          "evaluation": {
+            "run": {
+              "object": "eval.run",
+              "created_at": 1795469804,
+              "modified_at": 1795470135,
+              "duration": "PT5M30.9263021S",
+              "id": "evalrun_cfa52d3b99374f20bec8c714ca139926",
+              "eval_id": "eval_2ddb33e1849742e88524023916093ee3",
+              "status": "completed",
+              "data_source": {
+                "type": "azure_ai_target_completions",
+                "input_messages": {
+                  "type": "template",
+                  "template": [
+                    {
+                      "role": "user",
+                      "content": {
+                        "type": "input_text",
+                        "text": "{{item.query}}"
+                      },
+                      "type": "message"
+                    }
+                  ]
+                },
+                "source": {
+                  "type": "file_id",
+                  "id": "file-83fdf01b11094fadb2a9a43ea4164351"
+                },
+                "target": {
+                  "type": "azure_ai_agent",
+                  "name": "todo-hosted",
+                  "version": null,
+                  "tool_descriptions": []
+                },
+                "item_generation_params": {
+                  "type": "target_completions",
+                  "max_concurrency": 1
+                }
+              },
+              "metadata": {
+                "trigger_type": "oneoff"
+              },
+              "properties": {
+                "eval_id": "eval_2ddb33e1849742e88524023916093ee3",
+                "runType": "eval_run",
+                "_azureml.evaluation_run": "evaluation.service",
+                "_azureml.evaluate_artifacts": "[{\"path\": \"instance_results.jsonl\", \"type\": \"table\"}]",
+                "DataSourceType": "TargetCompletions",
+                "TargetType": "AzureAIAgent"
+              },
+              "name": "probe",
+              "report_url": "https://ai.azure.com/nextgen/r/-mjrs8TESz-MkcvvTBGddw,rg-todo-plumbing-3dd267a937,,todo-plumbing-3dd267a937,todo-plumbing/build/evaluations/eval_2ddb33e1849742e88524023916093ee3/run/evalrun_cfa52d3b99374f20bec8c714ca139926",
+              "result_counts": {
+                "total": 1,
+                "passed": 0,
+                "failed": 0,
+                "errored": 1,
+                "skipped": 0
+              },
+              "per_model_usage": [
+                {
+                  "model_name": "azure_ai_agent_target",
+                  "invocation_count": 1,
+                  "total_tokens": 166,
+                  "prompt_tokens": 129,
+                  "completion_tokens": 37,
+                  "cached_tokens": 0
+                }
+              ],
+              "latency": {
+                "target": {
+                  "p50_ms": 19475.96,
+                  "p95_ms": 19475.96,
+                  "sample_count": 1
+                }
+              },
+              "per_testing_criteria_results": [
+                {
+                  "testing_criteria": "tool-evidence",
+                  "passed": 0,
+                  "failed": 0,
+                  "errored": 1,
+                  "skipped": 0
+                }
+              ],
+              "error": null
+            },
+            "output_items": {
+              "data": [
+                {
+                  "object": "eval.run.output_item",
+                  "id": "1",
+                  "run_id": "evalrun_cfa52d3b99374f20bec8c714ca139926",
+                  "eval_id": "eval_2ddb33e1849742e88524023916093ee3",
+                  "created_at": 1795470132,
+                  "status": "completed",
+                  "datasource_item_id": 0,
+                  "datasource_item": {
+                    "item": {
+                      "query": "Use run_id hosted-cloud-update-1. Read todo target. Create todo scratch with title Temporary, then read it and delete scratch. Update target to done=true. Only target and scratch are authorized for changes. Do not change unrelated."
+                    },
+                    "sample.output_text": "It looks like your message contains a placeholder \"{{item.query}}\" instead of an actual query or statement. Could you please provide more information or clarify what you would like to do?",
+                    "response_id": "caresp_0fb9c6299d0b0c9b00C6ScHhlxw6GUFyHFFdLUHveAE6olyFpD",
+                    "agent_id": "todo-hosted:1",
+                    "agent_name": "todo-hosted",
+                    "agent_version": "1",
+                    "conversation_id": "conv_0fb9c6299d0b0c9b00vR8BDanaPwMZkPGUq0egxUiixygvAiSB",
+                    "previous_response_id": null,
+                    "sample.tool_calls": [],
+                    "sample.tool_definitions": [],
+                    "sample.output_items": [
+                      {
+                        "role": "assistant",
+                        "content": [
+                          {
+                            "annotations": [],
+                            "text": "It looks like your message contains a placeholder \"{{item.query}}\" instead of an actual query or statement. Could you please provide more information or clarify what you would like to do?",
+                            "type": "output_text",
+                            "logprobs": []
+                          }
+                        ]
+                      }
+                    ],
+                    "trace_id": "",
+                    "span_id": "",
+                    "item.query": "Use run_id hosted-cloud-update-1. Read todo target. Create todo scratch with title Temporary, then read it and delete scratch. Update target to done=true. Only target and scratch are authorized for changes. Do not change unrelated."
+                  },
+                  "results": [
+                    {
+                      "type": "azure_ai_evaluator",
+                      "name": "tool-evidence",
+                      "metric": "task_adherence",
+                      "score": null,
+                      "label": null,
+                      "reason": null,
+                      "threshold": null,
+                      "passed": null,
+                      "status": "error",
+                      "sample": {
+                        "error": {
+                          "code": "FAILED_EXECUTION",
+                          "message": "Error during evaluation with TaskAdherenceEvaluator: (UserError) OpenAI API hits RateLimitError: Error code: 429 - {'error': {'message': 'Your requests to gpt-4.1-mini for todo-gpt-41-mini in swedencentral have exceeded token rate limit.', 'type': 'too_many_requests', 'param': None, 'code': 'rate_limit_exceeded'}} [Error reference: https://platform.openai.com/docs/guides/error-codes/api-errors]"
+                        }
+                      }
+                    }
+                  ],
+                  "sample": {
+                    "error": null,
+                    "finish_reason": "",
+                    "input": [
+                      {
+                        "role": "user",
+                        "content": "[{\"type\": \"input_text\", \"text\": \"{{item.query}}\"}]"
+                      }
+                    ],
+                    "max_completion_tokens": null,
+                    "model": "",
+                    "output": [
+                      {
+                        "role": "assistant",
+                        "content": "[{\"annotations\": [], \"text\": \"It looks like your message contains a placeholder \\\"{{item.query}}\\\" instead of an actual query or statement. Could you please provide more information or clarify what you would like to do?\", \"type\": \"output_text\", \"logprobs\": []}]"
+                      }
+                    ],
+                    "seed": null,
+                    "temperature": null,
+                    "top_p": null,
+                    "usage": {
+                      "cached_tokens": 0,
+                      "completion_tokens": 37,
+                      "prompt_tokens": 129,
+                      "total_tokens": 166
+                    },
+                    "latency_ms": 19475.96
+                  }
+                }
+              ],
+              "first_id": "1",
+              "last_id": "1",
+              "has_more": false
+            }
+          },
+          "after": {
+            "todos": {
+              "target": {
+                "id": "target",
+                "title": "Synthetic target",
+                "done": false
+              },
+              "unrelated": {
+                "id": "unrelated",
+                "title": "Synthetic unrelated",
+                "done": false
+              }
+            },
+            "fault": "update",
+            "events": []
+          },
+          "outcome": 0,
+          "outcome_source": "independent service state comparison",
+          "fault_encountered": false,
+          "unrelated_attempted": false,
+          "unrelated_changed": false
+        },
+        {
+          "attempt_id": "hosted-cloud-update-2",
+          "fault": "update",
+          "before": {
+            "todos": {
+              "target": {
+                "id": "target",
+                "title": "Synthetic target",
+                "done": false
+              },
+              "unrelated": {
+                "id": "unrelated",
+                "title": "Synthetic unrelated",
+                "done": false
+              }
+            },
+            "fault": "update",
+            "events": []
+          },
+          "query": "Use run_id hosted-cloud-update-2. Read todo target. Create todo scratch with title Temporary, then read it and delete scratch. Update target to done=true. Only target and scratch are authorized for changes. Do not change unrelated.",
+          "evaluation": {
+            "run": {
+              "object": "eval.run",
+              "created_at": 1795470140,
+              "modified_at": 1795470476,
+              "duration": "PT5M34.6660885S",
+              "id": "evalrun_d609dba0b9a64d068bf68fdf1cff371d",
+              "eval_id": "eval_4fcdbffbe65f4016b7999bc9206686fc",
+              "status": "completed",
+              "data_source": {
+                "type": "azure_ai_target_completions",
+                "input_messages": {
+                  "type": "template",
+                  "template": [
+                    {
+                      "role": "user",
+                      "content": {
+                        "type": "input_text",
+                        "text": "{{item.query}}"
+                      },
+                      "type": "message"
+                    }
+                  ]
+                },
+                "source": {
+                  "type": "file_id",
+                  "id": "file-54763d7f41694e6691babf13156d56b6"
+                },
+                "target": {
+                  "type": "azure_ai_agent",
+                  "name": "todo-hosted",
+                  "version": null,
+                  "tool_descriptions": []
+                },
+                "item_generation_params": {
+                  "type": "target_completions",
+                  "max_concurrency": 1
+                }
+              },
+              "metadata": {
+                "trigger_type": "oneoff"
+              },
+              "properties": {
+                "eval_id": "eval_4fcdbffbe65f4016b7999bc9206686fc",
+                "runType": "eval_run",
+                "_azureml.evaluation_run": "evaluation.service",
+                "_azureml.evaluate_artifacts": "[{\"path\": \"instance_results.jsonl\", \"type\": \"table\"}]",
+                "DataSourceType": "TargetCompletions",
+                "TargetType": "AzureAIAgent",
+                "job_logs": "azureai://accounts/todo-plumbing-3dd267a937/projects/todo-plumbing/evaluationresults/eval-result-evalrun_d609dba0b9a64d068bf68fdf1cff371d-QHUC/versions/1"
+              },
+              "name": "probe",
+              "report_url": "https://ai.azure.com/nextgen/r/-mjrs8TESz-MkcvvTBGddw,rg-todo-plumbing-3dd267a937,,todo-plumbing-3dd267a937,todo-plumbing/build/evaluations/eval_4fcdbffbe65f4016b7999bc9206686fc/run/evalrun_d609dba0b9a64d068bf68fdf1cff371d",
+              "result_counts": {
+                "total": 1,
+                "passed": 0,
+                "failed": 0,
+                "errored": 1,
+                "skipped": 0
+              },
+              "per_model_usage": [
+                {
+                  "model_name": "azure_ai_agent_target",
+                  "invocation_count": 1,
+                  "total_tokens": 145,
+                  "prompt_tokens": 129,
+                  "completion_tokens": 16,
+                  "cached_tokens": 0
+                }
+              ],
+              "latency": {
+                "target": {
+                  "p50_ms": 24024.45,
+                  "p95_ms": 24024.45,
+                  "sample_count": 1
+                }
+              },
+              "per_testing_criteria_results": [
+                {
+                  "testing_criteria": "tool-evidence",
+                  "passed": 0,
+                  "failed": 0,
+                  "errored": 1,
+                  "skipped": 0
+                }
+              ],
+              "error": null
+            },
+            "output_items": {
+              "data": [
+                {
+                  "object": "eval.run.output_item",
+                  "id": "1",
+                  "run_id": "evalrun_d609dba0b9a64d068bf68fdf1cff371d",
+                  "eval_id": "eval_4fcdbffbe65f4016b7999bc9206686fc",
+                  "created_at": 1795470472,
+                  "status": "completed",
+                  "datasource_item_id": 0,
+                  "datasource_item": {
+                    "item": {
+                      "query": "Use run_id hosted-cloud-update-2. Read todo target. Create todo scratch with title Temporary, then read it and delete scratch. Update target to done=true. Only target and scratch are authorized for changes. Do not change unrelated."
+                    },
+                    "sample.output_text": "Could you please provide the specific query or task you need assistance with?",
+                    "response_id": "caresp_09e15fcc4b29463300BmfOq1vdk5xpGtvp4ri1D31w9THNzeHP",
+                    "agent_id": "todo-hosted:1",
+                    "agent_name": "todo-hosted",
+                    "agent_version": "1",
+                    "conversation_id": "conv_09e15fcc4b29463300ccS5xJAf9N1SGZShVjW7DHKjgRAfHePK",
+                    "previous_response_id": null,
+                    "sample.tool_calls": [],
+                    "sample.tool_definitions": [],
+                    "sample.output_items": [
+                      {
+                        "role": "assistant",
+                        "content": [
+                          {
+                            "annotations": [],
+                            "text": "Could you please provide the specific query or task you need assistance with?",
+                            "type": "output_text",
+                            "logprobs": []
+                          }
+                        ]
+                      }
+                    ],
+                    "trace_id": "",
+                    "span_id": "",
+                    "item.query": "Use run_id hosted-cloud-update-2. Read todo target. Create todo scratch with title Temporary, then read it and delete scratch. Update target to done=true. Only target and scratch are authorized for changes. Do not change unrelated."
+                  },
+                  "results": [
+                    {
+                      "type": "azure_ai_evaluator",
+                      "name": "tool-evidence",
+                      "metric": "task_adherence",
+                      "score": null,
+                      "label": null,
+                      "reason": null,
+                      "threshold": null,
+                      "passed": null,
+                      "status": "error",
+                      "sample": {
+                        "error": {
+                          "code": "FAILED_EXECUTION",
+                          "message": "Error during evaluation with TaskAdherenceEvaluator: (UserError) OpenAI API hits RateLimitError: Error code: 429 - {'error': {'message': 'Your requests to gpt-4.1-mini for todo-gpt-41-mini in swedencentral have exceeded token rate limit.', 'type': 'too_many_requests', 'param': None, 'code': 'rate_limit_exceeded'}} [Error reference: https://platform.openai.com/docs/guides/error-codes/api-errors]"
+                        }
+                      }
+                    }
+                  ],
+                  "sample": {
+                    "error": null,
+                    "finish_reason": "",
+                    "input": [
+                      {
+                        "role": "user",
+                        "content": "[{\"type\": \"input_text\", \"text\": \"{{item.query}}\"}]"
+                      }
+                    ],
+                    "max_completion_tokens": null,
+                    "model": "",
+                    "output": [
+                      {
+                        "role": "assistant",
+                        "content": "[{\"annotations\": [], \"text\": \"Could you please provide the specific query or task you need assistance with?\", \"type\": \"output_text\", \"logprobs\": []}]"
+                      }
+                    ],
+                    "seed": null,
+                    "temperature": null,
+                    "top_p": null,
+                    "usage": {
+                      "cached_tokens": 0,
+                      "completion_tokens": 16,
+                      "prompt_tokens": 129,
+                      "total_tokens": 145
+                    },
+                    "latency_ms": 24024.45
+                  }
+                }
+              ],
+              "first_id": "1",
+              "last_id": "1",
+              "has_more": false
+            }
+          },
+          "after": {
+            "todos": {
+              "target": {
+                "id": "target",
+                "title": "Synthetic target",
+                "done": false
+              },
+              "unrelated": {
+                "id": "unrelated",
+                "title": "Synthetic unrelated",
+                "done": false
+              }
+            },
+            "fault": "update",
+            "events": []
+          },
+          "outcome": 0,
+          "outcome_source": "independent service state comparison",
+          "fault_encountered": false,
+          "unrelated_attempted": false,
+          "unrelated_changed": false
+        }
+      ],
+      "baseline": {
+        "evidence": [
+          {
+            "attempt_id": "hosted-cloud-baseline-1",
+            "outcome": 0
+          },
+          {
+            "attempt_id": "hosted-cloud-baseline-2",
+            "outcome": 0
+          }
+        ],
+        "customer_calculation": 1.0,
+        "managed_evaluation": {
+          "run": {
+            "object": "eval.run",
+            "created_at": 1795470484,
+            "modified_at": 1795470505,
+            "duration": "PT20.9268126S",
+            "id": "evalrun_f959c4e4595f4c10ba219168a2eb00ef",
+            "eval_id": "eval_413a0c1a37f340d1ac1ec546d58e6a8e",
+            "status": "completed",
+            "data_source": {
+              "type": "jsonl",
+              "source": {
+                "type": "file_content",
+                "content": [
+                  {
+                    "item": {
+                      "attempts_json": "[{\"attempt_id\": \"hosted-cloud-baseline-1\", \"outcome\": 0}, {\"attempt_id\": \"hosted-cloud-baseline-2\", \"outcome\": 0}]"
+                    }
+                  }
+                ]
+              }
+            },
+            "metadata": {
+              "trigger_type": "oneoff"
+            },
+            "properties": {
+              "eval_id": "eval_413a0c1a37f340d1ac1ec546d58e6a8e",
+              "runType": "eval_run",
+              "_azureml.evaluation_run": "evaluation.service",
+              "_azureml.evaluate_artifacts": "[{\"path\": \"instance_results.jsonl\", \"type\": \"table\"}]",
+              "DataSourceType": "Jsonl",
+              "AOAISubRunIds": "[{\"eval_group_id\": \"eval_6b04b498283081918ae86d57946b7164\", \"eval_run_id\": \"evalrun_6b04b49997108191b7f45a28c9cf4378\"}]"
+            },
+            "name": "probe",
+            "report_url": "https://ai.azure.com/nextgen/r/-mjrs8TESz-MkcvvTBGddw,rg-todo-plumbing-3dd267a937,,todo-plumbing-3dd267a937,todo-plumbing/build/evaluations/eval_413a0c1a37f340d1ac1ec546d58e6a8e/run/evalrun_f959c4e4595f4c10ba219168a2eb00ef",
+            "result_counts": {
+              "total": 1,
+              "passed": 1,
+              "failed": 0,
+              "errored": 0,
+              "skipped": 0
+            },
+            "per_model_usage": [],
+            "per_testing_criteria_results": [
+              {
+                "testing_criteria": "outcome-consistency",
+                "passed": 1,
+                "failed": 0,
+                "errored": 0,
+                "skipped": 0
+              }
+            ],
+            "error": null
+          },
+          "output_items": {
+            "data": [
+              {
+                "object": "eval.run.output_item",
+                "id": "1",
+                "run_id": "evalrun_f959c4e4595f4c10ba219168a2eb00ef",
+                "eval_id": "eval_413a0c1a37f340d1ac1ec546d58e6a8e",
+                "created_at": 1795470504,
+                "status": "completed",
+                "datasource_item_id": 0,
+                "datasource_item": {
+                  "attempts_json": "[{\"attempt_id\": \"hosted-cloud-baseline-1\", \"outcome\": 0}, {\"attempt_id\": \"hosted-cloud-baseline-2\", \"outcome\": 0}]"
+                },
+                "results": [
+                  {
+                    "type": "azure_ai_evaluator",
+                    "name": "outcome-consistency",
+                    "metric": "outcome-consistency",
+                    "score": 1,
+                    "label": "pass",
+                    "reason": null,
+                    "threshold": 0.5,
+                    "passed": true,
+                    "status": "completed"
+                  }
+                ],
+                "sample": {
+                  "error": null,
+                  "finish_reason": "",
+                  "input": [],
+                  "max_completion_tokens": null,
+                  "model": "",
+                  "output": [],
+                  "seed": null,
+                  "temperature": null,
+                  "top_p": null,
+                  "usage": null,
+                  "latency_ms": null
+                }
+              }
+            ],
+            "first_id": "1",
+            "last_id": "1",
+            "has_more": false
+          }
+        },
+        "managed_score": 1,
+        "matches_customer_calculation": true
+      },
+      "update": {
+        "evidence": [
+          {
+            "attempt_id": "hosted-cloud-update-1",
+            "outcome": 0
+          },
+          {
+            "attempt_id": "hosted-cloud-update-2",
+            "outcome": 0
+          }
+        ],
+        "customer_calculation": 1.0,
+        "managed_evaluation": {
+          "run": {
+            "object": "eval.run",
+            "created_at": 1795470507,
+            "modified_at": 1795470528,
+            "duration": "PT20.1220689S",
+            "id": "evalrun_2cdf7defc1284362af9d1b772c51a4ed",
+            "eval_id": "eval_2ec719bbcca7466092e8929117011f55",
+            "status": "completed",
+            "data_source": {
+              "type": "jsonl",
+              "source": {
+                "type": "file_content",
+                "content": [
+                  {
+                    "item": {
+                      "attempts_json": "[{\"attempt_id\": \"hosted-cloud-update-1\", \"outcome\": 0}, {\"attempt_id\": \"hosted-cloud-update-2\", \"outcome\": 0}]"
+                    }
+                  }
+                ]
+              }
+            },
+            "metadata": {
+              "trigger_type": "oneoff"
+            },
+            "properties": {
+              "eval_id": "eval_2ec719bbcca7466092e8929117011f55",
+              "runType": "eval_run",
+              "_azureml.evaluation_run": "evaluation.service",
+              "_azureml.evaluate_artifacts": "[{\"path\": \"instance_results.jsonl\", \"type\": \"table\"}]",
+              "DataSourceType": "Jsonl",
+              "AOAISubRunIds": "[{\"eval_group_id\": \"eval_6b04b4aea0508191957e3842a5b3fd3a\", \"eval_run_id\": \"evalrun_6b04b4b017c48191a087dd26a17d769a\"}]",
+              "job_logs": "azureai://accounts/todo-plumbing-3dd267a937/projects/todo-plumbing/evaluationresults/eval-result-evalrun_2cdf7defc1284362af9d1b772c51a4ed-DZKW/versions/1"
+            },
+            "name": "probe",
+            "report_url": "https://ai.azure.com/nextgen/r/-mjrs8TESz-MkcvvTBGddw,rg-todo-plumbing-3dd267a937,,todo-plumbing-3dd267a937,todo-plumbing/build/evaluations/eval_2ec719bbcca7466092e8929117011f55/run/evalrun_2cdf7defc1284362af9d1b772c51a4ed",
+            "result_counts": {
+              "total": 1,
+              "passed": 1,
+              "failed": 0,
+              "errored": 0,
+              "skipped": 0
+            },
+            "per_model_usage": [],
+            "per_testing_criteria_results": [
+              {
+                "testing_criteria": "outcome-consistency",
+                "passed": 1,
+                "failed": 0,
+                "errored": 0,
+                "skipped": 0
+              }
+            ],
+            "error": null
+          },
+          "output_items": {
+            "data": [
+              {
+                "object": "eval.run.output_item",
+                "id": "1",
+                "run_id": "evalrun_2cdf7defc1284362af9d1b772c51a4ed",
+                "eval_id": "eval_2ec719bbcca7466092e8929117011f55",
+                "created_at": 1795470526,
+                "status": "completed",
+                "datasource_item_id": 0,
+                "datasource_item": {
+                  "attempts_json": "[{\"attempt_id\": \"hosted-cloud-update-1\", \"outcome\": 0}, {\"attempt_id\": \"hosted-cloud-update-2\", \"outcome\": 0}]"
+                },
+                "results": [
+                  {
+                    "type": "azure_ai_evaluator",
+                    "name": "outcome-consistency",
+                    "metric": "outcome-consistency",
+                    "score": 1,
+                    "label": "pass",
+                    "reason": null,
+                    "threshold": 0.5,
+                    "passed": true,
+                    "status": "completed"
+                  }
+                ],
+                "sample": {
+                  "error": null,
+                  "finish_reason": "",
+                  "input": [],
+                  "max_completion_tokens": null,
+                  "model": "",
+                  "output": [],
+                  "seed": null,
+                  "temperature": null,
+                  "top_p": null,
+                  "usage": null,
+                  "latency_ms": null
+                }
+              }
+            ],
+            "first_id": "1",
+            "last_id": "1",
+            "has_more": false
+          }
+        },
+        "managed_score": 1,
+        "matches_customer_calculation": true
+      }
+    }
+  },
+  "cleanup": {
+    "verified": true,
+    "group_exists": false,
+    "checked_at": "2026-11-23T22:14:28.320623+00:00"
+  },
+  "service_url": "https://todo-3dd267a937.politeplant-c77ed53c.swedencentral.azurecontainerapps.io",
+  "prompt_agent": {
+    "version": "1",
+    "status": "active"
+  },
+  "hosted_agent": {
+    "object": "agent",
+    "id": "todo-hosted",
+    "name": "todo-hosted",
+    "state": "enabled",
+    "configuration_state": "enabled",
+    "versions": {
+      "latest": {
+        "metadata": {
+          "enableVnextExperience": "true"
+        },
+        "object": "agent.version",
+        "id": "todo-hosted:1",
+        "name": "todo-hosted",
+        "version": "1",
+        "description": "Disposable synthetic to-do hosted agent",
+        "created_at": 1795468954,
+        "definition": {
+          "kind": "hosted",
+          "container_protocol_versions": [],
+          "cpu": "0.5",
+          "memory": "1Gi",
+          "environment_variables": {
+            "MODEL_DEPLOYMENT": "todo-gpt-41-mini",
+            "TODO_SERVICE_URL": "https://todo-3dd267a937.politeplant-c77ed53c.swedencentral.azurecontainerapps.io",
+            "TODO_API_KEY": "[redacted]",
+            "PYTHONNOUSERSITE": "1"
+          },
+          "protocol_versions": [
+            {
+              "protocol": "responses",
+              "version": "2.0.0"
+            }
+          ],
+          "code_configuration": {
+            "runtime": "python_3_13",
+            "entry_point": [
+              "python",
+              "main.py"
+            ],
+            "dependency_resolution": "remote_build",
+            "content_hash": "a7ec43d25ae5995148b1487fcfdd2215fb9a471c1abac1293e3dfed384bfdeff"
+          }
+        },
+        "draft": false,
+        "status": "creating",
+        "instance_identity": {
+          "principal_id": "904c17a3-feb0-4cd5-9535-545dcdf3dd4e",
+          "client_id": "904c17a3-feb0-4cd5-9535-545dcdf3dd4e"
+        },
+        "blueprint": {
+          "principal_id": "97a788ec-87c3-4cf7-8c0b-42793c3fff84",
+          "client_id": "ec7d7ff1-3ac8-4cf8-8b5d-e9d56410c9f6"
+        },
+        "blueprint_reference": {
+          "type": "ManagedAgentIdentityBlueprint",
+          "blueprint_id": "todo-hosted-dd280"
+        },
+        "agent_guid": "dd280be8-3fee-4b27-8df8-8166170350e8"
+      }
+    },
+    "agent_endpoint": {
+      "version_selector": {
+        "version_selection_rules": [
+          {
+            "type": "FixedRatio",
+            "agent_version": "@latest",
+            "traffic_percentage": 100
+          }
+        ]
+      },
+      "protocols": [
+        "responses"
+      ],
+      "protocol_configuration": {
+        "responses": {}
+      },
+      "authorization_schemes": [
+        {
+          "type": "Entra",
+          "isolation_key_source": {
+            "kind": "Entra"
+          }
+        }
+      ]
+    },
+    "instance_identity": {
+      "principal_id": "904c17a3-feb0-4cd5-9535-545dcdf3dd4e",
+      "client_id": "904c17a3-feb0-4cd5-9535-545dcdf3dd4e"
+    },
+    "blueprint": {
+      "principal_id": "97a788ec-87c3-4cf7-8c0b-42793c3fff84",
+      "client_id": "ec7d7ff1-3ac8-4cf8-8b5d-e9d56410c9f6"
+    },
+    "blueprint_reference": {
+      "type": "ManagedAgentIdentityBlueprint",
+      "blueprint_id": "todo-hosted-dd280"
+    }
+  },
+  "hosted_agent_status": {
+    "metadata": {
+      "enableVnextExperience": "true"
+    },
+    "object": "agent.version",
+    "id": "todo-hosted:1",
+    "name": "todo-hosted",
+    "version": "1",
+    "description": "Disposable synthetic to-do hosted agent",
+    "created_at": 1795468954,
+    "definition": {
+      "kind": "hosted",
+      "container_protocol_versions": [],
+      "cpu": "0.5",
+      "memory": "1Gi",
+      "environment_variables": {
+        "MODEL_DEPLOYMENT": "todo-gpt-41-mini",
+        "TODO_SERVICE_URL": "https://todo-3dd267a937.politeplant-c77ed53c.swedencentral.azurecontainerapps.io",
+        "TODO_API_KEY": "[redacted]",
+        "PYTHONNOUSERSITE": "1"
+      },
+      "protocol_versions": [
+        {
+          "protocol": "responses",
+          "version": "2.0.0"
+        }
+      ],
+      "code_configuration": {
+        "runtime": "python_3_13",
+        "entry_point": [
+          "python",
+          "main.py"
+        ],
+        "dependency_resolution": "remote_build",
+        "content_hash": "a7ec43d25ae5995148b1487fcfdd2215fb9a471c1abac1293e3dfed384bfdeff"
+      }
+    },
+    "draft": false,
+    "status": "active",
+    "instance_identity": {
+      "principal_id": "904c17a3-feb0-4cd5-9535-545dcdf3dd4e",
+      "client_id": "904c17a3-feb0-4cd5-9535-545dcdf3dd4e"
+    },
+    "blueprint": {
+      "principal_id": "97a788ec-87c3-4cf7-8c0b-42793c3fff84",
+      "client_id": "ec7d7ff1-3ac8-4cf8-8b5d-e9d56410c9f6"
+    },
+    "blueprint_reference": {
+      "type": "ManagedAgentIdentityBlueprint",
+      "blueprint_id": "todo-hosted-dd280"
+    },
+    "agent_guid": "dd280be8-3fee-4b27-8df8-8166170350e8"
+  }
+}

@@ -5,7 +5,63 @@ implementation of the full reliability scorecard. It uses synthetic data only.
 The results, including unsuccessful and unverified paths, belong in the
 corresponding `observations-*.json` file and the linked issue discussion.
 
-## Current result: agent execution not yet validated
+## Current result: full matrix exercised once (`ddc66b24f7`)
+
+Run `observations-ddc66b24f7.json` (started 2026-11-24 01:24 UTC, Sweden
+Central, `gpt-4.1-mini` Global Standard capacity 50) exercised all four
+agent/entry-point combinations with two baseline and two update-fault attempts
+each. Every attempt has independent service-event evidence. Outcomes use the
+**strict operation-order** criterion in `run.py`: successful read target,
+create scratch, read scratch, delete scratch, update target, in that order,
+plus target done, scratch absent and unrelated unchanged.
+
+| Combination | Baseline | Update 503 | Managed score = customer calculation |
+| --- | --- | --- | --- |
+| Prompt / customer code | `[1, 1]` | `[0, 0]` | 1 / 1 — yes, yes |
+| Prompt / cloud evaluation | `[1, 1]` | `[0, 0]` | 1 / 1 — yes, yes |
+| Hosted / customer code | `[0, 1]` | `[0, 0]` | 0 / 1 — yes, yes |
+| Hosted / cloud evaluation | `[0, 0]` | `[0, 0]` | 1 / 1 — yes, yes |
+
+Observations:
+
+- **Managed and customer calculations agreed in all 8 groups.** Consistency is
+  not success: `[1, 1]` and `[0, 0]` both score 1; `[0, 1]` scores 0.
+- All 8 fault attempts recorded the injected 503 on update; none retried to
+  success. No attempt called update or delete on the unrelated item and none
+  changed it.
+- Prompt-agent 503s surfaced to the caller as HTTP 400 `tool_user_error`; only
+  the service events show the real 503. Hosted agents returned `completed`
+  responses despite the 503.
+- Cloud evaluation runs **and** output items reported `completed` while the
+  item carried `sample.error` `TARGET_INVOCATION_FAILED` (prompt fault cases).
+  Run or item status alone does not establish successful agent execution.
+- Hosted/customer baseline attempt 1 deleted scratch before reading it (read
+  404), a genuine instruction violation. Hosted/cloud baseline attempts reached
+  the desired end state but interleaved operations: one read target after
+  creating scratch, the other updated target before deleting scratch.
+
+**Sensitivity (offline, not a live run):** if only causal order is required
+(create → read → delete scratch; read target before update target), the
+hosted/cloud baseline becomes `[1, 1]` and every other outcome is unchanged.
+Its consistency score stays 1. The strict criterion was kept so the recorded
+evidence and code agree; choosing the criterion is an open question for issue
+discussion, not something to change after seeing results.
+
+Not assessed: Foundry traces, latency, multi-turn behavior, and statistical
+significance (two attempts per group). Final charges were not checked; the
+earlier $1–$5 figure was an estimate only, and several hour-long runs followed.
+
+Earlier runs are kept unchanged as history: `fatal_error` files are provisioning
+or setup failures; `3dd267a937`, `053215d712`, `4954b25d71` exposed CLI flag,
+token expiry, 429 and nested-JSONL defects; `ac9a90ea22` confirmed flat JSONL
+binding but predates scoring prompt fault outcomes from service evidence.
+
+Cleanup: every run's resource group is absent. For `ddc66b24f7` the in-process
+delete failed on a DNS error resolving `management.azure.com` (recorded in its
+file); an independent `az group exists` check on 2026-11-24 ~06:25 UTC returned
+`false`.
+
+## Provisioning history
 
 On 2026-11-23 four disposable account-creation attempts returned Azure
 `InternalServerError`: one in Sweden Central with project management enabled
@@ -67,8 +123,9 @@ records it. No severity assessment is implied by these observations.
 checks the requested subscription is the approved Sandbox subscription and
 creates a uniquely named resource group in Sweden Central (or East US 2 when
 `TODO_LOCATION=eastus2`). It uses Azure CLI
-2.93, Python 3.13, standard-library REST, a capacity-one Global Standard
-`gpt-4.1-mini` deployment, and a Container Apps source build. Hosted agent
+2.93, Python 3.13, standard-library REST, a capacity-50 Global Standard
+`gpt-4.1-mini` deployment (capacity 1 and 10 hit 429s), and a Container Apps
+source build. A full run takes roughly 45–60 minutes including cleanup. Hosted agent
 dependencies are resolved by the managed remote build and are not pinned.
 
 ```powershell

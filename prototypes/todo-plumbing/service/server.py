@@ -33,6 +33,22 @@ class Handler(BaseHTTPRequestHandler):
         admin = parts[:1] == ["admin"]
         expected = ADMIN_KEY if admin else KEY
         if not hmac.compare_digest(self.headers.get("x-api-key", ""), expected):
+            if not admin and len(parts) in (3, 4) and parts[0] == "runs":
+                with LOCK:
+                    run = RUNS.get(parts[1])
+                    if run is not None:
+                        item_id = parts[3] if len(parts) == 4 else None
+                        operation = {
+                            ("GET", False): "list",
+                            ("GET", True): "read",
+                            ("POST", False): "create",
+                            ("PATCH", True): "update",
+                            ("DELETE", True): "delete",
+                        }.get((self.command, item_id is not None), "unknown")
+                        run["events"].append({
+                            "operation": operation, "method": self.command, "id": item_id,
+                            "arguments": {}, "status": 401, "result": {"error": "unauthorized"},
+                        })
             return self.respond(401, {"error": "unauthorized"})
         length = int(self.headers.get("Content-Length", "0"))
         try:
