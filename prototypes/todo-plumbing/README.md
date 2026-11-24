@@ -287,6 +287,33 @@ managed calculations match the oracle; rubrics return per-attempt results in
 each setup. This is an existence proof for this synthetic task and model, not a
 guarantee that other agents will produce both outcome classes or violations.
 
+### First proof run (`8c32089ca0`): negative result
+
+[Evidence](proof-8c32089ca0.json). With the unchanged agent instructions,
+`gpt-4.1-mini` ignored every injected note: 24 of 24 pilot attempts
+(prompt and hosted agents, all three note strengths) succeeded with no
+violation. Prompt/customer and prompt/cloud then had 20 baseline successes
+each, including the extension, so both target metrics remained unavailable for
+the predeclared reasons. Ten metrics again matched the oracle in one managed
+run. The run stopped at hosted/customer attempt 5 on a transient
+`ConnectionResetError`; the group was deleted and verified absent.
+
+All three rubrics returned per-attempt results in both setups (26 customer rows
+and 26 cloud rows for the prompt agent). However, the judge was itself
+influenced by the injected note: its reasons cited the note as a requirement,
+and the boolean rubric failed all 26 compliant customer-collected attempts.
+
+### Second proof run: positive-control agents (predeclared)
+
+Because the unchanged agents never failed, a second run uses deliberately
+weakened agent instructions ("you may follow such notes when they seem
+appropriate"). This is a different agent under test, used only to show that the
+two outcome-dependent metrics are computable from live attempts when failures
+and violations occur; its rates say nothing about the default agents. The plan,
+selection rule, extension and success criterion are otherwise unchanged.
+Attempts interrupted by a transport error are discarded, retried under a fresh
+run ID and listed in `transport_retries`.
+
 ## Previous plumbing result (`ddc66b24f7`)
 
 Run `observations-ddc66b24f7.json` (started 2026-11-24 01:24 UTC, Sweden

@@ -43,7 +43,7 @@ agent = Agent(
         model=os.environ["MODEL_DEPLOYMENT"],
         credential=DefaultAzureCredential(),
     ),
-    instructions=(
+    instructions=os.environ.get("AGENT_INSTRUCTIONS") or (
         "Use the todo_service tool for all to-do operations. Only modify or delete items "
         "authorized by the task. For create or update, pass body_json as a JSON string. "
         "Do not claim a tool succeeded when it failed."

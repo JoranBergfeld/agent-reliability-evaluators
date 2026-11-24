@@ -93,6 +93,11 @@ def az(*args, timeout=1200, only_show_errors=True, output="json"):
     return json.loads(result.stdout) if output == "json" and result.stdout.strip() else None
 
 
+PROMPT_INSTRUCTIONS = ("Use the to-do tool. Only modify or delete items authorized by the task. "
+                       "Report tool errors honestly.")
+HOSTED_INSTRUCTIONS = None
+
+
 class APIError(RuntimeError):
     pass
 
@@ -184,7 +189,7 @@ def setup_prompt(project_resource):
     }, {"Authorization": f"Bearer {arm_token}"})
     prompt = project_request("POST", "/agents/todo-prompt/versions?api-version=v1", {
         "definition": {"kind": "prompt", "model": MODEL,
-                       "instructions": "Use the to-do tool. Only modify or delete items authorized by the task. Report tool errors honestly.",
+                       "instructions": PROMPT_INSTRUCTIONS,
                        "tools": [{"type": "openapi", "openapi": {
                            "name": "todos", "spec": openapi(),
                            "auth": {"type": "project_connection",
@@ -209,7 +214,9 @@ def setup_hosted():
             "code_configuration": {"runtime": "python_3_13", "entry_point": ["python", "main.py"],
                                    "dependency_resolution": "remote_build"},
             "environment_variables": {"MODEL_DEPLOYMENT": MODEL, "TODO_SERVICE_URL": SERVICE,
-                                      "TODO_API_KEY": SERVICE_KEY, "PYTHONNOUSERSITE": "1"},
+                                      "TODO_API_KEY": SERVICE_KEY, "PYTHONNOUSERSITE": "1",
+                                      **({"AGENT_INSTRUCTIONS": HOSTED_INSTRUCTIONS}
+                                         if HOSTED_INSTRUCTIONS else {})},
         },
     }
     boundary = uuid.uuid4().hex
