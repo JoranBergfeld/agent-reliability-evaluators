@@ -196,6 +196,22 @@
         detail.append(el("p", "Calibration-bin counts: " +
           selected.details.bins.map(b => `${b.lower}-${b.upper}: ${b.count}`).join("; ")));
       }
+      if (combo?.attempts && state.metric.includes("trajectory_consistency")) {
+        detail.append(el("p", "Main scores use service-received operations, not a verified complete agent trajectory. " +
+          "Native tool calls are a separate recording; neither source proves completeness."));
+        const native = combo.native_trajectory_sensitivity?.scores?.[state.metric];
+        if (native) {
+          detail.append(el("p", native.reason ? `Native-call sensitivity unavailable: ${native.reason}` :
+            `Native-call sensitivity: customer ${score(native.value)}, independent ${score(native.independent_expected)}, ` +
+            `Foundry ${score(native.managed_score)}.`));
+        }
+        for (const attempt of combo.attempts.filter(a => a.condition === "baseline")) {
+          const service = attempt.service_actions ?? attempt.actions;
+          const nativeCalls = attempt.evaluation_item?.sample?.error ? null : attempt.native_actions;
+          const sequence = value => Array.isArray(value) ? (value.join(" -> ") || "(empty)") : "unavailable";
+          detail.append(el("p", `${attempt.attempt_id}: service ${sequence(service)}; native ${sequence(nativeCalls)}.`));
+        }
+      }
       if (combo?.attempts) {
         const summary = {};
         for (const attempt of combo.attempts) {

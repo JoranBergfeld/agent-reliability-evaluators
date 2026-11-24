@@ -13,10 +13,15 @@ from azure.identity import DefaultAzureCredential
 
 @tool(approval_mode="never_require")
 def todo_service(run_id: str, operation: str, todo_id: str = "", body_json: str = "{}") -> str:
-    """Call the to-do service. Create uses body_json with id and title; update uses done or title."""
+    """Call the to-do service. Read, update and delete require todo_id.
+
+    Create uses body_json with id and title; update uses done or title.
+    """
     methods = {"list": "GET", "read": "GET", "create": "POST", "update": "PATCH", "delete": "DELETE"}
     if operation not in methods:
         return "Invalid operation"
+    if operation in ("read", "update", "delete") and not todo_id.strip():
+        return json.dumps({"status": 400, "body": {"error": f"todo_id is required for {operation}"}})
     url = f"{os.environ['TODO_SERVICE_URL']}/runs/{run_id}/todos"
     if operation in ("read", "update", "delete"):
         url += "/" + todo_id

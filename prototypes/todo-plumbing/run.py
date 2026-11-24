@@ -60,11 +60,15 @@ OBS = {
 
 def redact(value):
     if isinstance(value, dict):
-        return {k: redact(v) for k, v in value.items() if k not in ("created_by", "modified_by")}
+        private_fields = {
+            "created_by", "createdby", "modified_by", "modifiedby", "principal_id", "principalid",
+            "tenant_id", "tenantid", "subscription_id", "subscriptionid",
+        }
+        return {k: redact(v) for k, v in value.items() if k.lower() not in private_fields}
     if isinstance(value, list):
         return [redact(v) for v in value]
     if isinstance(value, str):
-        for secret in (SERVICE_KEY, ADMIN_KEY, TOKEN):
+        for secret in (SERVICE_KEY, ADMIN_KEY, TOKEN, SUBSCRIPTION):
             if secret:
                 value = value.replace(secret, "[redacted]")
     return value
@@ -357,11 +361,15 @@ def response_text(response):
 def native_actions(record, entry):
     if entry == "customer":
         response = record.get("response")
-        if not isinstance(response, dict) or not isinstance(response.get("output"), list):
+        if (not isinstance(response, dict) or response.get("status") != "completed"
+                or not isinstance(response.get("output"), list)):
             return None
         items = response["output"]
     else:
-        datasource = record.get("evaluation_item", {}).get("datasource_item", {})
+        item = record.get("evaluation_item", {})
+        if item.get("status") != "completed" or item.get("sample", {}).get("error"):
+            return None
+        datasource = item.get("datasource_item", {})
         calls = datasource.get("sample.tool_calls")
         if not isinstance(calls, list):
             return None
@@ -419,13 +427,17 @@ def complete_attempt(record, entry):
             and "scratch" not in after["todos"]) if observed else None
     )
     record["outcome_source"] = "service events and before/after state; exact successful-operation sequence"
-    record["actions"] = [event["operation"] for event in events] if observed else None
+    record["service_actions"] = [event["operation"] for event in events] if observed else None
+    record["actions"] = record["service_actions"]
     record["native_actions"] = native_actions(record, entry)
     record["trace_comparison"] = (
-        record["actions"] == record["native_actions"]
-        if record["actions"] is not None and record["native_actions"] is not None else None
+        record["service_actions"] == record["native_actions"]
+        if record["service_actions"] is not None and record["native_actions"] is not None else None
     )
-    record["trace_scope"] = "Service-received operations; full agent trajectory completeness is unverified."
+    record["trace_scope"] = (
+        "Main trajectory scores use service-received operations; native calls are separate and neither "
+        "recording proves a complete agent trajectory."
+    )
     record["fault_encountered"] = any(event["status"] == 503 for event in events)
     record["wrapped_response_observed"] = any(event.get("wrapped") for event in events)
     record["exposed"] = (record["fault_encountered"] if record["condition"] == "fault" else
@@ -552,6 +564,19 @@ def compare_managed(results, customer):
         if result["value"] is not None and type(value) in (int, float):
             result["managed_matches_independent"] = math.isclose(
                 value, result["independent_expected"], rel_tol=1e-12, abs_tol=1e-12)
+
+
+def managed_with_retries(evidence, scores, registered, title):
+    eligible = [name for name in registered if name in scores and scores[name]["value"] is not None]
+    combined = managed_scores(evidence, eligible, title)
+    values = dict(combined["scores"])
+    retries = {}
+    for metric in eligible:
+        if metric not in values:
+            retries[metric] = managed_scores(evidence, [metric], f"{title}-{metric.replace('_', '-')}")
+            values.update(retries[metric]["scores"])
+    compare_managed(values, scores)
+    return combined, retries
 
 
 def synthetic_violation():
@@ -714,17 +739,27 @@ def main():
                 scores = customer_scores(evidence)
                 eligible = [metric for metric in registered if scores[metric]["value"] is not None]
                 print(f"Scoring {name}: {len(eligible)} applicable managed evaluators", flush=True)
-                managed = managed_scores(evidence, eligible, f"todo-grouped-{name}")
-                managed_values = dict(managed["scores"])
-                retries = {}
-                for metric in eligible:
-                    if metric not in managed_values:
-                        retries[metric] = managed_scores(evidence, [metric], f"todo-{name}-{metric.replace('_', '-')}")
-                        managed_values.update(retries[metric]["scores"])
-                compare_managed(managed_values, scores)
+                managed, retries = managed_with_retries(evidence, scores, registered, f"todo-grouped-{name}")
+                native_evidence = grouped_evidence(records)
+                native_by_attempt = {record["attempt_id"]: record["native_actions"] for record in records}
+                for attempts in native_evidence.values():
+                    for attempt in attempts:
+                        attempt["actions"] = native_by_attempt[attempt["attempt_id"]]
+                all_native_scores = customer_scores(native_evidence)
+                native_scores = {metric: all_native_scores[metric] for metric in (
+                    "distributional_trajectory_consistency", "sequential_trajectory_consistency"
+                )}
+                native_managed, native_retries = managed_with_retries(
+                    native_evidence, native_scores, registered, f"todo-native-{name}"
+                )
                 OBS["combinations"][name].update({
                     "grouped_evidence": evidence, "scores": scores,
                     "managed_combined": managed, "managed_individual_retries": retries,
+                    "native_trajectory_sensitivity": {
+                        "scope": "Native tool-call recording; completeness is unverified.",
+                        "scores": native_scores, "managed_combined": native_managed,
+                        "managed_individual_retries": native_retries,
+                    },
                 })
                 save()
     except Exception as error:
