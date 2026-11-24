@@ -75,6 +75,10 @@ Customer elapsed time measures the request wall clock; cloud elapsed time is
 the per-item Foundry target latency when present. Token use, cost attribution,
 cross-path timing equivalence and production isolation remain unverified.
 
+Open `review.html` locally for a standalone interactive view. Its initial
+values are fixed synthetic examples; select a captured `observations-*.json`
+file to inspect the actual run. The file stays in the browser.
+
 ## Previous plumbing result (`ddc66b24f7`)
 
 Run `observations-ddc66b24f7.json` (started 2026-11-24 01:24 UTC, Sweden
