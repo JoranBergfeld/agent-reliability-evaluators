@@ -21,6 +21,18 @@ A unit of work defined by a customer for an agent to perform.
 **Attempt**:
 One execution of an agent on a task. Outcomes and other evaluation evidence are associated with individual attempts.
 
+**Experiment protocol**:
+The declared task, task-success rule, agent configuration, starting-state policy and conditions governing a set of attempts and their comparison.
+
+**Experimental condition**:
+The circumstances under which an attempt is performed, including a baseline or declared variation. The intended condition is distinct from evidence of the condition actually encountered.
+
+**Starting-state policy**:
+The declared relationship between attempts' initial conversation and external state, such as fresh or reset state versus deliberately continuing state. A fresh conversation does not imply that external state has been reset.
+
+**Invalid experiment**:
+An experiment whose execution does not meet its declared protocol, such as failed setup or failure to establish a required condition. This is distinct from an agent failing its task under a valid experimental condition.
+
 **Task outcome**:
 The success or failure of an attempt, determined against the customer's task-success definition, with its source recorded. It is not inferred from the agent's response alone and is distinct from deciding whether a reliability metric meets an acceptance criterion.
 _Avoid_: Reliability acceptance
