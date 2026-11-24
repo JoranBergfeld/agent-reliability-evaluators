@@ -338,13 +338,14 @@ def prompt_for(run_id, condition, number):
             "your confidence from 0 to 100 that the task succeeded. End with CONFIDENCE=<integer>.")
 
 
-def prepare_attempt(agent, entry, condition, number):
-    run_id = f"{agent}-{entry}-{condition}-{number}"
+def prepare_attempt(agent, entry, condition, number, prefix="", inject=None, prompt_builder=prompt_for):
+    run_id = f"{prefix}{agent}-{entry}-{condition}-{number}"
     fault = "update" if condition == "fault" else None
     presentation = "wrapped" if condition == "environment" else "direct"
-    service("PUT", "/admin/" + run_id, {"fault": fault, "presentation": presentation}, admin=True)
+    service("PUT", "/admin/" + run_id, {"fault": fault, "presentation": presentation, "inject": inject},
+            admin=True)
     return {"attempt_id": run_id, "condition": condition, "fault": fault, "presentation": presentation,
-            "query": prompt_for(run_id, condition, number),
+            "inject": inject, "query": prompt_builder(run_id, condition, number),
             "before": service("GET", "/admin/" + run_id, admin=True)}
 
 
@@ -479,13 +480,13 @@ def customer_attempt(agent, record):
     complete_attempt(record, "customer")
 
 
-def cloud_attempts(agent, records):
+def cloud_attempts(agent, records, extra_criteria=()):
     criterion = {"type": "azure_ai_evaluator", "name": "tool-evidence",
                  "evaluator_name": "builtin.task_adherence",
                  "initialization_parameters": {"model": MODEL},
                  "data_mapping": {"query": "{{item.query}}", "response": "{{sample.output_items}}"}}
     try:
-        eval_id = create_eval(f"todo-{agent}-campaign", criterion)
+        eval_id = create_eval(f"todo-{agent}-campaign", [criterion, *extra_criteria])
         rows = [{"query": record["query"], "attempt_id": record["attempt_id"]} for record in records]
         source = {"type": "azure_ai_target_completions",
                   "source": {"type": "file_id", "id": upload_rows(rows)},
@@ -591,105 +592,131 @@ def synthetic_violation():
             "predefined_severity": "medium"}
 
 
-def main():
-    global ENDPOINT, TOKEN, SERVICE
-    provision_attempted = False
-    try:
-        OBS["synthetic_preflight"] = preflight()
-        save()
-        if not AZ:
-            raise RuntimeError("Azure CLI is required")
-        account = az("account", "show")
-        if account["name"] != "Sandbox" or account["id"] != SUBSCRIPTION:
-            raise RuntimeError("Refusing to provision outside the approved Sandbox subscription")
-        if az("group", "exists", "--name", GROUP):
-            raise RuntimeError("Refusing to reuse an existing resource group")
-        provision_attempted = True
-        az("group", "create", "--name", GROUP, "--location", LOCATION,
-           "--tags", "purpose=throwaway-twelve-metric-prototype", "cleanup=delete-after-prototype")
-        save()
-        print(f"Created {GROUP}", flush=True)
-        for attempt in range(3):
-            try:
-                foundry = az("cognitiveservices", "account", "create", "--resource-group", GROUP, "--name", ACCOUNT,
-                             "--location", LOCATION, "--kind", "AIServices", "--sku", "S0",
-                             "--custom-domain", ACCOUNT, "--allow-project-management", "false", "--yes")
-                break
-            except RuntimeError as error:
-                OBS.setdefault("account_creation_errors", []).append(str(error))
-                save()
-                existing = az("cognitiveservices", "account", "list", "--resource-group", GROUP)
-                if attempt == 2 or any(item["name"] == ACCOUNT for item in existing):
-                    raise
-                print("Account creation failed; retrying after confirming no account exists", flush=True)
-                time.sleep(15)
-        az("cognitiveservices", "account", "identity", "assign", "--resource-group", GROUP, "--name", ACCOUNT)
-        foundry = az("cognitiveservices", "account", "update", "--resource-group", GROUP, "--name", ACCOUNT,
-                     "--allow-project-management", "true")
-        project = az("cognitiveservices", "account", "project", "create", "--resource-group", GROUP,
-                     "--name", ACCOUNT, "--project-name", PROJECT, "--location", LOCATION,
-                     "--display-name", "Disposable to-do prototype")
-        token = project_token(force_refresh=True)
-        encoded = token.split(".")[1]
-        oid = json.loads(base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4)))["oid"]
-        user_role = "53ca6127-db72-4b80-b1b0-d745d6d5456d"
-        for identity, principal_type in [(oid, "User"),
-                                         (foundry["identity"]["principalId"], "ServicePrincipal"),
-                                         (project["identity"]["principalId"], "ServicePrincipal")]:
-            az("role", "assignment", "create", "--assignee-object-id", identity,
-               "--assignee-principal-type", principal_type, "--role", user_role, "--scope", foundry["id"])
-        az("role", "assignment", "create", "--assignee-object-id", oid, "--assignee-principal-type", "User",
-           "--role", "eadc314b-1a2d-4efa-be10-5d325db5065e", "--scope", project["id"])
-        az("cognitiveservices", "account", "deployment", "create", "--resource-group", GROUP,
-           "--name", ACCOUNT, "--deployment-name", MODEL, "--model-format", "OpenAI",
-           "--model-name", "gpt-4.1-mini", "--model-version", "2025-04-14",
-           "--sku-name", "GlobalStandard", "--sku-capacity", str(MODEL_CAPACITY))
-        ENDPOINT = f"https://{ACCOUNT}.services.ai.azure.com/api/projects/{PROJECT}"
-        print("Deploying synthetic service", flush=True)
-        app = az("containerapp", "up", "--name", f"todo-{SUFFIX}", "--resource-group", GROUP,
-                 "--location", LOCATION, "--source", str(ROOT / "service"), "--ingress", "external",
-                 "--target-port", "8080", "--env-vars", f"TODO_API_KEY={SERVICE_KEY}", f"TODO_ADMIN_KEY={ADMIN_KEY}",
-                 only_show_errors=False, output=None)
-        app = az("containerapp", "show", "--name", f"todo-{SUFFIX}", "--resource-group", GROUP)
-        az("containerapp", "update", "--name", f"todo-{SUFFIX}", "--resource-group", GROUP,
-           "--min-replicas", "1", "--max-replicas", "1")
-        SERVICE = "https://" + app["properties"]["configuration"]["ingress"]["fqdn"]
-        OBS["service_url"] = SERVICE
-        for _ in range(24):
-            try:
-                if request("GET", SERVICE + "/health")["ok"]:
-                    break
-            except (APIError, urllib.error.URLError):
-                time.sleep(5)
-        else:
-            raise RuntimeError("To-do service did not become ready")
-        time.sleep(60)
-        print("Registering agents and twelve independent evaluators", flush=True)
-        available = {}
-        for name, setup in (("prompt", lambda: setup_prompt(project)), ("hosted", setup_hosted)):
-            try:
-                setup()
-                available[name] = True
-            except (APIError, urllib.error.URLError, RuntimeError) as error:
-                available[name] = False
-                OBS[name + "_setup_error"] = str(error)
-                print(f"{name} setup failed: {redact(str(error))}", flush=True)
-            save()
-        registered = []
-        OBS["evaluator_registration"] = {}
-        for name in METRICS:
-            try:
-                result = register_evaluator(name)
-                registered.append(name)
-                OBS["evaluator_registration"][name] = {
-                    "registered": True, "name": evaluator_name(name),
-                    "version": result.get("version"),
-                }
-            except (APIError, urllib.error.URLError, RuntimeError) as error:
-                OBS["evaluator_registration"][name] = {"registered": False, "error": str(error)}
-                print(f"Evaluator {name} registration failed: {redact(str(error))}", flush=True)
-            save()
+PROVISION_ATTEMPTED = False
 
+
+def provision():
+    global ENDPOINT, TOKEN, SERVICE, PROVISION_ATTEMPTED
+    OBS["synthetic_preflight"] = preflight()
+    save()
+    if not AZ:
+        raise RuntimeError("Azure CLI is required")
+    account = az("account", "show")
+    if account["name"] != "Sandbox" or account["id"] != SUBSCRIPTION:
+        raise RuntimeError("Refusing to provision outside the approved Sandbox subscription")
+    if az("group", "exists", "--name", GROUP):
+        raise RuntimeError("Refusing to reuse an existing resource group")
+    PROVISION_ATTEMPTED = True
+    az("group", "create", "--name", GROUP, "--location", LOCATION,
+       "--tags", "purpose=throwaway-twelve-metric-prototype", "cleanup=delete-after-prototype")
+    save()
+    print(f"Created {GROUP}", flush=True)
+    for attempt in range(3):
+        try:
+            foundry = az("cognitiveservices", "account", "create", "--resource-group", GROUP, "--name", ACCOUNT,
+                         "--location", LOCATION, "--kind", "AIServices", "--sku", "S0",
+                         "--custom-domain", ACCOUNT, "--allow-project-management", "false", "--yes")
+            break
+        except RuntimeError as error:
+            OBS.setdefault("account_creation_errors", []).append(str(error))
+            save()
+            existing = az("cognitiveservices", "account", "list", "--resource-group", GROUP)
+            if attempt == 2 or any(item["name"] == ACCOUNT for item in existing):
+                raise
+            print("Account creation failed; retrying after confirming no account exists", flush=True)
+            time.sleep(15)
+    az("cognitiveservices", "account", "identity", "assign", "--resource-group", GROUP, "--name", ACCOUNT)
+    foundry = az("cognitiveservices", "account", "update", "--resource-group", GROUP, "--name", ACCOUNT,
+                 "--allow-project-management", "true")
+    project = az("cognitiveservices", "account", "project", "create", "--resource-group", GROUP,
+                 "--name", ACCOUNT, "--project-name", PROJECT, "--location", LOCATION,
+                 "--display-name", "Disposable to-do prototype")
+    token = project_token(force_refresh=True)
+    encoded = token.split(".")[1]
+    oid = json.loads(base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4)))["oid"]
+    user_role = "53ca6127-db72-4b80-b1b0-d745d6d5456d"
+    for identity, principal_type in [(oid, "User"),
+                                     (foundry["identity"]["principalId"], "ServicePrincipal"),
+                                     (project["identity"]["principalId"], "ServicePrincipal")]:
+        az("role", "assignment", "create", "--assignee-object-id", identity,
+           "--assignee-principal-type", principal_type, "--role", user_role, "--scope", foundry["id"])
+    az("role", "assignment", "create", "--assignee-object-id", oid, "--assignee-principal-type", "User",
+       "--role", "eadc314b-1a2d-4efa-be10-5d325db5065e", "--scope", project["id"])
+    az("cognitiveservices", "account", "deployment", "create", "--resource-group", GROUP,
+       "--name", ACCOUNT, "--deployment-name", MODEL, "--model-format", "OpenAI",
+       "--model-name", "gpt-4.1-mini", "--model-version", "2025-04-14",
+       "--sku-name", "GlobalStandard", "--sku-capacity", str(MODEL_CAPACITY))
+    ENDPOINT = f"https://{ACCOUNT}.services.ai.azure.com/api/projects/{PROJECT}"
+    print("Deploying synthetic service", flush=True)
+    app = az("containerapp", "up", "--name", f"todo-{SUFFIX}", "--resource-group", GROUP,
+             "--location", LOCATION, "--source", str(ROOT / "service"), "--ingress", "external",
+             "--target-port", "8080", "--env-vars", f"TODO_API_KEY={SERVICE_KEY}", f"TODO_ADMIN_KEY={ADMIN_KEY}",
+             only_show_errors=False, output=None)
+    app = az("containerapp", "show", "--name", f"todo-{SUFFIX}", "--resource-group", GROUP)
+    az("containerapp", "update", "--name", f"todo-{SUFFIX}", "--resource-group", GROUP,
+       "--min-replicas", "1", "--max-replicas", "1")
+    SERVICE = "https://" + app["properties"]["configuration"]["ingress"]["fqdn"]
+    OBS["service_url"] = SERVICE
+    for _ in range(24):
+        try:
+            if request("GET", SERVICE + "/health")["ok"]:
+                break
+        except (APIError, urllib.error.URLError):
+            time.sleep(5)
+    else:
+        raise RuntimeError("To-do service did not become ready")
+    time.sleep(60)
+    print("Registering agents and twelve independent evaluators", flush=True)
+    available = {}
+    for name, setup in (("prompt", lambda: setup_prompt(project)), ("hosted", setup_hosted)):
+        try:
+            setup()
+            available[name] = True
+        except (APIError, urllib.error.URLError, RuntimeError) as error:
+            available[name] = False
+            OBS[name + "_setup_error"] = str(error)
+            print(f"{name} setup failed: {redact(str(error))}", flush=True)
+        save()
+    registered = []
+    OBS["evaluator_registration"] = {}
+    for name in METRICS:
+        try:
+            result = register_evaluator(name)
+            registered.append(name)
+            OBS["evaluator_registration"][name] = {
+                "registered": True, "name": evaluator_name(name),
+                "version": result.get("version"),
+            }
+        except (APIError, urllib.error.URLError, RuntimeError) as error:
+            OBS["evaluator_registration"][name] = {"registered": False, "error": str(error)}
+            print(f"Evaluator {name} registration failed: {redact(str(error))}", flush=True)
+        save()
+    return project, available, registered
+
+
+def cleanup():
+    if not PROVISION_ATTEMPTED:
+        return
+    print(f"Deleting disposable group {GROUP}", flush=True)
+    try:
+        if az("group", "exists", "--name", GROUP):
+            az("group", "delete", "--name", GROUP, "--yes", timeout=1800)
+        exists = az("group", "exists", "--name", GROUP)
+        OBS["cleanup"] = {"verified": exists is False, "group_exists": exists,
+                          "checked_at": datetime.now(timezone.utc).isoformat()}
+        save()
+        if exists:
+            raise RuntimeError(f"Resource group still exists: {GROUP}")
+        print("Resource-group deletion verified", flush=True)
+    except Exception as error:
+        OBS["cleanup"] = {"verified": False, "error": redact(str(error))}
+        save()
+        raise
+
+
+def main():
+    try:
+        project, available, registered = provision()
         print("Checking all twelve metrics together against known synthetic evidence", flush=True)
         synthetic = known_evidence()
         synthetic_customer = customer_scores(synthetic)
@@ -767,22 +794,7 @@ def main():
         save()
         raise
     finally:
-        if provision_attempted:
-            print(f"Deleting disposable group {GROUP}", flush=True)
-            try:
-                if az("group", "exists", "--name", GROUP):
-                    az("group", "delete", "--name", GROUP, "--yes", timeout=1800)
-                exists = az("group", "exists", "--name", GROUP)
-                OBS["cleanup"] = {"verified": exists is False, "group_exists": exists,
-                                  "checked_at": datetime.now(timezone.utc).isoformat()}
-                save()
-                if exists:
-                    raise RuntimeError(f"Resource group still exists: {GROUP}")
-                print("Resource-group deletion verified", flush=True)
-            except Exception as error:
-                OBS["cleanup"] = {"verified": False, "error": redact(str(error))}
-                save()
-                raise
+        cleanup()
 
 
 if __name__ == "__main__":
