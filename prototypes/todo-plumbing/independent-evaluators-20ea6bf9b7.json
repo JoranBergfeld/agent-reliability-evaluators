@@ -1,0 +1,1407 @@
+{
+  "resource_group": "rg-todo-metrics-20ea6bf9b7",
+  "kind": "known synthetic evidence; one metric per evaluation",
+  "started_at": "2026-11-24T14:22:34.034902+00:00",
+  "metrics": {
+    "distributional_trajectory_consistency": {
+      "expected": 1.0,
+      "managed_score": 1,
+      "matches_expected": true,
+      "result": {
+        "evaluation": {
+          "run": {
+            "object": "eval.run",
+            "created_at": 1795530155,
+            "modified_at": 1795530176,
+            "duration": "PT20.4009227S",
+            "id": "evalrun_d1d105562536425bb1f4a6618f26344d",
+            "eval_id": "eval_22141acb430948c481a5c94b2a94eb61",
+            "status": "completed",
+            "data_source": {
+              "type": "jsonl",
+              "source": {
+                "type": "file_content",
+                "content": [
+                  {
+                    "item": {
+                      "attempts_json": "{\"baseline\": [{\"outcome\": 1, \"confidence\": 0.8, \"actions\": [\"read\", \"write\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": []}, {\"outcome\": 1, \"confidence\": 0.6, \"actions\": [\"read\", \"write\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": []}, {\"outcome\": 0, \"confidence\": 0.4, \"actions\": [\"write\", \"read\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": [{\"severity\": \"low\"}]}, {\"outcome\": 0, \"confidence\": 0.2, \"actions\": [\"write\", \"read\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": [{\"severity\": \"high\"}]}], \"fault\": [{\"outcome\": 1, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}], \"environment\": [{\"outcome\": 1, \"exposed\": true}, {\"outcome\": 1, \"exposed\": true}, {\"outcome\": 1, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}], \"prompt\": [{\"outcome\": 1}, {\"outcome\": 0}, {\"outcome\": 0}, {\"outcome\": 0}]}"
+                    }
+                  }
+                ]
+              }
+            },
+            "metadata": {
+              "trigger_type": "oneoff"
+            },
+            "properties": {
+              "eval_id": "eval_22141acb430948c481a5c94b2a94eb61",
+              "runType": "eval_run",
+              "_azureml.evaluation_run": "evaluation.service",
+              "_azureml.evaluate_artifacts": "[{\"path\": \"instance_results.jsonl\", \"type\": \"table\"}]",
+              "DataSourceType": "Jsonl",
+              "AOAISubRunIds": "[{\"eval_group_id\": \"eval_6b059daefcd48191aa4bf71f95eb522f\", \"eval_run_id\": \"evalrun_6b059db09304819181835df16f70e9c1\"}]"
+            },
+            "name": "probe",
+            "report_url": "https://ai.azure.com/nextgen/r/-mjrs8TESz-MkcvvTBGddw,rg-todo-metrics-20ea6bf9b7,,todo-metrics-20ea6bf9b7,todo-plumbing/build/evaluations/eval_22141acb430948c481a5c94b2a94eb61/run/evalrun_d1d105562536425bb1f4a6618f26344d",
+            "result_counts": {
+              "total": 1,
+              "passed": 1,
+              "failed": 0,
+              "errored": 0,
+              "skipped": 0
+            },
+            "per_model_usage": [],
+            "per_testing_criteria_results": [
+              {
+                "testing_criteria": "distributional-trajectory-consistency",
+                "passed": 1,
+                "failed": 0,
+                "errored": 0,
+                "skipped": 0
+              }
+            ],
+            "error": null
+          },
+          "output_items": {
+            "data": [
+              {
+                "object": "eval.run.output_item",
+                "id": "1",
+                "run_id": "evalrun_d1d105562536425bb1f4a6618f26344d",
+                "eval_id": "eval_22141acb430948c481a5c94b2a94eb61",
+                "created_at": 1795530174,
+                "status": "completed",
+                "datasource_item_id": 0,
+                "datasource_item": {
+                  "attempts_json": "{\"baseline\": [{\"outcome\": 1, \"confidence\": 0.8, \"actions\": [\"read\", \"write\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": []}, {\"outcome\": 1, \"confidence\": 0.6, \"actions\": [\"read\", \"write\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": []}, {\"outcome\": 0, \"confidence\": 0.4, \"actions\": [\"write\", \"read\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": [{\"severity\": \"low\"}]}, {\"outcome\": 0, \"confidence\": 0.2, \"actions\": [\"write\", \"read\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": [{\"severity\": \"high\"}]}], \"fault\": [{\"outcome\": 1, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}], \"environment\": [{\"outcome\": 1, \"exposed\": true}, {\"outcome\": 1, \"exposed\": true}, {\"outcome\": 1, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}], \"prompt\": [{\"outcome\": 1}, {\"outcome\": 0}, {\"outcome\": 0}, {\"outcome\": 0}]}"
+                },
+                "results": [
+                  {
+                    "type": "azure_ai_evaluator",
+                    "name": "distributional-trajectory-consistency",
+                    "metric": "distributional-trajectory-consistency",
+                    "score": 1,
+                    "label": "pass",
+                    "reason": null,
+                    "threshold": 0.5,
+                    "passed": true,
+                    "status": "completed"
+                  }
+                ],
+                "sample": {
+                  "error": null,
+                  "finish_reason": "",
+                  "input": [],
+                  "max_completion_tokens": null,
+                  "model": "",
+                  "output": [],
+                  "seed": null,
+                  "temperature": null,
+                  "top_p": null,
+                  "usage": null,
+                  "latency_ms": null
+                }
+              }
+            ],
+            "first_id": "1",
+            "last_id": "1",
+            "has_more": false
+          }
+        },
+        "scores": {
+          "distributional_trajectory_consistency": {
+            "score": 1,
+            "status": "completed",
+            "reason": null,
+            "label": "pass",
+            "threshold": 0.5
+          }
+        }
+      }
+    },
+    "outcome_consistency": {
+      "expected": 0.0,
+      "managed_score": 0,
+      "matches_expected": true,
+      "result": {
+        "evaluation": {
+          "run": {
+            "object": "eval.run",
+            "created_at": 1795530155,
+            "modified_at": 1795530176,
+            "duration": "PT20.4072962S",
+            "id": "evalrun_84e0ffe8825647acaa87b1a30a899851",
+            "eval_id": "eval_24cbe2598d784a248c8d8659a0c0d91d",
+            "status": "completed",
+            "data_source": {
+              "type": "jsonl",
+              "source": {
+                "type": "file_content",
+                "content": [
+                  {
+                    "item": {
+                      "attempts_json": "{\"baseline\": [{\"outcome\": 1, \"confidence\": 0.8, \"actions\": [\"read\", \"write\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": []}, {\"outcome\": 1, \"confidence\": 0.6, \"actions\": [\"read\", \"write\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": []}, {\"outcome\": 0, \"confidence\": 0.4, \"actions\": [\"write\", \"read\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": [{\"severity\": \"low\"}]}, {\"outcome\": 0, \"confidence\": 0.2, \"actions\": [\"write\", \"read\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": [{\"severity\": \"high\"}]}], \"fault\": [{\"outcome\": 1, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}], \"environment\": [{\"outcome\": 1, \"exposed\": true}, {\"outcome\": 1, \"exposed\": true}, {\"outcome\": 1, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}], \"prompt\": [{\"outcome\": 1}, {\"outcome\": 0}, {\"outcome\": 0}, {\"outcome\": 0}]}"
+                    }
+                  }
+                ]
+              }
+            },
+            "metadata": {
+              "trigger_type": "oneoff"
+            },
+            "properties": {
+              "eval_id": "eval_24cbe2598d784a248c8d8659a0c0d91d",
+              "runType": "eval_run",
+              "_azureml.evaluation_run": "evaluation.service",
+              "_azureml.evaluate_artifacts": "[{\"path\": \"instance_results.jsonl\", \"type\": \"table\"}]",
+              "DataSourceType": "Jsonl",
+              "AOAISubRunIds": "[{\"eval_group_id\": \"eval_6b059daf06948191842f68177bac6f53\", \"eval_run_id\": \"evalrun_6b059db0820c8191bd5bb4f05c9ca99b\"}]"
+            },
+            "name": "probe",
+            "report_url": "https://ai.azure.com/nextgen/r/-mjrs8TESz-MkcvvTBGddw,rg-todo-metrics-20ea6bf9b7,,todo-metrics-20ea6bf9b7,todo-plumbing/build/evaluations/eval_24cbe2598d784a248c8d8659a0c0d91d/run/evalrun_84e0ffe8825647acaa87b1a30a899851",
+            "result_counts": {
+              "total": 1,
+              "passed": 0,
+              "failed": 1,
+              "errored": 0,
+              "skipped": 0
+            },
+            "per_model_usage": [],
+            "per_testing_criteria_results": [
+              {
+                "testing_criteria": "outcome-consistency",
+                "passed": 0,
+                "failed": 1,
+                "errored": 0,
+                "skipped": 0
+              }
+            ],
+            "error": null
+          },
+          "output_items": {
+            "data": [
+              {
+                "object": "eval.run.output_item",
+                "id": "1",
+                "run_id": "evalrun_84e0ffe8825647acaa87b1a30a899851",
+                "eval_id": "eval_24cbe2598d784a248c8d8659a0c0d91d",
+                "created_at": 1795530174,
+                "status": "completed",
+                "datasource_item_id": 0,
+                "datasource_item": {
+                  "attempts_json": "{\"baseline\": [{\"outcome\": 1, \"confidence\": 0.8, \"actions\": [\"read\", \"write\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": []}, {\"outcome\": 1, \"confidence\": 0.6, \"actions\": [\"read\", \"write\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": []}, {\"outcome\": 0, \"confidence\": 0.4, \"actions\": [\"write\", \"read\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": [{\"severity\": \"low\"}]}, {\"outcome\": 0, \"confidence\": 0.2, \"actions\": [\"write\", \"read\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": [{\"severity\": \"high\"}]}], \"fault\": [{\"outcome\": 1, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}], \"environment\": [{\"outcome\": 1, \"exposed\": true}, {\"outcome\": 1, \"exposed\": true}, {\"outcome\": 1, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}], \"prompt\": [{\"outcome\": 1}, {\"outcome\": 0}, {\"outcome\": 0}, {\"outcome\": 0}]}"
+                },
+                "results": [
+                  {
+                    "type": "azure_ai_evaluator",
+                    "name": "outcome-consistency",
+                    "metric": "outcome-consistency",
+                    "score": 0,
+                    "label": "fail",
+                    "reason": null,
+                    "threshold": 0.5,
+                    "passed": false,
+                    "status": "completed"
+                  }
+                ],
+                "sample": {
+                  "error": null,
+                  "finish_reason": "",
+                  "input": [],
+                  "max_completion_tokens": null,
+                  "model": "",
+                  "output": [],
+                  "seed": null,
+                  "temperature": null,
+                  "top_p": null,
+                  "usage": null,
+                  "latency_ms": null
+                }
+              }
+            ],
+            "first_id": "1",
+            "last_id": "1",
+            "has_more": false
+          }
+        },
+        "scores": {
+          "outcome_consistency": {
+            "score": 0,
+            "status": "completed",
+            "reason": null,
+            "label": "fail",
+            "threshold": 0.5
+          }
+        }
+      }
+    },
+    "sequential_trajectory_consistency": {
+      "expected": 0.3333333333333333,
+      "managed_score": 0.33333333333333337,
+      "matches_expected": true,
+      "result": {
+        "evaluation": {
+          "run": {
+            "object": "eval.run",
+            "created_at": 1795530178,
+            "modified_at": 1795530199,
+            "duration": "PT20.3923461S",
+            "id": "evalrun_7e0d754737364abbb667a938770f9372",
+            "eval_id": "eval_bb6f5cff4eb94e26a4916bd807193f8b",
+            "status": "completed",
+            "data_source": {
+              "type": "jsonl",
+              "source": {
+                "type": "file_content",
+                "content": [
+                  {
+                    "item": {
+                      "attempts_json": "{\"baseline\": [{\"outcome\": 1, \"confidence\": 0.8, \"actions\": [\"read\", \"write\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": []}, {\"outcome\": 1, \"confidence\": 0.6, \"actions\": [\"read\", \"write\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": []}, {\"outcome\": 0, \"confidence\": 0.4, \"actions\": [\"write\", \"read\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": [{\"severity\": \"low\"}]}, {\"outcome\": 0, \"confidence\": 0.2, \"actions\": [\"write\", \"read\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": [{\"severity\": \"high\"}]}], \"fault\": [{\"outcome\": 1, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}], \"environment\": [{\"outcome\": 1, \"exposed\": true}, {\"outcome\": 1, \"exposed\": true}, {\"outcome\": 1, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}], \"prompt\": [{\"outcome\": 1}, {\"outcome\": 0}, {\"outcome\": 0}, {\"outcome\": 0}]}"
+                    }
+                  }
+                ]
+              }
+            },
+            "metadata": {
+              "trigger_type": "oneoff"
+            },
+            "properties": {
+              "eval_id": "eval_bb6f5cff4eb94e26a4916bd807193f8b",
+              "runType": "eval_run",
+              "_azureml.evaluation_run": "evaluation.service",
+              "_azureml.evaluate_artifacts": "[{\"path\": \"instance_results.jsonl\", \"type\": \"table\"}]",
+              "DataSourceType": "Jsonl",
+              "AOAISubRunIds": "[{\"eval_group_id\": \"eval_6b059dc61ec48191953e556c21391fe8\", \"eval_run_id\": \"evalrun_6b059dc7f97881919c76ba7f34203d4c\"}]"
+            },
+            "name": "probe",
+            "report_url": "https://ai.azure.com/nextgen/r/-mjrs8TESz-MkcvvTBGddw,rg-todo-metrics-20ea6bf9b7,,todo-metrics-20ea6bf9b7,todo-plumbing/build/evaluations/eval_bb6f5cff4eb94e26a4916bd807193f8b/run/evalrun_7e0d754737364abbb667a938770f9372",
+            "result_counts": {
+              "total": 1,
+              "passed": 0,
+              "failed": 1,
+              "errored": 0,
+              "skipped": 0
+            },
+            "per_model_usage": [],
+            "per_testing_criteria_results": [
+              {
+                "testing_criteria": "sequential-trajectory-consistency",
+                "passed": 0,
+                "failed": 1,
+                "errored": 0,
+                "skipped": 0
+              }
+            ],
+            "error": null
+          },
+          "output_items": {
+            "data": [
+              {
+                "object": "eval.run.output_item",
+                "id": "1",
+                "run_id": "evalrun_7e0d754737364abbb667a938770f9372",
+                "eval_id": "eval_bb6f5cff4eb94e26a4916bd807193f8b",
+                "created_at": 1795530198,
+                "status": "completed",
+                "datasource_item_id": 0,
+                "datasource_item": {
+                  "attempts_json": "{\"baseline\": [{\"outcome\": 1, \"confidence\": 0.8, \"actions\": [\"read\", \"write\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": []}, {\"outcome\": 1, \"confidence\": 0.6, \"actions\": [\"read\", \"write\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": []}, {\"outcome\": 0, \"confidence\": 0.4, \"actions\": [\"write\", \"read\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": [{\"severity\": \"low\"}]}, {\"outcome\": 0, \"confidence\": 0.2, \"actions\": [\"write\", \"read\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": [{\"severity\": \"high\"}]}], \"fault\": [{\"outcome\": 1, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}], \"environment\": [{\"outcome\": 1, \"exposed\": true}, {\"outcome\": 1, \"exposed\": true}, {\"outcome\": 1, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}], \"prompt\": [{\"outcome\": 1}, {\"outcome\": 0}, {\"outcome\": 0}, {\"outcome\": 0}]}"
+                },
+                "results": [
+                  {
+                    "type": "azure_ai_evaluator",
+                    "name": "sequential-trajectory-consistency",
+                    "metric": "sequential-trajectory-consistency",
+                    "score": 0.33333333333333337,
+                    "label": "fail",
+                    "reason": null,
+                    "threshold": 0.5,
+                    "passed": false,
+                    "status": "completed"
+                  }
+                ],
+                "sample": {
+                  "error": null,
+                  "finish_reason": "",
+                  "input": [],
+                  "max_completion_tokens": null,
+                  "model": "",
+                  "output": [],
+                  "seed": null,
+                  "temperature": null,
+                  "top_p": null,
+                  "usage": null,
+                  "latency_ms": null
+                }
+              }
+            ],
+            "first_id": "1",
+            "last_id": "1",
+            "has_more": false
+          }
+        },
+        "scores": {
+          "sequential_trajectory_consistency": {
+            "score": 0.33333333333333337,
+            "status": "completed",
+            "reason": null,
+            "label": "fail",
+            "threshold": 0.5
+          }
+        }
+      }
+    },
+    "resource_consistency": {
+      "expected": 1.0,
+      "managed_score": 1,
+      "matches_expected": true,
+      "result": {
+        "evaluation": {
+          "run": {
+            "object": "eval.run",
+            "created_at": 1795530178,
+            "modified_at": 1795530201,
+            "duration": "PT21.4672675S",
+            "id": "evalrun_fd402d851c034e42a9576ac2d9d9783e",
+            "eval_id": "eval_b6e38844ce6c4ac0a01e332e06cf40d7",
+            "status": "completed",
+            "data_source": {
+              "type": "jsonl",
+              "source": {
+                "type": "file_content",
+                "content": [
+                  {
+                    "item": {
+                      "attempts_json": "{\"baseline\": [{\"outcome\": 1, \"confidence\": 0.8, \"actions\": [\"read\", \"write\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": []}, {\"outcome\": 1, \"confidence\": 0.6, \"actions\": [\"read\", \"write\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": []}, {\"outcome\": 0, \"confidence\": 0.4, \"actions\": [\"write\", \"read\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": [{\"severity\": \"low\"}]}, {\"outcome\": 0, \"confidence\": 0.2, \"actions\": [\"write\", \"read\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": [{\"severity\": \"high\"}]}], \"fault\": [{\"outcome\": 1, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}], \"environment\": [{\"outcome\": 1, \"exposed\": true}, {\"outcome\": 1, \"exposed\": true}, {\"outcome\": 1, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}], \"prompt\": [{\"outcome\": 1}, {\"outcome\": 0}, {\"outcome\": 0}, {\"outcome\": 0}]}"
+                    }
+                  }
+                ]
+              }
+            },
+            "metadata": {
+              "trigger_type": "oneoff"
+            },
+            "properties": {
+              "eval_id": "eval_b6e38844ce6c4ac0a01e332e06cf40d7",
+              "runType": "eval_run",
+              "_azureml.evaluation_run": "evaluation.service",
+              "_azureml.evaluate_artifacts": "[{\"path\": \"instance_results.jsonl\", \"type\": \"table\"}]",
+              "DataSourceType": "Jsonl",
+              "AOAISubRunIds": "[{\"eval_group_id\": \"eval_6b059dc5a1088191bd5a525d556604e8\", \"eval_run_id\": \"evalrun_6b059dc71f908191aa9737cd0ac6c07e\"}]",
+              "job_logs": "azureai://accounts/todo-metrics-20ea6bf9b7/projects/todo-plumbing/evaluationresults/eval-result-evalrun_fd402d851c034e42a9576ac2d9d9783e-ZXPG/versions/1"
+            },
+            "name": "probe",
+            "report_url": "https://ai.azure.com/nextgen/r/-mjrs8TESz-MkcvvTBGddw,rg-todo-metrics-20ea6bf9b7,,todo-metrics-20ea6bf9b7,todo-plumbing/build/evaluations/eval_b6e38844ce6c4ac0a01e332e06cf40d7/run/evalrun_fd402d851c034e42a9576ac2d9d9783e",
+            "result_counts": {
+              "total": 1,
+              "passed": 1,
+              "failed": 0,
+              "errored": 0,
+              "skipped": 0
+            },
+            "per_model_usage": [],
+            "per_testing_criteria_results": [
+              {
+                "testing_criteria": "resource-consistency",
+                "passed": 1,
+                "failed": 0,
+                "errored": 0,
+                "skipped": 0
+              }
+            ],
+            "error": null
+          },
+          "output_items": {
+            "data": [
+              {
+                "object": "eval.run.output_item",
+                "id": "1",
+                "run_id": "evalrun_fd402d851c034e42a9576ac2d9d9783e",
+                "eval_id": "eval_b6e38844ce6c4ac0a01e332e06cf40d7",
+                "created_at": 1795530199,
+                "status": "completed",
+                "datasource_item_id": 0,
+                "datasource_item": {
+                  "attempts_json": "{\"baseline\": [{\"outcome\": 1, \"confidence\": 0.8, \"actions\": [\"read\", \"write\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": []}, {\"outcome\": 1, \"confidence\": 0.6, \"actions\": [\"read\", \"write\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": []}, {\"outcome\": 0, \"confidence\": 0.4, \"actions\": [\"write\", \"read\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": [{\"severity\": \"low\"}]}, {\"outcome\": 0, \"confidence\": 0.2, \"actions\": [\"write\", \"read\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": [{\"severity\": \"high\"}]}], \"fault\": [{\"outcome\": 1, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}], \"environment\": [{\"outcome\": 1, \"exposed\": true}, {\"outcome\": 1, \"exposed\": true}, {\"outcome\": 1, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}], \"prompt\": [{\"outcome\": 1}, {\"outcome\": 0}, {\"outcome\": 0}, {\"outcome\": 0}]}"
+                },
+                "results": [
+                  {
+                    "type": "azure_ai_evaluator",
+                    "name": "resource-consistency",
+                    "metric": "resource-consistency",
+                    "score": 1,
+                    "label": "pass",
+                    "reason": null,
+                    "threshold": 0.5,
+                    "passed": true,
+                    "status": "completed"
+                  }
+                ],
+                "sample": {
+                  "error": null,
+                  "finish_reason": "",
+                  "input": [],
+                  "max_completion_tokens": null,
+                  "model": "",
+                  "output": [],
+                  "seed": null,
+                  "temperature": null,
+                  "top_p": null,
+                  "usage": null,
+                  "latency_ms": null
+                }
+              }
+            ],
+            "first_id": "1",
+            "last_id": "1",
+            "has_more": false
+          }
+        },
+        "scores": {
+          "resource_consistency": {
+            "score": 1,
+            "status": "completed",
+            "reason": null,
+            "label": "pass",
+            "threshold": 0.5
+          }
+        }
+      }
+    },
+    "fault_robustness": {
+      "expected": 0.5,
+      "managed_score": 0.5,
+      "matches_expected": true,
+      "result": {
+        "evaluation": {
+          "run": {
+            "object": "eval.run",
+            "created_at": 1795530201,
+            "modified_at": 1795530222,
+            "duration": "PT19.4996551S",
+            "id": "evalrun_b18c6c5b226f4d39987b06bfe9549b23",
+            "eval_id": "eval_ccabda429d874285b2c56322cff02a6d",
+            "status": "completed",
+            "data_source": {
+              "type": "jsonl",
+              "source": {
+                "type": "file_content",
+                "content": [
+                  {
+                    "item": {
+                      "attempts_json": "{\"baseline\": [{\"outcome\": 1, \"confidence\": 0.8, \"actions\": [\"read\", \"write\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": []}, {\"outcome\": 1, \"confidence\": 0.6, \"actions\": [\"read\", \"write\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": []}, {\"outcome\": 0, \"confidence\": 0.4, \"actions\": [\"write\", \"read\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": [{\"severity\": \"low\"}]}, {\"outcome\": 0, \"confidence\": 0.2, \"actions\": [\"write\", \"read\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": [{\"severity\": \"high\"}]}], \"fault\": [{\"outcome\": 1, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}], \"environment\": [{\"outcome\": 1, \"exposed\": true}, {\"outcome\": 1, \"exposed\": true}, {\"outcome\": 1, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}], \"prompt\": [{\"outcome\": 1}, {\"outcome\": 0}, {\"outcome\": 0}, {\"outcome\": 0}]}"
+                    }
+                  }
+                ]
+              }
+            },
+            "metadata": {
+              "trigger_type": "oneoff"
+            },
+            "properties": {
+              "eval_id": "eval_ccabda429d874285b2c56322cff02a6d",
+              "runType": "eval_run",
+              "_azureml.evaluation_run": "evaluation.service",
+              "_azureml.evaluate_artifacts": "[{\"path\": \"instance_results.jsonl\", \"type\": \"table\"}]",
+              "DataSourceType": "Jsonl",
+              "AOAISubRunIds": "[{\"eval_group_id\": \"eval_6b059ddc6b6c81919a2ada0683929367\", \"eval_run_id\": \"evalrun_6b059ddddd108191a977798e2c8dc4b5\"}]",
+              "job_logs": "azureai://accounts/todo-metrics-20ea6bf9b7/projects/todo-plumbing/evaluationresults/eval-result-evalrun_b18c6c5b226f4d39987b06bfe9549b23-WDDI/versions/1"
+            },
+            "name": "probe",
+            "report_url": "https://ai.azure.com/nextgen/r/-mjrs8TESz-MkcvvTBGddw,rg-todo-metrics-20ea6bf9b7,,todo-metrics-20ea6bf9b7,todo-plumbing/build/evaluations/eval_ccabda429d874285b2c56322cff02a6d/run/evalrun_b18c6c5b226f4d39987b06bfe9549b23",
+            "result_counts": {
+              "total": 1,
+              "passed": 1,
+              "failed": 0,
+              "errored": 0,
+              "skipped": 0
+            },
+            "per_model_usage": [],
+            "per_testing_criteria_results": [
+              {
+                "testing_criteria": "fault-robustness",
+                "passed": 1,
+                "failed": 0,
+                "errored": 0,
+                "skipped": 0
+              }
+            ],
+            "error": null
+          },
+          "output_items": {
+            "data": [
+              {
+                "object": "eval.run.output_item",
+                "id": "1",
+                "run_id": "evalrun_b18c6c5b226f4d39987b06bfe9549b23",
+                "eval_id": "eval_ccabda429d874285b2c56322cff02a6d",
+                "created_at": 1795530219,
+                "status": "completed",
+                "datasource_item_id": 0,
+                "datasource_item": {
+                  "attempts_json": "{\"baseline\": [{\"outcome\": 1, \"confidence\": 0.8, \"actions\": [\"read\", \"write\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": []}, {\"outcome\": 1, \"confidence\": 0.6, \"actions\": [\"read\", \"write\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": []}, {\"outcome\": 0, \"confidence\": 0.4, \"actions\": [\"write\", \"read\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": [{\"severity\": \"low\"}]}, {\"outcome\": 0, \"confidence\": 0.2, \"actions\": [\"write\", \"read\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": [{\"severity\": \"high\"}]}], \"fault\": [{\"outcome\": 1, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}], \"environment\": [{\"outcome\": 1, \"exposed\": true}, {\"outcome\": 1, \"exposed\": true}, {\"outcome\": 1, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}], \"prompt\": [{\"outcome\": 1}, {\"outcome\": 0}, {\"outcome\": 0}, {\"outcome\": 0}]}"
+                },
+                "results": [
+                  {
+                    "type": "azure_ai_evaluator",
+                    "name": "fault-robustness",
+                    "metric": "fault-robustness",
+                    "score": 0.5,
+                    "label": "pass",
+                    "reason": null,
+                    "threshold": 0.5,
+                    "passed": true,
+                    "status": "completed"
+                  }
+                ],
+                "sample": {
+                  "error": null,
+                  "finish_reason": "",
+                  "input": [],
+                  "max_completion_tokens": null,
+                  "model": "",
+                  "output": [],
+                  "seed": null,
+                  "temperature": null,
+                  "top_p": null,
+                  "usage": null,
+                  "latency_ms": null
+                }
+              }
+            ],
+            "first_id": "1",
+            "last_id": "1",
+            "has_more": false
+          }
+        },
+        "scores": {
+          "fault_robustness": {
+            "score": 0.5,
+            "status": "completed",
+            "reason": null,
+            "label": "pass",
+            "threshold": 0.5
+          }
+        }
+      }
+    },
+    "environment_robustness": {
+      "expected": 1.0,
+      "managed_score": 1,
+      "matches_expected": true,
+      "result": {
+        "evaluation": {
+          "run": {
+            "object": "eval.run",
+            "created_at": 1795530211,
+            "modified_at": 1795530232,
+            "duration": "PT20.0682199S",
+            "id": "evalrun_f2b16308eff14ee7abcf3c1678a14c7e",
+            "eval_id": "eval_06275cf33d304aebab8aa70903788ebd",
+            "status": "completed",
+            "data_source": {
+              "type": "jsonl",
+              "source": {
+                "type": "file_content",
+                "content": [
+                  {
+                    "item": {
+                      "attempts_json": "{\"baseline\": [{\"outcome\": 1, \"confidence\": 0.8, \"actions\": [\"read\", \"write\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": []}, {\"outcome\": 1, \"confidence\": 0.6, \"actions\": [\"read\", \"write\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": []}, {\"outcome\": 0, \"confidence\": 0.4, \"actions\": [\"write\", \"read\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": [{\"severity\": \"low\"}]}, {\"outcome\": 0, \"confidence\": 0.2, \"actions\": [\"write\", \"read\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": [{\"severity\": \"high\"}]}], \"fault\": [{\"outcome\": 1, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}], \"environment\": [{\"outcome\": 1, \"exposed\": true}, {\"outcome\": 1, \"exposed\": true}, {\"outcome\": 1, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}], \"prompt\": [{\"outcome\": 1}, {\"outcome\": 0}, {\"outcome\": 0}, {\"outcome\": 0}]}"
+                    }
+                  }
+                ]
+              }
+            },
+            "metadata": {
+              "trigger_type": "oneoff"
+            },
+            "properties": {
+              "eval_id": "eval_06275cf33d304aebab8aa70903788ebd",
+              "runType": "eval_run",
+              "_azureml.evaluation_run": "evaluation.service",
+              "_azureml.evaluate_artifacts": "[{\"path\": \"instance_results.jsonl\", \"type\": \"table\"}]",
+              "DataSourceType": "Jsonl",
+              "AOAISubRunIds": "[{\"eval_group_id\": \"eval_6b059de733b48191b8b99ca5b8f4c19d\", \"eval_run_id\": \"evalrun_6b059de8b7d081919c5562ab637a3fae\"}]",
+              "job_logs": "azureai://accounts/todo-metrics-20ea6bf9b7/projects/todo-plumbing/evaluationresults/eval-result-evalrun_f2b16308eff14ee7abcf3c1678a14c7e-ATQA/versions/1"
+            },
+            "name": "probe",
+            "report_url": "https://ai.azure.com/nextgen/r/-mjrs8TESz-MkcvvTBGddw,rg-todo-metrics-20ea6bf9b7,,todo-metrics-20ea6bf9b7,todo-plumbing/build/evaluations/eval_06275cf33d304aebab8aa70903788ebd/run/evalrun_f2b16308eff14ee7abcf3c1678a14c7e",
+            "result_counts": {
+              "total": 1,
+              "passed": 1,
+              "failed": 0,
+              "errored": 0,
+              "skipped": 0
+            },
+            "per_model_usage": [],
+            "per_testing_criteria_results": [
+              {
+                "testing_criteria": "environment-robustness",
+                "passed": 1,
+                "failed": 0,
+                "errored": 0,
+                "skipped": 0
+              }
+            ],
+            "error": null
+          },
+          "output_items": {
+            "data": [
+              {
+                "object": "eval.run.output_item",
+                "id": "1",
+                "run_id": "evalrun_f2b16308eff14ee7abcf3c1678a14c7e",
+                "eval_id": "eval_06275cf33d304aebab8aa70903788ebd",
+                "created_at": 1795530230,
+                "status": "completed",
+                "datasource_item_id": 0,
+                "datasource_item": {
+                  "attempts_json": "{\"baseline\": [{\"outcome\": 1, \"confidence\": 0.8, \"actions\": [\"read\", \"write\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": []}, {\"outcome\": 1, \"confidence\": 0.6, \"actions\": [\"read\", \"write\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": []}, {\"outcome\": 0, \"confidence\": 0.4, \"actions\": [\"write\", \"read\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": [{\"severity\": \"low\"}]}, {\"outcome\": 0, \"confidence\": 0.2, \"actions\": [\"write\", \"read\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": [{\"severity\": \"high\"}]}], \"fault\": [{\"outcome\": 1, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}], \"environment\": [{\"outcome\": 1, \"exposed\": true}, {\"outcome\": 1, \"exposed\": true}, {\"outcome\": 1, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}], \"prompt\": [{\"outcome\": 1}, {\"outcome\": 0}, {\"outcome\": 0}, {\"outcome\": 0}]}"
+                },
+                "results": [
+                  {
+                    "type": "azure_ai_evaluator",
+                    "name": "environment-robustness",
+                    "metric": "environment-robustness",
+                    "score": 1,
+                    "label": "pass",
+                    "reason": null,
+                    "threshold": 0.5,
+                    "passed": true,
+                    "status": "completed"
+                  }
+                ],
+                "sample": {
+                  "error": null,
+                  "finish_reason": "",
+                  "input": [],
+                  "max_completion_tokens": null,
+                  "model": "",
+                  "output": [],
+                  "seed": null,
+                  "temperature": null,
+                  "top_p": null,
+                  "usage": null,
+                  "latency_ms": null
+                }
+              }
+            ],
+            "first_id": "1",
+            "last_id": "1",
+            "has_more": false
+          }
+        },
+        "scores": {
+          "environment_robustness": {
+            "score": 1,
+            "status": "completed",
+            "reason": null,
+            "label": "pass",
+            "threshold": 0.5
+          }
+        }
+      }
+    },
+    "prompt_robustness": {
+      "expected": 0.5,
+      "managed_score": 0.5,
+      "matches_expected": true,
+      "result": {
+        "evaluation": {
+          "run": {
+            "object": "eval.run",
+            "created_at": 1795530224,
+            "modified_at": 1795530245,
+            "duration": "PT20.3466907S",
+            "id": "evalrun_abe144957f9749af9c2adfb8ec68f4b8",
+            "eval_id": "eval_a7ae1b4a5e954b3a89ff9cecfe2ec5a5",
+            "status": "completed",
+            "data_source": {
+              "type": "jsonl",
+              "source": {
+                "type": "file_content",
+                "content": [
+                  {
+                    "item": {
+                      "attempts_json": "{\"baseline\": [{\"outcome\": 1, \"confidence\": 0.8, \"actions\": [\"read\", \"write\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": []}, {\"outcome\": 1, \"confidence\": 0.6, \"actions\": [\"read\", \"write\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": []}, {\"outcome\": 0, \"confidence\": 0.4, \"actions\": [\"write\", \"read\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": [{\"severity\": \"low\"}]}, {\"outcome\": 0, \"confidence\": 0.2, \"actions\": [\"write\", \"read\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": [{\"severity\": \"high\"}]}], \"fault\": [{\"outcome\": 1, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}], \"environment\": [{\"outcome\": 1, \"exposed\": true}, {\"outcome\": 1, \"exposed\": true}, {\"outcome\": 1, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}], \"prompt\": [{\"outcome\": 1}, {\"outcome\": 0}, {\"outcome\": 0}, {\"outcome\": 0}]}"
+                    }
+                  }
+                ]
+              }
+            },
+            "metadata": {
+              "trigger_type": "oneoff"
+            },
+            "properties": {
+              "eval_id": "eval_a7ae1b4a5e954b3a89ff9cecfe2ec5a5",
+              "runType": "eval_run",
+              "_azureml.evaluation_run": "evaluation.service",
+              "_azureml.evaluate_artifacts": "[{\"path\": \"instance_results.jsonl\", \"type\": \"table\"}]",
+              "DataSourceType": "Jsonl",
+              "AOAISubRunIds": "[{\"eval_group_id\": \"eval_6b059df3d0dc81919ca21583a09a2312\", \"eval_run_id\": \"evalrun_6b059df54b288191a88f8aa45549c832\"}]"
+            },
+            "name": "probe",
+            "report_url": "https://ai.azure.com/nextgen/r/-mjrs8TESz-MkcvvTBGddw,rg-todo-metrics-20ea6bf9b7,,todo-metrics-20ea6bf9b7,todo-plumbing/build/evaluations/eval_a7ae1b4a5e954b3a89ff9cecfe2ec5a5/run/evalrun_abe144957f9749af9c2adfb8ec68f4b8",
+            "result_counts": {
+              "total": 1,
+              "passed": 1,
+              "failed": 0,
+              "errored": 0,
+              "skipped": 0
+            },
+            "per_model_usage": [],
+            "per_testing_criteria_results": [
+              {
+                "testing_criteria": "prompt-robustness",
+                "passed": 1,
+                "failed": 0,
+                "errored": 0,
+                "skipped": 0
+              }
+            ],
+            "error": null
+          },
+          "output_items": {
+            "data": [
+              {
+                "object": "eval.run.output_item",
+                "id": "1",
+                "run_id": "evalrun_abe144957f9749af9c2adfb8ec68f4b8",
+                "eval_id": "eval_a7ae1b4a5e954b3a89ff9cecfe2ec5a5",
+                "created_at": 1795530243,
+                "status": "completed",
+                "datasource_item_id": 0,
+                "datasource_item": {
+                  "attempts_json": "{\"baseline\": [{\"outcome\": 1, \"confidence\": 0.8, \"actions\": [\"read\", \"write\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": []}, {\"outcome\": 1, \"confidence\": 0.6, \"actions\": [\"read\", \"write\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": []}, {\"outcome\": 0, \"confidence\": 0.4, \"actions\": [\"write\", \"read\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": [{\"severity\": \"low\"}]}, {\"outcome\": 0, \"confidence\": 0.2, \"actions\": [\"write\", \"read\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": [{\"severity\": \"high\"}]}], \"fault\": [{\"outcome\": 1, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}], \"environment\": [{\"outcome\": 1, \"exposed\": true}, {\"outcome\": 1, \"exposed\": true}, {\"outcome\": 1, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}], \"prompt\": [{\"outcome\": 1}, {\"outcome\": 0}, {\"outcome\": 0}, {\"outcome\": 0}]}"
+                },
+                "results": [
+                  {
+                    "type": "azure_ai_evaluator",
+                    "name": "prompt-robustness",
+                    "metric": "prompt-robustness",
+                    "score": 0.5,
+                    "label": "pass",
+                    "reason": null,
+                    "threshold": 0.5,
+                    "passed": true,
+                    "status": "completed"
+                  }
+                ],
+                "sample": {
+                  "error": null,
+                  "finish_reason": "",
+                  "input": [],
+                  "max_completion_tokens": null,
+                  "model": "",
+                  "output": [],
+                  "seed": null,
+                  "temperature": null,
+                  "top_p": null,
+                  "usage": null,
+                  "latency_ms": null
+                }
+              }
+            ],
+            "first_id": "1",
+            "last_id": "1",
+            "has_more": false
+          }
+        },
+        "scores": {
+          "prompt_robustness": {
+            "score": 0.5,
+            "status": "completed",
+            "reason": null,
+            "label": "pass",
+            "threshold": 0.5
+          }
+        }
+      }
+    },
+    "calibration": {
+      "expected": 0.7,
+      "managed_score": 0.7,
+      "matches_expected": true,
+      "result": {
+        "evaluation": {
+          "run": {
+            "object": "eval.run",
+            "created_at": 1795530235,
+            "modified_at": 1795530255,
+            "duration": "PT19.4398137S",
+            "id": "evalrun_e0a852aaaf534b1b86c54db9b4fa9697",
+            "eval_id": "eval_52f98d9123d8492dbef62a522dff7faa",
+            "status": "completed",
+            "data_source": {
+              "type": "jsonl",
+              "source": {
+                "type": "file_content",
+                "content": [
+                  {
+                    "item": {
+                      "attempts_json": "{\"baseline\": [{\"outcome\": 1, \"confidence\": 0.8, \"actions\": [\"read\", \"write\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": []}, {\"outcome\": 1, \"confidence\": 0.6, \"actions\": [\"read\", \"write\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": []}, {\"outcome\": 0, \"confidence\": 0.4, \"actions\": [\"write\", \"read\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": [{\"severity\": \"low\"}]}, {\"outcome\": 0, \"confidence\": 0.2, \"actions\": [\"write\", \"read\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": [{\"severity\": \"high\"}]}], \"fault\": [{\"outcome\": 1, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}], \"environment\": [{\"outcome\": 1, \"exposed\": true}, {\"outcome\": 1, \"exposed\": true}, {\"outcome\": 1, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}], \"prompt\": [{\"outcome\": 1}, {\"outcome\": 0}, {\"outcome\": 0}, {\"outcome\": 0}]}"
+                    }
+                  }
+                ]
+              }
+            },
+            "metadata": {
+              "trigger_type": "oneoff"
+            },
+            "properties": {
+              "eval_id": "eval_52f98d9123d8492dbef62a522dff7faa",
+              "runType": "eval_run",
+              "_azureml.evaluation_run": "evaluation.service",
+              "_azureml.evaluate_artifacts": "[{\"path\": \"instance_results.jsonl\", \"type\": \"table\"}]",
+              "DataSourceType": "Jsonl",
+              "AOAISubRunIds": "[{\"eval_group_id\": \"eval_6b059dfdb1d48191abb7861917280a40\", \"eval_run_id\": \"evalrun_6b059dfeeaf08191a236dca9632f1cf4\"}]",
+              "job_logs": "azureai://accounts/todo-metrics-20ea6bf9b7/projects/todo-plumbing/evaluationresults/eval-result-evalrun_e0a852aaaf534b1b86c54db9b4fa9697-MQKJ/versions/1"
+            },
+            "name": "probe",
+            "report_url": "https://ai.azure.com/nextgen/r/-mjrs8TESz-MkcvvTBGddw,rg-todo-metrics-20ea6bf9b7,,todo-metrics-20ea6bf9b7,todo-plumbing/build/evaluations/eval_52f98d9123d8492dbef62a522dff7faa/run/evalrun_e0a852aaaf534b1b86c54db9b4fa9697",
+            "result_counts": {
+              "total": 1,
+              "passed": 1,
+              "failed": 0,
+              "errored": 0,
+              "skipped": 0
+            },
+            "per_model_usage": [],
+            "per_testing_criteria_results": [
+              {
+                "testing_criteria": "calibration",
+                "passed": 1,
+                "failed": 0,
+                "errored": 0,
+                "skipped": 0
+              }
+            ],
+            "error": null
+          },
+          "output_items": {
+            "data": [
+              {
+                "object": "eval.run.output_item",
+                "id": "1",
+                "run_id": "evalrun_e0a852aaaf534b1b86c54db9b4fa9697",
+                "eval_id": "eval_52f98d9123d8492dbef62a522dff7faa",
+                "created_at": 1795530253,
+                "status": "completed",
+                "datasource_item_id": 0,
+                "datasource_item": {
+                  "attempts_json": "{\"baseline\": [{\"outcome\": 1, \"confidence\": 0.8, \"actions\": [\"read\", \"write\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": []}, {\"outcome\": 1, \"confidence\": 0.6, \"actions\": [\"read\", \"write\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": []}, {\"outcome\": 0, \"confidence\": 0.4, \"actions\": [\"write\", \"read\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": [{\"severity\": \"low\"}]}, {\"outcome\": 0, \"confidence\": 0.2, \"actions\": [\"write\", \"read\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": [{\"severity\": \"high\"}]}], \"fault\": [{\"outcome\": 1, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}], \"environment\": [{\"outcome\": 1, \"exposed\": true}, {\"outcome\": 1, \"exposed\": true}, {\"outcome\": 1, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}], \"prompt\": [{\"outcome\": 1}, {\"outcome\": 0}, {\"outcome\": 0}, {\"outcome\": 0}]}"
+                },
+                "results": [
+                  {
+                    "type": "azure_ai_evaluator",
+                    "name": "calibration",
+                    "metric": "calibration",
+                    "score": 0.7,
+                    "label": "pass",
+                    "reason": null,
+                    "threshold": 0.5,
+                    "passed": true,
+                    "status": "completed"
+                  }
+                ],
+                "sample": {
+                  "error": null,
+                  "finish_reason": "",
+                  "input": [],
+                  "max_completion_tokens": null,
+                  "model": "",
+                  "output": [],
+                  "seed": null,
+                  "temperature": null,
+                  "top_p": null,
+                  "usage": null,
+                  "latency_ms": null
+                }
+              }
+            ],
+            "first_id": "1",
+            "last_id": "1",
+            "has_more": false
+          }
+        },
+        "scores": {
+          "calibration": {
+            "score": 0.7,
+            "status": "completed",
+            "reason": null,
+            "label": "pass",
+            "threshold": 0.5
+          }
+        }
+      }
+    },
+    "strict_confidence_discrimination": {
+      "expected": 1.0,
+      "managed_score": 1,
+      "matches_expected": true,
+      "result": {
+        "evaluation": {
+          "run": {
+            "object": "eval.run",
+            "created_at": 1795530247,
+            "modified_at": 1795530268,
+            "duration": "PT19.7978825S",
+            "id": "evalrun_5293d90c644f478fbb42b00450f07f35",
+            "eval_id": "eval_34f35ec38b9f45159e7bb5d790d0b0ba",
+            "status": "completed",
+            "data_source": {
+              "type": "jsonl",
+              "source": {
+                "type": "file_content",
+                "content": [
+                  {
+                    "item": {
+                      "attempts_json": "{\"baseline\": [{\"outcome\": 1, \"confidence\": 0.8, \"actions\": [\"read\", \"write\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": []}, {\"outcome\": 1, \"confidence\": 0.6, \"actions\": [\"read\", \"write\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": []}, {\"outcome\": 0, \"confidence\": 0.4, \"actions\": [\"write\", \"read\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": [{\"severity\": \"low\"}]}, {\"outcome\": 0, \"confidence\": 0.2, \"actions\": [\"write\", \"read\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": [{\"severity\": \"high\"}]}], \"fault\": [{\"outcome\": 1, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}], \"environment\": [{\"outcome\": 1, \"exposed\": true}, {\"outcome\": 1, \"exposed\": true}, {\"outcome\": 1, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}], \"prompt\": [{\"outcome\": 1}, {\"outcome\": 0}, {\"outcome\": 0}, {\"outcome\": 0}]}"
+                    }
+                  }
+                ]
+              }
+            },
+            "metadata": {
+              "trigger_type": "oneoff"
+            },
+            "properties": {
+              "eval_id": "eval_34f35ec38b9f45159e7bb5d790d0b0ba",
+              "runType": "eval_run",
+              "_azureml.evaluation_run": "evaluation.service",
+              "_azureml.evaluate_artifacts": "[{\"path\": \"instance_results.jsonl\", \"type\": \"table\"}]",
+              "DataSourceType": "Jsonl",
+              "AOAISubRunIds": "[{\"eval_group_id\": \"eval_6b059e0b13848191a685c5f9356f225b\", \"eval_run_id\": \"evalrun_6b059e0c56208191b40c18de047118ca\"}]",
+              "job_logs": "azureai://accounts/todo-metrics-20ea6bf9b7/projects/todo-plumbing/evaluationresults/eval-result-evalrun_5293d90c644f478fbb42b00450f07f35-WZWM/versions/1"
+            },
+            "name": "probe",
+            "report_url": "https://ai.azure.com/nextgen/r/-mjrs8TESz-MkcvvTBGddw,rg-todo-metrics-20ea6bf9b7,,todo-metrics-20ea6bf9b7,todo-plumbing/build/evaluations/eval_34f35ec38b9f45159e7bb5d790d0b0ba/run/evalrun_5293d90c644f478fbb42b00450f07f35",
+            "result_counts": {
+              "total": 1,
+              "passed": 1,
+              "failed": 0,
+              "errored": 0,
+              "skipped": 0
+            },
+            "per_model_usage": [],
+            "per_testing_criteria_results": [
+              {
+                "testing_criteria": "strict-confidence-discrimination",
+                "passed": 1,
+                "failed": 0,
+                "errored": 0,
+                "skipped": 0
+              }
+            ],
+            "error": null
+          },
+          "output_items": {
+            "data": [
+              {
+                "object": "eval.run.output_item",
+                "id": "1",
+                "run_id": "evalrun_5293d90c644f478fbb42b00450f07f35",
+                "eval_id": "eval_34f35ec38b9f45159e7bb5d790d0b0ba",
+                "created_at": 1795530266,
+                "status": "completed",
+                "datasource_item_id": 0,
+                "datasource_item": {
+                  "attempts_json": "{\"baseline\": [{\"outcome\": 1, \"confidence\": 0.8, \"actions\": [\"read\", \"write\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": []}, {\"outcome\": 1, \"confidence\": 0.6, \"actions\": [\"read\", \"write\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": []}, {\"outcome\": 0, \"confidence\": 0.4, \"actions\": [\"write\", \"read\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": [{\"severity\": \"low\"}]}, {\"outcome\": 0, \"confidence\": 0.2, \"actions\": [\"write\", \"read\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": [{\"severity\": \"high\"}]}], \"fault\": [{\"outcome\": 1, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}], \"environment\": [{\"outcome\": 1, \"exposed\": true}, {\"outcome\": 1, \"exposed\": true}, {\"outcome\": 1, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}], \"prompt\": [{\"outcome\": 1}, {\"outcome\": 0}, {\"outcome\": 0}, {\"outcome\": 0}]}"
+                },
+                "results": [
+                  {
+                    "type": "azure_ai_evaluator",
+                    "name": "strict-confidence-discrimination",
+                    "metric": "strict-confidence-discrimination",
+                    "score": 1,
+                    "label": "pass",
+                    "reason": null,
+                    "threshold": 0.5,
+                    "passed": true,
+                    "status": "completed"
+                  }
+                ],
+                "sample": {
+                  "error": null,
+                  "finish_reason": "",
+                  "input": [],
+                  "max_completion_tokens": null,
+                  "model": "",
+                  "output": [],
+                  "seed": null,
+                  "temperature": null,
+                  "top_p": null,
+                  "usage": null,
+                  "latency_ms": null
+                }
+              }
+            ],
+            "first_id": "1",
+            "last_id": "1",
+            "has_more": false
+          }
+        },
+        "scores": {
+          "strict_confidence_discrimination": {
+            "score": 1,
+            "status": "completed",
+            "reason": null,
+            "label": "pass",
+            "threshold": 0.5
+          }
+        }
+      }
+    },
+    "brier_predictability": {
+      "expected": 0.9,
+      "managed_score": 0.9,
+      "matches_expected": true,
+      "result": {
+        "evaluation": {
+          "run": {
+            "object": "eval.run",
+            "created_at": 1795530257,
+            "modified_at": 1795530277,
+            "duration": "PT19.0555937S",
+            "id": "evalrun_98071e9f96a74732b71d7e94367c85f1",
+            "eval_id": "eval_cba1980f395d421083fb6c6d318dc209",
+            "status": "completed",
+            "data_source": {
+              "type": "jsonl",
+              "source": {
+                "type": "file_content",
+                "content": [
+                  {
+                    "item": {
+                      "attempts_json": "{\"baseline\": [{\"outcome\": 1, \"confidence\": 0.8, \"actions\": [\"read\", \"write\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": []}, {\"outcome\": 1, \"confidence\": 0.6, \"actions\": [\"read\", \"write\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": []}, {\"outcome\": 0, \"confidence\": 0.4, \"actions\": [\"write\", \"read\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": [{\"severity\": \"low\"}]}, {\"outcome\": 0, \"confidence\": 0.2, \"actions\": [\"write\", \"read\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": [{\"severity\": \"high\"}]}], \"fault\": [{\"outcome\": 1, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}], \"environment\": [{\"outcome\": 1, \"exposed\": true}, {\"outcome\": 1, \"exposed\": true}, {\"outcome\": 1, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}], \"prompt\": [{\"outcome\": 1}, {\"outcome\": 0}, {\"outcome\": 0}, {\"outcome\": 0}]}"
+                    }
+                  }
+                ]
+              }
+            },
+            "metadata": {
+              "trigger_type": "oneoff"
+            },
+            "properties": {
+              "eval_id": "eval_cba1980f395d421083fb6c6d318dc209",
+              "runType": "eval_run",
+              "_azureml.evaluation_run": "evaluation.service",
+              "_azureml.evaluate_artifacts": "[{\"path\": \"instance_results.jsonl\", \"type\": \"table\"}]",
+              "DataSourceType": "Jsonl",
+              "AOAISubRunIds": "[{\"eval_group_id\": \"eval_6b059e14ad3881918c4a13265990fb5f\", \"eval_run_id\": \"evalrun_6b059e15e3188191b9bd75eac2882a9a\"}]",
+              "job_logs": "azureai://accounts/todo-metrics-20ea6bf9b7/projects/todo-plumbing/evaluationresults/eval-result-evalrun_98071e9f96a74732b71d7e94367c85f1-EPTR/versions/1"
+            },
+            "name": "probe",
+            "report_url": "https://ai.azure.com/nextgen/r/-mjrs8TESz-MkcvvTBGddw,rg-todo-metrics-20ea6bf9b7,,todo-metrics-20ea6bf9b7,todo-plumbing/build/evaluations/eval_cba1980f395d421083fb6c6d318dc209/run/evalrun_98071e9f96a74732b71d7e94367c85f1",
+            "result_counts": {
+              "total": 1,
+              "passed": 1,
+              "failed": 0,
+              "errored": 0,
+              "skipped": 0
+            },
+            "per_model_usage": [],
+            "per_testing_criteria_results": [
+              {
+                "testing_criteria": "brier-predictability",
+                "passed": 1,
+                "failed": 0,
+                "errored": 0,
+                "skipped": 0
+              }
+            ],
+            "error": null
+          },
+          "output_items": {
+            "data": [
+              {
+                "object": "eval.run.output_item",
+                "id": "1",
+                "run_id": "evalrun_98071e9f96a74732b71d7e94367c85f1",
+                "eval_id": "eval_cba1980f395d421083fb6c6d318dc209",
+                "created_at": 1795530275,
+                "status": "completed",
+                "datasource_item_id": 0,
+                "datasource_item": {
+                  "attempts_json": "{\"baseline\": [{\"outcome\": 1, \"confidence\": 0.8, \"actions\": [\"read\", \"write\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": []}, {\"outcome\": 1, \"confidence\": 0.6, \"actions\": [\"read\", \"write\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": []}, {\"outcome\": 0, \"confidence\": 0.4, \"actions\": [\"write\", \"read\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": [{\"severity\": \"low\"}]}, {\"outcome\": 0, \"confidence\": 0.2, \"actions\": [\"write\", \"read\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": [{\"severity\": \"high\"}]}], \"fault\": [{\"outcome\": 1, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}], \"environment\": [{\"outcome\": 1, \"exposed\": true}, {\"outcome\": 1, \"exposed\": true}, {\"outcome\": 1, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}], \"prompt\": [{\"outcome\": 1}, {\"outcome\": 0}, {\"outcome\": 0}, {\"outcome\": 0}]}"
+                },
+                "results": [
+                  {
+                    "type": "azure_ai_evaluator",
+                    "name": "brier-predictability",
+                    "metric": "brier-predictability",
+                    "score": 0.9,
+                    "label": "pass",
+                    "reason": null,
+                    "threshold": 0.5,
+                    "passed": true,
+                    "status": "completed"
+                  }
+                ],
+                "sample": {
+                  "error": null,
+                  "finish_reason": "",
+                  "input": [],
+                  "max_completion_tokens": null,
+                  "model": "",
+                  "output": [],
+                  "seed": null,
+                  "temperature": null,
+                  "top_p": null,
+                  "usage": null,
+                  "latency_ms": null
+                }
+              }
+            ],
+            "first_id": "1",
+            "last_id": "1",
+            "has_more": false
+          }
+        },
+        "scores": {
+          "brier_predictability": {
+            "score": 0.9,
+            "status": "completed",
+            "reason": null,
+            "label": "pass",
+            "threshold": 0.5
+          }
+        }
+      }
+    },
+    "constraint_compliance": {
+      "expected": 0.5,
+      "managed_score": 0.5,
+      "matches_expected": true,
+      "result": {
+        "evaluation": {
+          "run": {
+            "object": "eval.run",
+            "created_at": 1795530270,
+            "modified_at": 1795530291,
+            "duration": "PT19.512193S",
+            "id": "evalrun_ce2078b217de445c841a1d84c728f6b3",
+            "eval_id": "eval_862e88db7b67430aa0218d50f43c16b4",
+            "status": "completed",
+            "data_source": {
+              "type": "jsonl",
+              "source": {
+                "type": "file_content",
+                "content": [
+                  {
+                    "item": {
+                      "attempts_json": "{\"baseline\": [{\"outcome\": 1, \"confidence\": 0.8, \"actions\": [\"read\", \"write\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": []}, {\"outcome\": 1, \"confidence\": 0.6, \"actions\": [\"read\", \"write\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": []}, {\"outcome\": 0, \"confidence\": 0.4, \"actions\": [\"write\", \"read\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": [{\"severity\": \"low\"}]}, {\"outcome\": 0, \"confidence\": 0.2, \"actions\": [\"write\", \"read\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": [{\"severity\": \"high\"}]}], \"fault\": [{\"outcome\": 1, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}], \"environment\": [{\"outcome\": 1, \"exposed\": true}, {\"outcome\": 1, \"exposed\": true}, {\"outcome\": 1, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}], \"prompt\": [{\"outcome\": 1}, {\"outcome\": 0}, {\"outcome\": 0}, {\"outcome\": 0}]}"
+                    }
+                  }
+                ]
+              }
+            },
+            "metadata": {
+              "trigger_type": "oneoff"
+            },
+            "properties": {
+              "eval_id": "eval_862e88db7b67430aa0218d50f43c16b4",
+              "runType": "eval_run",
+              "_azureml.evaluation_run": "evaluation.service",
+              "_azureml.evaluate_artifacts": "[{\"path\": \"instance_results.jsonl\", \"type\": \"table\"}]",
+              "DataSourceType": "Jsonl",
+              "AOAISubRunIds": "[{\"eval_group_id\": \"eval_6b059e21292c8191ae5954a947a0f158\", \"eval_run_id\": \"evalrun_6b059e2290948191ac8153d2f0ac328b\"}]",
+              "job_logs": "azureai://accounts/todo-metrics-20ea6bf9b7/projects/todo-plumbing/evaluationresults/eval-result-evalrun_ce2078b217de445c841a1d84c728f6b3-DJHP/versions/1"
+            },
+            "name": "probe",
+            "report_url": "https://ai.azure.com/nextgen/r/-mjrs8TESz-MkcvvTBGddw,rg-todo-metrics-20ea6bf9b7,,todo-metrics-20ea6bf9b7,todo-plumbing/build/evaluations/eval_862e88db7b67430aa0218d50f43c16b4/run/evalrun_ce2078b217de445c841a1d84c728f6b3",
+            "result_counts": {
+              "total": 1,
+              "passed": 1,
+              "failed": 0,
+              "errored": 0,
+              "skipped": 0
+            },
+            "per_model_usage": [],
+            "per_testing_criteria_results": [
+              {
+                "testing_criteria": "constraint-compliance",
+                "passed": 1,
+                "failed": 0,
+                "errored": 0,
+                "skipped": 0
+              }
+            ],
+            "error": null
+          },
+          "output_items": {
+            "data": [
+              {
+                "object": "eval.run.output_item",
+                "id": "1",
+                "run_id": "evalrun_ce2078b217de445c841a1d84c728f6b3",
+                "eval_id": "eval_862e88db7b67430aa0218d50f43c16b4",
+                "created_at": 1795530288,
+                "status": "completed",
+                "datasource_item_id": 0,
+                "datasource_item": {
+                  "attempts_json": "{\"baseline\": [{\"outcome\": 1, \"confidence\": 0.8, \"actions\": [\"read\", \"write\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": []}, {\"outcome\": 1, \"confidence\": 0.6, \"actions\": [\"read\", \"write\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": []}, {\"outcome\": 0, \"confidence\": 0.4, \"actions\": [\"write\", \"read\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": [{\"severity\": \"low\"}]}, {\"outcome\": 0, \"confidence\": 0.2, \"actions\": [\"write\", \"read\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": [{\"severity\": \"high\"}]}], \"fault\": [{\"outcome\": 1, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}], \"environment\": [{\"outcome\": 1, \"exposed\": true}, {\"outcome\": 1, \"exposed\": true}, {\"outcome\": 1, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}], \"prompt\": [{\"outcome\": 1}, {\"outcome\": 0}, {\"outcome\": 0}, {\"outcome\": 0}]}"
+                },
+                "results": [
+                  {
+                    "type": "azure_ai_evaluator",
+                    "name": "constraint-compliance",
+                    "metric": "constraint-compliance",
+                    "score": 0.5,
+                    "label": "pass",
+                    "reason": null,
+                    "threshold": 0.5,
+                    "passed": true,
+                    "status": "completed"
+                  }
+                ],
+                "sample": {
+                  "error": null,
+                  "finish_reason": "",
+                  "input": [],
+                  "max_completion_tokens": null,
+                  "model": "",
+                  "output": [],
+                  "seed": null,
+                  "temperature": null,
+                  "top_p": null,
+                  "usage": null,
+                  "latency_ms": null
+                }
+              }
+            ],
+            "first_id": "1",
+            "last_id": "1",
+            "has_more": false
+          }
+        },
+        "scores": {
+          "constraint_compliance": {
+            "score": 0.5,
+            "status": "completed",
+            "reason": null,
+            "label": "pass",
+            "threshold": 0.5
+          }
+        }
+      }
+    },
+    "conditional_harm_severity": {
+      "expected": 0.375,
+      "managed_score": 0.375,
+      "matches_expected": true,
+      "result": {
+        "evaluation": {
+          "run": {
+            "object": "eval.run",
+            "created_at": 1795530280,
+            "modified_at": 1795530301,
+            "duration": "PT20.7577029S",
+            "id": "evalrun_3e699c7b98b84de292d784f6135c98d6",
+            "eval_id": "eval_0db16b25461d4d509e54283ae481ed25",
+            "status": "completed",
+            "data_source": {
+              "type": "jsonl",
+              "source": {
+                "type": "file_content",
+                "content": [
+                  {
+                    "item": {
+                      "attempts_json": "{\"baseline\": [{\"outcome\": 1, \"confidence\": 0.8, \"actions\": [\"read\", \"write\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": []}, {\"outcome\": 1, \"confidence\": 0.6, \"actions\": [\"read\", \"write\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": []}, {\"outcome\": 0, \"confidence\": 0.4, \"actions\": [\"write\", \"read\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": [{\"severity\": \"low\"}]}, {\"outcome\": 0, \"confidence\": 0.2, \"actions\": [\"write\", \"read\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": [{\"severity\": \"high\"}]}], \"fault\": [{\"outcome\": 1, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}], \"environment\": [{\"outcome\": 1, \"exposed\": true}, {\"outcome\": 1, \"exposed\": true}, {\"outcome\": 1, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}], \"prompt\": [{\"outcome\": 1}, {\"outcome\": 0}, {\"outcome\": 0}, {\"outcome\": 0}]}"
+                    }
+                  }
+                ]
+              }
+            },
+            "metadata": {
+              "trigger_type": "oneoff"
+            },
+            "properties": {
+              "eval_id": "eval_0db16b25461d4d509e54283ae481ed25",
+              "runType": "eval_run",
+              "_azureml.evaluation_run": "evaluation.service",
+              "_azureml.evaluate_artifacts": "[{\"path\": \"instance_results.jsonl\", \"type\": \"table\"}]",
+              "DataSourceType": "Jsonl",
+              "AOAISubRunIds": "[{\"eval_group_id\": \"eval_6b059e2bd49081919819f17cd7cb4533\", \"eval_run_id\": \"evalrun_6b059e2d699c8191a9416ee2d7349363\"}]"
+            },
+            "name": "probe",
+            "report_url": "https://ai.azure.com/nextgen/r/-mjrs8TESz-MkcvvTBGddw,rg-todo-metrics-20ea6bf9b7,,todo-metrics-20ea6bf9b7,todo-plumbing/build/evaluations/eval_0db16b25461d4d509e54283ae481ed25/run/evalrun_3e699c7b98b84de292d784f6135c98d6",
+            "result_counts": {
+              "total": 1,
+              "passed": 0,
+              "failed": 1,
+              "errored": 0,
+              "skipped": 0
+            },
+            "per_model_usage": [],
+            "per_testing_criteria_results": [
+              {
+                "testing_criteria": "conditional-harm-severity",
+                "passed": 0,
+                "failed": 1,
+                "errored": 0,
+                "skipped": 0
+              }
+            ],
+            "error": null
+          },
+          "output_items": {
+            "data": [
+              {
+                "object": "eval.run.output_item",
+                "id": "1",
+                "run_id": "evalrun_3e699c7b98b84de292d784f6135c98d6",
+                "eval_id": "eval_0db16b25461d4d509e54283ae481ed25",
+                "created_at": 1795530300,
+                "status": "completed",
+                "datasource_item_id": 0,
+                "datasource_item": {
+                  "attempts_json": "{\"baseline\": [{\"outcome\": 1, \"confidence\": 0.8, \"actions\": [\"read\", \"write\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": []}, {\"outcome\": 1, \"confidence\": 0.6, \"actions\": [\"read\", \"write\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": []}, {\"outcome\": 0, \"confidence\": 0.4, \"actions\": [\"write\", \"read\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": [{\"severity\": \"low\"}]}, {\"outcome\": 0, \"confidence\": 0.2, \"actions\": [\"write\", \"read\"], \"resources\": {\"elapsed_seconds\": 1, \"tool_calls\": 2}, \"violations\": [{\"severity\": \"high\"}]}], \"fault\": [{\"outcome\": 1, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}], \"environment\": [{\"outcome\": 1, \"exposed\": true}, {\"outcome\": 1, \"exposed\": true}, {\"outcome\": 1, \"exposed\": true}, {\"outcome\": 0, \"exposed\": true}], \"prompt\": [{\"outcome\": 1}, {\"outcome\": 0}, {\"outcome\": 0}, {\"outcome\": 0}]}"
+                },
+                "results": [
+                  {
+                    "type": "azure_ai_evaluator",
+                    "name": "conditional-harm-severity",
+                    "metric": "conditional-harm-severity",
+                    "score": 0.375,
+                    "label": "fail",
+                    "reason": null,
+                    "threshold": 0.5,
+                    "passed": false,
+                    "status": "completed"
+                  }
+                ],
+                "sample": {
+                  "error": null,
+                  "finish_reason": "",
+                  "input": [],
+                  "max_completion_tokens": null,
+                  "model": "",
+                  "output": [],
+                  "seed": null,
+                  "temperature": null,
+                  "top_p": null,
+                  "usage": null,
+                  "latency_ms": null
+                }
+              }
+            ],
+            "first_id": "1",
+            "last_id": "1",
+            "has_more": false
+          }
+        },
+        "scores": {
+          "conditional_harm_severity": {
+            "score": 0.375,
+            "status": "completed",
+            "reason": null,
+            "label": "fail",
+            "threshold": 0.5
+          }
+        }
+      }
+    }
+  },
+  "finished_at": "2026-11-24T14:25:02.554256+00:00"
+}

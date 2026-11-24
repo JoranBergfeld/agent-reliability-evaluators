@@ -101,7 +101,11 @@ file to inspect the actual run. The file stays in the browser.
 
 This campaign used the original tool at revision `a029a0c`. Its 44 attempts
 are evidence from one small synthetic task, not a statistically representative
-reliability comparison.
+reliability comparison. The [observations](observations-20ea6bf9b7.json) and
+[separate managed-evaluator checks](independent-evaluators-20ea6bf9b7.json)
+retain the synthetic evidence with subscription and identity metadata removed.
+The disposable group `rg-todo-metrics-20ea6bf9b7` was deleted; both the
+runner and an independent Azure CLI check confirmed it no longer exists.
 
 | Agent / entry point | Baseline | Injected fault | Wrapped read | Prompt variation |
 | --- | --- | --- | --- | --- |
@@ -146,6 +150,8 @@ operations, not verified complete agent-action traces.
   runs with no output items. The prototype's custom grader raises an exception
   for unavailable input; this does not establish that alternative Foundry
   reporting contracts cannot represent unavailability.
+- Foundry returned pass/fail labels with a default `0.5` threshold for these
+  managed scores. Those platform labels are not customer acceptance criteria.
 - Hosted native calls requested `read` without an item ID, which the original
   tool translated into service `list` calls. As an exploratory local sensitivity
   check, both native-call trajectory scores were 1.000 for the hosted baseline
@@ -155,6 +161,10 @@ operations, not verified complete agent-action traces.
 - Three prompt-cloud samples reported `TARGET_INVOCATION_FAILED` even though
   their evaluation items completed; customer-code prompt calls also exposed
   errors. Treat item status and missing native calls cautiously.
+- Confidence was requested in the task prompt and returned at the end of the
+  same response, after tool calls. This is not a separate follow-up after the
+  agent's final answer and does not fully reproduce the paper's elicitation
+  protocol.
 - The customer process grouped collected attempt evidence into one JSON input
   per managed evaluation; this does not establish Foundry-native repeated-run
   grouping, reset, isolation, or a real CI integration. Fixture partitions
