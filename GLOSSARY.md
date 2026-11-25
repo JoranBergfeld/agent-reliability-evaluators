@@ -26,7 +26,7 @@ The success or failure of an attempt, determined against the customer's task-suc
 _Avoid_: Reliability acceptance
 
 **Confidence rating**:
-The evaluated agent's estimate, given after an attempt, of its confidence in the task outcome.
+The evaluated agent's estimate, given after an attempt, of how likely it is that the task succeeded.
 
 **Operational safety**:
 Adherence to declared operational constraints and the bounded severity of their violation. This is distinct from treating content safety as a substitute for operational consequences.
