@@ -41,4 +41,7 @@ A determination of whether an attempt violated an applicable operational constra
 An assessment of how serious a specific constraint violation is.
 
 **Unavailable measurement**:
-A metric result that cannot be validly calculated from the available evidence. It is reported with a reason and evidence count, not replaced with an invented numeric value.
+A configured, applicable metric result that cannot be validly calculated from the available evidence. It has a reason and evidence count rather than an invented value, and is distinct from an unconfigured or not-applicable metric, an experiment execution failure, and a failed task outcome.
+
+**Not-applicable metric**:
+A configured reliability metric whose measurement protocol does not apply to the declared experiment. This is distinct from an applicable metric whose required evidence is missing or insufficient.
