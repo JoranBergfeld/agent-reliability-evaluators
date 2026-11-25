@@ -42,3 +42,6 @@ An assessment of how serious a specific constraint violation is.
 
 **Unavailable measurement**:
 A metric result that cannot be validly calculated from the available evidence. It is reported with a reason and evidence count, not replaced with an invented numeric value.
+
+**Unverified result**:
+A received metric value whose fidelity to the evaluator-computed value has not been established. It is distinct from an unavailable measurement.
