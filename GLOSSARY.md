@@ -7,6 +7,9 @@ Vocabulary for measuring the reliability of customers' agents across tasks and e
 **Reliability metric**:
 A measurement of an aspect of agent consistency, robustness, predictability or operational safety. A metric value alone does not determine whether an agent is acceptable for a customer's use.
 
+**Evaluator**:
+A component that computes one reliability metric from evaluation evidence.
+
 **Reliability scorecard**:
 A presentation of individual reliability metrics without a combined reliability score or universal acceptance thresholds.
 _Avoid_: Overall reliability score, composite score
@@ -20,6 +23,9 @@ A unit of work defined by a customer for an agent to perform.
 
 **Attempt**:
 One execution of an agent on a task. Outcomes and other evaluation evidence are associated with individual attempts.
+
+**Evaluator sweep**:
+A coordinated evaluation of planned attempts across tasks and experimental conditions, bringing its results together in a reliability scorecard.
 
 **Task outcome**:
 The success or failure of an attempt, determined against the customer's task-success definition, with its source recorded. It is not inferred from the agent's response alone and is distinct from deciding whether a reliability metric meets an acceptance criterion.
