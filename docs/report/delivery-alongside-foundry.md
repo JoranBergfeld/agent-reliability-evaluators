@@ -22,7 +22,7 @@ An agent target that invokes an agent in Foundry is a separate matter. What the 
 
 The scorecard and the evidence are outputs of the platform the sweep executes on ([ADR 0003](../adr/0003-no-evidence-store.md)). That platform is where your process runs: a CI job, for example. Give `artifact_dir` a directory that the job publishes as a build artifact. Access to the files, their retention and their deletion are then that platform's.
 
-Foundry is not where the sweep executes, also not with Foundry-managed scoring. What a managed run leaves in your Foundry project is governed by that project: reading it takes a token for the project and a role in it, as the identity you reach it with.
+Foundry is not where the sweep executes, also not with Foundry-managed scoring, and also not when the Attempts are invoked through [Foundry cloud evaluation](../foundry_cloud_evaluation/readme.md). What a managed run leaves in your Foundry project is governed by that project: reading it takes a token for the project and a role in it, as the identity you reach it with.
 
 The offering keeps no store. It writes to `artifact_dir` and nowhere else on the machine it runs on. To your Foundry project it sends only what managed scoring needs.
 
@@ -148,11 +148,12 @@ From the Microsoft REST reference of the Azure OpenAI Evals API v1 (page dated 2
 
 ### Teardown
 
-The resource group created for this work, `rg-are-54-d9d5d6de`, was deleted with everything registered in it, and a separate `az group exists` returned `false`. The soft-deleted Foundry account was purged.
+The three resource groups created for this work, `rg-are-54-d9d5d6de`, `rg-are-54-fec954dd` and `rg-are-54-dfebe2b5`, were deleted with everything registered in them, and a separate `az group exists` returned `false` for each. The soft-deleted Foundry accounts were purged.
 
 ## Not verified
 
 - **A CI platform.** No sweep ran in a CI job, and no directory was published as a build artifact. Access to a published artifact, its retention and its deletion were not exercised on any CI platform.
+- **Delivery with the other agent targets.** The live check made its Attempts against the hosted agent from customer code, and with a scripted agent. A prompt agent, and Foundry cloud evaluation as the entry point, were not used in it.
 - **What the Foundry portal shows** of a managed run, of its metadata or of a reference in it.
 - **Which role is enough to read a run.** The identity had Foundry User on the account and Foundry Project Manager on the project, and was refused once it had neither. Neither was tried alone, and no second identity was used.
 - **How long Foundry keeps an evaluation, a run or its output items**, and whether a project can be set to expire them.
