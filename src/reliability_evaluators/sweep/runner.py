@@ -2,54 +2,84 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from typing import Any, Iterable, Sequence
+from dataclasses import dataclass, replace
+from functools import partial
+from time import perf_counter
+from typing import Any, Callable, Sequence
 
 from ..agent_target import AgentResponse, AgentTarget, AttemptRequest
 from ..evaluators import EVALUATORS, RELIABILITY_METRICS, Evaluator, Fidelity, MetricResult, ScoringPath
 from ..evidence import (
     ActionEvidence,
     Attempt,
+    ConditionRole,
+    ConfidenceUnavailable,
     EvidenceError,
     ExecutionStatus,
-    TaskEvidence,
+    ResourceMeasurement,
+    ResourceType,
     TaskOutcome,
     ViolationAssessment,
     group_by_task,
 )
 from ..scorecard import AcceptanceCriterion, ScoredMetric, build_scorecard, criteria_by_metric
-from .declaration import ActionEvidenceDeclaration, ConfiguredEvaluator, Task
+from .confidence import ATTEMPT_NOT_COMPLETED, elicit_confidence
+from .declaration import ActionEvidenceDeclaration, ConfiguredEvaluator, Experiment, Task
+from .lifecycle import ConfidenceFollowUp, planned_attempt_ids, run_experiments
 from .reuse import SharedAttempts, share_attempts
+
+ELAPSED_TIME_UNIT = "seconds"
+ELAPSED_TIME_BOUNDARY = (
+    "wall clock from just before the agent target is invoked until it returns, measured by the Evaluator sweep"
+)
 
 
 def run_sweep(
     *,
-    tasks: Sequence[Task],
+    tasks: Sequence[Task] = (),
+    experiments: Sequence[Experiment] = (),
     agent_target: AgentTarget,
     metrics: Sequence[str | ConfiguredEvaluator],
     action_evidence: ActionEvidenceDeclaration | None = None,
     acceptance_criteria: Sequence[AcceptanceCriterion] = (),
+    clock: Callable[[], float] = perf_counter,
 ) -> dict[str, Any]:
     """Make the declared Attempts, score the selected metrics, and return the scorecard.
 
     `metrics` selects the reliability metrics to score, each by its metric identity or as
     a ConfiguredEvaluator with declarations of its own. Attempts run one after another,
-    Task by Task, and scoring happens in this process. The result is the machine-readable
-    reliability scorecard, as JSON-compatible data.
+    Task by Task and then experiment by experiment, and scoring happens in this process.
+    The result is the machine-readable reliability scorecard, as JSON-compatible data.
+
+    `experiments` are controlled experiments: the sweep invokes their customer controls
+    around every Attempt and follows their starting-state policy. `tasks` are Tasks given
+    without an experiment: nothing prepares or restores their state, and their Attempts
+    record no starting-state policy and no condition. The sweep never assumes that the
+    agent target resets conversation or external state.
 
     Evaluators are scored from the same Attempts when what they need those Attempts to be
-    made with is the same, so that no Attempt is made twice. Where it differs, the Tasks
-    are attempted again for the Evaluator that needs something else, after the Attempts
-    before it, and Attempts made for different needs are never scored together. The
-    scorecard shows which Attempts each Evaluator used.
+    made with is the same, so that no Attempt is made twice. Where it differs, every Task
+    and experiment is attempted again for the Evaluator that needs something else, after
+    the Attempts before it, and Attempts made for different needs are never scored
+    together. An Evaluator is given only the Attempts made under the experimental
+    conditions it is calculated from. The scorecard shows which Attempts each Evaluator used.
 
     `action_evidence` declares where the actions of every Attempt are recorded from and
     what action type each tool name is. The trajectory metrics need it, and it applies to
     every Evaluator that is not configured with its own.
 
+    When a metric uses confidence, each completed Attempt made for it is followed by one
+    separate confidence-only request through the agent target, before the next Attempt.
+    In an experiment the request is sent after the condition is verified and before the
+    clean-up control, and only when the condition was met.
+
     `acceptance_criteria` are the customer's own, at most one per metric. Each is reported
     with its metric as met, not met, or not assessed with a reason. Without one, a metric
     has no acceptance verdict.
+
+    The sweep times every invocation that returns, on `clock`, which gives seconds and
+    never runs backwards. An agent target that reports its own elapsed time is recorded
+    instead. Every other resource measurement comes from the agent target.
 
     A declaration that cannot be run is rejected before any Attempt is made. A task-success
     rule that does not return a sourced, binary TaskOutcome stops the sweep. So does a
@@ -58,36 +88,50 @@ def run_sweep(
     """
     selected = [_select(metric, action_evidence) for metric in metrics]
     _require_one_evaluator_per_metric(selected)
-    _require_distinct_tasks(tasks)
+    _require_distinct_tasks([*tasks, *(experiment.task for experiment in experiments)])
     # Called for its check: a second criterion for one metric is rejected here, not after the Attempts.
     criteria_by_metric(acceptance_criteria)
     # With no Evaluator selected the planned Attempts are still made, once.
     sharing = share_attempts((evaluator, evaluator.requirements()) for evaluator in selected) or [SharedAttempts()]
-    planned = [
-        [(task, _attempt_id(task, set_number, number)) for task in tasks for number in range(1, task.attempts + 1)]
-        for set_number in range(1, len(sharing) + 1)
-    ]
-    _require_distinct_attempts(attempt_id for attempts in planned for _, attempt_id in attempts)
-    made = [
-        [
-            _run_attempt(task, attempt_id, agent_target, _recorded_with(shared, action_evidence))
-            for task, attempt_id in attempts
-        ]
-        for shared, attempts in zip(sharing, planned)
-    ]
-    scored = [
-        ScoredMetric(
-            result=evaluator.evaluate(group_by_task(attempts)),
-            scoring_path=ScoringPath.CUSTOMER_PROCESS,
-            fidelity=Fidelity.AUTHORITATIVE,
-            attempts_used=tuple(attempt.attempt_id for attempt in attempts),
+    planned = [_plan(tasks, experiments, set_number) for set_number in range(1, len(sharing) + 1)]
+    _require_distinct_identities(planned)
+    made: list[list[Attempt]] = []
+    experiment_records: list[dict[str, Any]] = []
+    for shared, plan in zip(sharing, planned):
+        ask_confidence = "confidence" in shared.requirements
+        invoke_agent = partial(
+            _invoke_agent,
+            agent_target=agent_target,
+            action_evidence=_recorded_with(shared, action_evidence),
+            ask_confidence=ask_confidence,
+            clock=clock,
         )
-        for shared, attempts in zip(sharing, made)
-        for evaluator in shared.members
-    ]
+        attempts = []
+        for task, attempt_id in plan.attempts_at_tasks:
+            # Outside an experiment nothing comes between an Attempt and its confidence follow-up.
+            attempt, confidence_follow_up = invoke_agent(task, attempt_id)
+            attempts.append(confidence_follow_up(attempt))
+        experiment_attempts, records = run_experiments(
+            plan.experiments, lambda task, number, attempt_id: invoke_agent(task, attempt_id), ask_confidence
+        )
+        made.append(attempts + experiment_attempts)
+        experiment_records.extend(records)
+    scored = []
+    for shared, attempts in zip(sharing, made):
+        for evaluator in shared.members:
+            used = [attempt for attempt in attempts if evaluator.uses(attempt)]
+            scored.append(
+                ScoredMetric(
+                    result=evaluator.evaluate(group_by_task(used)),
+                    scoring_path=ScoringPath.CUSTOMER_PROCESS,
+                    fidelity=Fidelity.AUTHORITATIVE,
+                    attempts_used=tuple(attempt.attempt_id for attempt in used),
+                )
+            )
     return build_scorecard(
         metrics=scored,
         attempts=[attempt for attempts in made for attempt in attempts],
+        experiments=experiment_records,
         acceptance_criteria=acceptance_criteria,
     )
 
@@ -115,11 +159,49 @@ class _SelectedEvaluator:
             # The action types are applied when scoring. They do not change what is recorded.
             action_evidence = self.declared["action_types"]
             requirements["action_evidence"] = (action_evidence.evidence_source, action_evidence.record)
+        if self.evaluator.needs_confidence:
+            requirements["confidence"] = True
         return requirements
 
-    def evaluate(self, evidence: Sequence[TaskEvidence]) -> MetricResult:
+    def uses(self, attempt: Attempt) -> bool:
+        """Whether the Attempt was made under an experimental condition this Evaluator is calculated from.
+
+        An Attempt made outside an experiment had no variation applied to it, so it is used as a baseline Attempt.
+        """
+        return (attempt.condition_role or ConditionRole.BASELINE) in self.evaluator.condition_roles
+
+    def evaluate(self, evidence: Sequence[Any]) -> MetricResult:
         declared = (_EVALUATED_WITH[name](self.declared[name]) for name in self.evaluator.declarations)
         return self.evaluator.evaluate(evidence, *declared)
+
+
+@dataclass(frozen=True)
+class _PlannedAttempts:
+    """One set of the Attempts the sweep declares: every Task and every experiment, as often as declared."""
+
+    # Each Attempt at a Task given without an experiment, with its identity.
+    attempts_at_tasks: tuple[tuple[Task, str], ...]
+    experiments: tuple[Experiment, ...]
+
+
+def _plan(tasks: Sequence[Task], experiments: Sequence[Experiment], set_number: int) -> _PlannedAttempts:
+    """Plan one set of Attempts.
+
+    The first set is identified as it is in a sweep with one set. A later set carries its
+    number in the identity of its Attempts and of its experiments, which are run again.
+    """
+    again = "" if set_number == 1 else f"/set-{set_number}"
+    return _PlannedAttempts(
+        attempts_at_tasks=tuple(
+            (task, f"{task.task_id}{again}/attempt-{number}")
+            for task in tasks
+            for number in range(1, task.attempts + 1)
+        ),
+        experiments=tuple(
+            replace(experiment, experiment_id=f"{experiment.experiment_id}{again}") if again else experiment
+            for experiment in experiments
+        ),
+    )
 
 
 def _select(
@@ -160,12 +242,34 @@ def _require_one_evaluator_per_metric(selected: Sequence[_SelectedEvaluator]) ->
         seen.add(metric_id)
 
 
-def _require_distinct_attempts(planned: Iterable[str]) -> None:
+def _require_distinct_tasks(tasks: Sequence[Task]) -> None:
     seen: set[str] = set()
-    for attempt_id in planned:
-        if attempt_id in seen:
-            raise ValueError(f"more than one Attempt would have the identity {attempt_id!r}")
-        seen.add(attempt_id)
+    for task in tasks:
+        if task.task_id in seen:
+            raise ValueError(f"more than one Task is declared as {task.task_id!r}")
+        seen.add(task.task_id)
+
+
+def _require_distinct_identities(planned: Sequence[_PlannedAttempts]) -> None:
+    """Reject a sweep in which two experiments or two Attempts would be identified alike."""
+    experiments: set[str] = set()
+    attempts: set[str] = set()
+    for set_number, plan in enumerate(planned, start=1):
+        for experiment in plan.experiments:
+            if experiment.experiment_id in experiments:
+                raise ValueError(
+                    f"more than one experiment is declared as {experiment.experiment_id!r}"
+                    if set_number == 1
+                    else f"more than one experiment would have the identity {experiment.experiment_id!r}"
+                )
+            experiments.add(experiment.experiment_id)
+        for attempt_id in (
+            *(attempt_id for _, attempt_id in plan.attempts_at_tasks),
+            *(attempt_id for experiment in plan.experiments for attempt_id in planned_attempt_ids(experiment)),
+        ):
+            if attempt_id in attempts:
+                raise ValueError(f"more than one Attempt would have the identity {attempt_id!r}")
+            attempts.add(attempt_id)
 
 
 def _recorded_with(
@@ -182,49 +286,82 @@ def _recorded_with(
         action_evidence,
     )
 
-def _attempt_id(task: Task, set_number: int, number: int) -> str:
-    """The identity of a planned Attempt. The first set of Attempts is identified as it is in a sweep with one set."""
-    if set_number == 1:
-        return f"{task.task_id}/attempt-{number}"
-    return f"{task.task_id}/set-{set_number}/attempt-{number}"
 
-def _require_distinct_tasks(tasks: Sequence[Task]) -> None:
-    seen: set[str] = set()
-    for task in tasks:
-        if task.task_id in seen:
-            raise ValueError(f"more than one Task is declared as {task.task_id!r}")
-        seen.add(task.task_id)
+def _invoke_agent(
+    task: Task,
+    attempt_id: str,
+    agent_target: AgentTarget,
+    action_evidence: ActionEvidenceDeclaration | None,
+    ask_confidence: bool,
+    clock: Callable[[], float],
+) -> tuple[Attempt, ConfidenceFollowUp]:
+    """Invoke the agent for one Attempt and collect the evidence of it, short of its confidence evidence.
 
-
-def _run_attempt(
-    task: Task, attempt_id: str, agent_target: AgentTarget, action_evidence: ActionEvidenceDeclaration | None
-) -> Attempt:
+    Returns the Attempt and the follow-up that completes it with its confidence evidence.
+    The two are separate so that an experiment can verify its condition in between.
+    """
     request = AttemptRequest(attempt_id=attempt_id, task_id=task.task_id, prompt=task.prompt)
+
+    started = clock()
     try:
         response = agent_target.invoke(request)
     except Exception as error:
-        return Attempt(
+        failed = Attempt(
             attempt_id=request.attempt_id,
             task_id=task.task_id,
             execution_status=ExecutionStatus.FAILED,
             execution_error=f"{type(error).__name__}: {error}",
             operational_constraints=task.operational_constraints,
         )
+        return failed, partial(_with_confidence, ask=None, ask_confidence=ask_confidence)
+    elapsed = clock() - started
     outcome = task.success_rule(request, response)
     if not isinstance(outcome, TaskOutcome):
         raise EvidenceError(
             f"the task-success rule of Task {task.task_id!r} must return a TaskOutcome with its source, "
             f"got {outcome!r}"
         )
-    return Attempt(
+    # The task outcome is decided before the agent is asked for its confidence rating, so the
+    # rating cannot enter the outcome, and the follow-up cannot disturb what the outcome is decided from.
+    # The same holds for the violation assessments and the recorded actions.
+    violation_assessments = _assess_violations(task, request, response)
+    actions = None if action_evidence is None else _recorded_actions(action_evidence, request, response)
+    attempt = Attempt(
         attempt_id=request.attempt_id,
         task_id=task.task_id,
         execution_status=ExecutionStatus.COMPLETED,
         task_outcome=outcome,
+        resource_measurements=_resource_measurements(elapsed, response.resource_measurements),
         operational_constraints=task.operational_constraints,
-        violation_assessments=_assess_violations(task, request, response),
-        action_evidence=None if action_evidence is None else _recorded_actions(action_evidence, request, response),
+        violation_assessments=violation_assessments,
+        action_evidence=actions,
     )
+    ask = partial(elicit_confidence, task, request, response, agent_target)
+    return attempt, partial(_with_confidence, ask=ask, ask_confidence=ask_confidence)
+
+
+def _with_confidence(attempt: Attempt, *, ask: Callable[[], Any] | None, ask_confidence: bool) -> Attempt:
+    """The Attempt with its confidence evidence. The agent is asked only when the Attempt completed."""
+    if not ask_confidence:
+        return attempt
+    if ask is None or attempt.execution_status is not ExecutionStatus.COMPLETED:
+        return replace(attempt, confidence=ConfidenceUnavailable(reason=ATTEMPT_NOT_COMPLETED))
+    return replace(attempt, confidence=ask())
+
+
+def _resource_measurements(
+    elapsed: float, reported: Sequence[ResourceMeasurement]
+) -> tuple[ResourceMeasurement, ...]:
+    """What the agent target reported, with the sweep's own elapsed time unless the target gave one."""
+    if any(getattr(measurement, "resource_type", None) is ResourceType.ELAPSED_TIME for measurement in reported):
+        return tuple(reported)
+    timed = ResourceMeasurement(
+        resource_type=ResourceType.ELAPSED_TIME,
+        value=elapsed,
+        unit=ELAPSED_TIME_UNIT,
+        boundary=ELAPSED_TIME_BOUNDARY,
+    )
+    return (timed, *reported)
 
 
 def _assess_violations(

@@ -1,0 +1,108 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 380" width="760" height="380" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13">
+  <title>Worked example: four Tasks, three of them eligible</title>
+  <desc>close: elapsed time 4, 6, 4, 6 seconds has CV 0.2 and tool calls 3, 3, 3, 3 have CV 0, Task value 0.9048. archive: elapsed time 10, 30 seconds has CV 0.5 and tool calls 2, 6 have CV 0.5, Task value 0.6065. report: elapsed time 60, 60, 60 seconds has CV 0 and the tool-call count is missing from one Attempt, so tool calls are excluded, Task value 1. once has a single Attempt and is excluded. The mean of the three eligible Task values is 0.8371.</desc>
+  <rect width="760" height="380" fill="#ffffff"/>
+  <g fill="#616161" font-weight="600">
+    <text x="20" y="28">Task</text>
+    <text x="105" y="28">Elapsed time (s)</text>
+    <text x="250" y="28">CV</text>
+    <text x="350" y="28">Tool calls</text>
+    <text x="495" y="28">CV</text>
+    <text x="575" y="28">Task value exp(−mean CV)</text>
+  </g>
+  <line x1="20" y1="40" x2="740" y2="40" stroke="#bdbdbd"/>
+
+  <!-- The bars of each cell are scaled to the largest measurement in that cell. -->
+  <g fill="#212121">
+    <text x="20" y="85">close</text>
+    <g fill="#1565c0">
+      <rect x="105" y="70" width="22" height="20"/>
+      <rect x="135" y="60" width="22" height="30"/>
+      <rect x="165" y="70" width="22" height="20"/>
+      <rect x="195" y="60" width="22" height="30"/>
+    </g>
+    <g text-anchor="middle" font-size="12">
+      <text x="116" y="104">4</text>
+      <text x="146" y="104">6</text>
+      <text x="176" y="104">4</text>
+      <text x="206" y="104">6</text>
+    </g>
+    <text x="250" y="85">1 / 5 = 0.2</text>
+    <g fill="#6a1b9a">
+      <rect x="350" y="60" width="22" height="30"/>
+      <rect x="380" y="60" width="22" height="30"/>
+      <rect x="410" y="60" width="22" height="30"/>
+      <rect x="440" y="60" width="22" height="30"/>
+    </g>
+    <g text-anchor="middle" font-size="12">
+      <text x="361" y="104">3</text>
+      <text x="391" y="104">3</text>
+      <text x="421" y="104">3</text>
+      <text x="451" y="104">3</text>
+    </g>
+    <text x="495" y="85">0</text>
+    <text x="575" y="85">exp(−0.1) = 0.9048</text>
+
+    <text x="20" y="157">archive</text>
+    <g fill="#1565c0">
+      <rect x="105" y="152" width="22" height="10"/>
+      <rect x="135" y="132" width="22" height="30"/>
+    </g>
+    <g text-anchor="middle" font-size="12">
+      <text x="116" y="176">10</text>
+      <text x="146" y="176">30</text>
+    </g>
+    <text x="250" y="157">10 / 20 = 0.5</text>
+    <g fill="#6a1b9a">
+      <rect x="350" y="152" width="22" height="10"/>
+      <rect x="380" y="132" width="22" height="30"/>
+    </g>
+    <g text-anchor="middle" font-size="12">
+      <text x="361" y="176">2</text>
+      <text x="391" y="176">6</text>
+    </g>
+    <text x="495" y="157">2 / 4 = 0.5</text>
+    <text x="575" y="157">exp(−0.5) = 0.6065</text>
+
+    <text x="20" y="229">report</text>
+    <g fill="#1565c0">
+      <rect x="105" y="204" width="22" height="30"/>
+      <rect x="135" y="204" width="22" height="30"/>
+      <rect x="165" y="204" width="22" height="30"/>
+    </g>
+    <g text-anchor="middle" font-size="12">
+      <text x="116" y="248">60</text>
+      <text x="146" y="248">60</text>
+      <text x="176" y="248">60</text>
+    </g>
+    <text x="250" y="229">0</text>
+    <g fill="#6a1b9a" opacity="0.35">
+      <rect x="350" y="204" width="22" height="30"/>
+      <rect x="410" y="204" width="22" height="30"/>
+    </g>
+    <rect x="380" y="204" width="22" height="30" fill="none" stroke="#c62828" stroke-width="1.5" stroke-dasharray="4 3"/>
+    <g text-anchor="middle" font-size="12">
+      <text x="361" y="248" fill="#9e9e9e">5</text>
+      <text x="391" y="224" fill="#c62828" font-weight="600">?</text>
+      <text x="391" y="248" fill="#c62828">missing</text>
+      <text x="421" y="248" fill="#9e9e9e">5</text>
+    </g>
+    <text x="495" y="229" fill="#c62828">excluded</text>
+    <text x="575" y="229">exp(−0) = 1</text>
+  </g>
+
+  <g fill="#9e9e9e">
+    <text x="20" y="301">once</text>
+    <rect x="105" y="276" width="22" height="30" fill="#1565c0" opacity="0.3"/>
+    <text x="116" y="320" text-anchor="middle" font-size="12">9</text>
+    <text x="250" y="301">not used</text>
+    <rect x="350" y="276" width="22" height="30" fill="#6a1b9a" opacity="0.3"/>
+    <text x="361" y="320" text-anchor="middle" font-size="12">4</text>
+    <text x="495" y="301">not used</text>
+    <text x="575" y="301">excluded: one Attempt</text>
+  </g>
+
+  <line x1="20" y1="334" x2="740" y2="334" stroke="#bdbdbd"/>
+  <text x="20" y="358" fill="#212121" font-weight="600">Resource consistency</text>
+  <text x="495" y="358" fill="#1565c0" font-weight="600">(0.9048 + 0.6065 + 1) / 3 = 0.8371</text>
+</svg>

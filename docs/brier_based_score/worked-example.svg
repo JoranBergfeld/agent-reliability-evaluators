@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 700 350" width="700" height="350" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13">
+  <title>Worked example: six Attempts, five valid confidence/outcome pairs</title>
+  <desc>Five Attempts have a rating and a task outcome. Their squared errors are 0.0025, 0.01, 0.64, 0.140625 and 0.09, which sum to 0.883125. One Attempt answered "Fairly sure." and has no rating, so it is not used. The Brier-based score is 1 minus 0.883125 divided by 5, which is 0.823375.</desc>
+  <defs>
+    <g id="success">
+      <circle r="11" fill="#2e7d32"/>
+      <polyline points="-5,0 -1,4 5,-4" fill="none" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+    <g id="failure">
+      <circle r="10" fill="#ffffff" stroke="#c62828" stroke-width="2"/>
+      <path d="M-4,-4 L4,4 M-4,4 L4,-4" stroke="#c62828" stroke-width="2.2" stroke-linecap="round"/>
+    </g>
+  </defs>
+  <rect width="700" height="350" fill="#ffffff"/>
+  <g fill="#616161" font-weight="600">
+    <text x="20" y="30">Attempt</text>
+    <text x="180" y="30">Agent's answer</text>
+    <text x="300" y="30">c</text>
+    <text x="370" y="30">Task outcome</text>
+    <text x="490" y="30">Squared error (c − y)²</text>
+  </g>
+  <line x1="20" y1="42" x2="680" y2="42" stroke="#bdbdbd"/>
+
+  <g fill="#212121">
+    <text x="20" y="75">close/attempt-1</text>
+    <text x="180" y="75">95</text>
+    <text x="300" y="75">0.95</text>
+    <use href="#success" x="382" y="70"/>
+    <text x="402" y="75">y = 1</text>
+    <text x="490" y="75">(0.95 − 1)² = 0.0025</text>
+
+    <text x="20" y="111">close/attempt-2</text>
+    <text x="180" y="111">90</text>
+    <text x="300" y="111">0.9</text>
+    <use href="#success" x="382" y="106"/>
+    <text x="402" y="111">y = 1</text>
+    <text x="490" y="111">(0.9 − 1)² = 0.01</text>
+
+    <text x="20" y="147">close/attempt-3</text>
+    <text x="180" y="147">80</text>
+    <text x="300" y="147">0.8</text>
+    <use href="#failure" x="382" y="142"/>
+    <text x="402" y="147">y = 0</text>
+    <text x="490" y="147">(0.8 − 0)² = 0.64</text>
+
+    <text x="20" y="183">archive/attempt-1</text>
+    <text x="180" y="183">62.5</text>
+    <text x="300" y="183">0.625</text>
+    <use href="#success" x="382" y="178"/>
+    <text x="402" y="183">y = 1</text>
+    <text x="490" y="183">(0.625 − 1)² = 0.140625</text>
+
+    <text x="20" y="219">archive/attempt-2</text>
+    <text x="180" y="219">30</text>
+    <text x="300" y="219">0.3</text>
+    <use href="#failure" x="382" y="214"/>
+    <text x="402" y="219">y = 0</text>
+    <text x="490" y="219">(0.3 − 0)² = 0.09</text>
+  </g>
+
+  <g fill="#9e9e9e">
+    <text x="20" y="255">archive/attempt-3</text>
+    <text x="180" y="255">Fairly sure.</text>
+    <text x="300" y="255">none</text>
+    <use href="#success" x="382" y="250" opacity="0.45"/>
+    <text x="402" y="255">y = 1</text>
+    <text x="490" y="255">not used: no rating</text>
+  </g>
+
+  <line x1="20" y1="278" x2="680" y2="278" stroke="#bdbdbd"/>
+  <text x="20" y="308" fill="#212121" font-weight="600">Brier-based score</text>
+  <text x="300" y="308" fill="#1565c0" font-weight="600">1 − 0.883125 / 5 = 1 − 0.176625 = 0.823375</text>
+  <text x="20" y="334" fill="#616161">Five valid pairs, pooled across both Tasks. The Attempt without a rating is counted, not scored.</text>
+</svg>

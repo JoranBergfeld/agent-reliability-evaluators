@@ -30,6 +30,7 @@ def build_scorecard(
     metrics: Sequence[ScoredMetric],
     attempts: Sequence[Attempt],
     acceptance_criteria: Sequence[AcceptanceCriterion] = (),
+    experiments: Sequence[dict[str, Any]] = (),
 ) -> dict[str, Any]:
     """Assemble the scorecard as JSON-compatible data.
 
@@ -39,6 +40,8 @@ def build_scorecard(
     metrics whose Evaluators were given any of the same Attempts.
     A metric's `acceptance` is the assessment of the customer's criterion for it, or None
     when the customer declared none.
+    `experiments` is what each experiment declared and how its execution ended; Attempts
+    refer to it by experiment identity.
     """
     scored_by_id = {scored.result.definition.metric.metric_id: scored for scored in metrics}
     criteria = criteria_by_metric(acceptance_criteria)
@@ -51,6 +54,7 @@ def build_scorecard(
             )
             for metric in RELIABILITY_METRICS
         ],
+        "experiments": list(experiments),
         "attempts": [attempt.to_dict() for attempt in attempts],
     }
 
