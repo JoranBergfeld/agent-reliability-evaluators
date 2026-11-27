@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
-from typing import Any, Sequence
+from typing import Any, Mapping, Sequence
 
 from ..evaluators import RELIABILITY_METRICS, Fidelity, MetricResult, MetricState, ReliabilityMetric, ScoringPath
 from ..evidence import Attempt
@@ -23,6 +23,17 @@ class ScoredMetric:
     # Identities of the Attempts the Evaluator was given, whatever became of each. The value
     # may rest on fewer: `result.attempt_ids` are the ones it rests on.
     attempts_used: tuple[str, ...] = ()
+    # Why the value is not known to equal what the Evaluator computed. An unverified result says.
+    limitation: str | None = None
+    # What Foundry-managed scoring recorded about the result: the evaluator and the run it
+    # came from, and what the platform added to it. JSON-compatible data.
+    managed_scoring: Mapping[str, Any] | None = None
+
+    def __post_init__(self) -> None:
+        if self.fidelity is Fidelity.UNVERIFIED and not (self.limitation or "").strip():
+            raise ValueError("an unverified result is reported with its limitation")
+        if self.fidelity is Fidelity.AUTHORITATIVE and self.limitation is not None:
+            raise ValueError("an authoritative result has no fidelity limitation to report")
 
 
 def build_scorecard(
@@ -67,11 +78,17 @@ def _metric_entry(metric: ReliabilityMetric, scored: ScoredMetric | None) -> dic
             "dimension": metric.dimension,
             "state": MetricState.NOT_CONFIGURED.value,
         }
-    return {
+    entry = {
         **scored.result.to_dict(),
         "scoring_path": scored.scoring_path.value,
         "fidelity": scored.fidelity.value,
     }
+    # Only a result that has them carries these, so that an entry never shows an empty limitation.
+    if scored.limitation is not None:
+        entry["limitation"] = scored.limitation
+    if scored.managed_scoring is not None:
+        entry["managed_scoring"] = json.loads(json.dumps(scored.managed_scoring, allow_nan=False))
+    return entry
 
 
 def _with_attempts_used(entry: dict[str, Any], scored_by_id: dict[str, ScoredMetric]) -> dict[str, Any]:

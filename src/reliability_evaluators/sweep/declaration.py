@@ -6,6 +6,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable, Mapping, Protocol, Sequence
 
 from ..agent_target import AgentResponse, AttemptRequest
+from ..evaluators import ScoringPath
 from ..evidence import (
     ActionEvent,
     ActionTypeMapping,
@@ -264,12 +265,17 @@ class ConfiguredEvaluator:
     A metric selected by its identity alone uses what the sweep declares for every
     Evaluator. `action_evidence` is used for this Evaluator instead of the sweep's.
 
+    `scoring_path` is where the Evaluator's calculation runs: "customer_process", in this
+    process, or "foundry_managed", as a custom evaluator in the customer's Foundry project.
+    The sweep scores on the path that is declared and on no other.
+
     Evaluators share Attempts only when what they need the Attempts to be made with is the
     same. Separate Attempts are made for an Evaluator that needs something else.
     """
 
     metric_id: str
     action_evidence: ActionEvidenceDeclaration | None = None
+    scoring_path: ScoringPath = ScoringPath.CUSTOMER_PROCESS
 
     def __post_init__(self) -> None:
         if not isinstance(self.metric_id, str) or not self.metric_id.strip():
@@ -279,3 +285,10 @@ class ConfiguredEvaluator:
                 f"the action evidence of {self.metric_id!r} is declared as an ActionEvidenceDeclaration, "
                 f"got {self.action_evidence!r}"
             )
+        try:
+            object.__setattr__(self, "scoring_path", ScoringPath(self.scoring_path))
+        except ValueError:
+            paths = " or ".join(repr(path.value) for path in ScoringPath)
+            raise ValueError(
+                f"the scoring path of {self.metric_id!r} is {paths}, got {self.scoring_path!r}"
+            ) from None

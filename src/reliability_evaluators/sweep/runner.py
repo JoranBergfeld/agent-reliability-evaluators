@@ -25,6 +25,7 @@ from ..evidence import (
     ViolationAssessment,
     group_by_task,
 )
+from ..managed_scoring import FoundryManagedScoring, has_managed_evaluator
 from ..scorecard import AcceptanceCriterion, ArtifactLocation, ScoredMetric, build_scorecard, criteria_by_metric
 from .confidence import ATTEMPT_NOT_COMPLETED, elicit_confidence
 from .declaration import ActionEvidenceDeclaration, ConfiguredEvaluator, Experiment, Task
@@ -47,13 +48,23 @@ def run_sweep(
     acceptance_criteria: Sequence[AcceptanceCriterion] = (),
     clock: Callable[[], float] = perf_counter,
     artifact_dir: str | os.PathLike[str] | None = None,
+    managed_scoring: FoundryManagedScoring | None = None,
 ) -> dict[str, Any]:
     """Make the declared Attempts, score the selected metrics, and return the scorecard.
 
     `metrics` selects the reliability metrics to score, each by its metric identity or as
     a ConfiguredEvaluator with declarations of its own. Attempts run one after another,
-    Task by Task and then experiment by experiment, and scoring happens in this process.
+    Task by Task and then experiment by experiment, and scoring happens in this process
+    unless an Evaluator is configured for Foundry-managed scoring.
     The result is the machine-readable reliability scorecard, as JSON-compatible data.
+
+    `managed_scoring` is the customer's Foundry project, for the Evaluators configured with
+    the scoring path "foundry_managed". Their derived evaluators are registered in that
+    project before any Attempt is made, and after the Attempts the project calculates their
+    values from the grouped evidence. A value it returns is reported as Foundry returned it,
+    attributed to that scoring path, as an unverified result. When the project returns no
+    value the sweep stops with ManagedScoringFailure. It never scores such an Evaluator in
+    this process instead.
 
     `experiments` are controlled experiments: the sweep invokes their customer controls
     around every Attempt and follows their starting-state policy. `tasks` are Tasks given
@@ -113,6 +124,7 @@ def run_sweep(
             action_evidence=action_evidence,
             acceptance_criteria=acceptance_criteria,
             clock=clock,
+            managed_scoring=managed_scoring,
         )
     except Exception as error:
         if location is None:
@@ -137,6 +149,7 @@ def _sweep(
     action_evidence: ActionEvidenceDeclaration | None,
     acceptance_criteria: Sequence[AcceptanceCriterion],
     clock: Callable[[], float],
+    managed_scoring: FoundryManagedScoring | None,
 ) -> dict[str, Any]:
     """Make the Attempts and score them. Each Attempt is added to `attempts` as it is made,
     so that `run_sweep` still has the evidence if this stops.
@@ -148,6 +161,11 @@ def _sweep(
     _require_distinct_tasks([*tasks, *(experiment.task for experiment in experiments)])
     # Called for its check: a second criterion for one metric is rejected here, not after the Attempts.
     criteria_by_metric(acceptance_criteria)
+    managed = [evaluator.metric_id for evaluator in selected if evaluator.scoring_path is ScoringPath.FOUNDRY_MANAGED]
+    _require_managed_scoring(managed, managed_scoring)
+    if managed:
+        # Before any Attempt, so that a project that cannot be used costs no Attempts.
+        managed_scoring.register(managed)
     # With no Evaluator selected the planned Attempts are still made, once.
     sharing = share_attempts((evaluator, evaluator.requirements()) for evaluator in selected) or [SharedAttempts()]
     planned = [_plan(tasks, experiments, set_number) for set_number in range(1, len(sharing) + 1)]
@@ -180,16 +198,37 @@ def _sweep(
             )
         )
         made.append(attempts[first:])
+    evidence_of = {
+        evaluator.metric_id: evaluator.evidence(attempts_of_set, plan.experiments)
+        for shared, plan, attempts_of_set in zip(sharing, planned, made)
+        for evaluator in shared.members
+    }
+    # One managed run scores every Evaluator on that path. Its failure stops the sweep here.
+    returned = managed_scoring.score({metric_id: evidence_of[metric_id] for metric_id in managed}) if managed else {}
     scored = []
-    for shared, plan, attempts_of_set in zip(sharing, planned, made):
-        for evaluator in shared.members:
-            evidence = evaluator.evidence(attempts_of_set, plan.experiments)
+    for evaluator in (evaluator for shared in sharing for evaluator in shared.members):
+        evidence = evidence_of[evaluator.metric_id]
+        attempts_used = tuple(attempt.attempt_id for task in evidence for attempt in task.attempts)
+        if evaluator.metric_id in returned:
+            managed_result = returned[evaluator.metric_id]
+            scored.append(
+                ScoredMetric(
+                    result=managed_result.result,
+                    scoring_path=ScoringPath.FOUNDRY_MANAGED,
+                    # Whether a value Foundry returned may be authoritative is decided by a fidelity rule. There is none yet.
+                    fidelity=Fidelity.UNVERIFIED,
+                    limitation=managed_result.limitation,
+                    managed_scoring=managed_result.provenance,
+                    attempts_used=attempts_used,
+                )
+            )
+        else:
             scored.append(
                 ScoredMetric(
                     result=evaluator.evaluate(evidence),
                     scoring_path=ScoringPath.CUSTOMER_PROCESS,
                     fidelity=Fidelity.AUTHORITATIVE,
-                    attempts_used=tuple(attempt.attempt_id for task in evidence for attempt in task.attempts),
+                    attempts_used=attempts_used,
                 )
             )
     return build_scorecard(
@@ -208,6 +247,12 @@ class _SelectedEvaluator:
     evaluator: Evaluator
     # What the customer declared for each declaration the Evaluator names.
     declared: dict[str, Any]
+    # Where the customer declared the calculation to run.
+    scoring_path: ScoringPath = ScoringPath.CUSTOMER_PROCESS
+
+    @property
+    def metric_id(self) -> str:
+        return self.evaluator.definition.metric.metric_id
 
     def requirements(self) -> dict[str, Any]:
         """What the Attempts this Evaluator is scored from have to be made with.
@@ -292,7 +337,9 @@ def _select(
         raise ValueError(f"{configured.metric_id!r} does not use action evidence, and it is configured with one")
     declared = {"action_types": configured.action_evidence or action_evidence}
     _require_declarations(evaluator, declared)
-    return _SelectedEvaluator(evaluator, {name: declared[name] for name in evaluator.declarations})
+    return _SelectedEvaluator(
+        evaluator, {name: declared[name] for name in evaluator.declarations}, configured.scoring_path
+    )
 
 
 def _evaluator(metric_id: str) -> Evaluator:
@@ -310,6 +357,18 @@ def _require_declarations(evaluator: Evaluator, declared: dict[str, Any]) -> Non
     for name in evaluator.declarations:
         if declared[name] is None:
             raise ValueError(f"{evaluator.definition.metric.metric_id!r} needs {undeclared[name]}")
+
+
+def _require_managed_scoring(managed: Sequence[str], managed_scoring: FoundryManagedScoring | None) -> None:
+    """Reject a choice of Foundry-managed scoring that cannot be honoured. Nothing falls back to this process."""
+    for metric_id in managed:
+        if managed_scoring is None:
+            raise ValueError(
+                f"{metric_id!r} is configured for Foundry-managed scoring, which needs `managed_scoring`: "
+                "the Foundry project to score in"
+            )
+        if not has_managed_evaluator(metric_id):
+            raise ValueError(f"{metric_id!r} has no Foundry-managed evaluator in this version")
 
 
 def _declares_variation(experiment: Experiment, kind: VariationKind) -> bool:
