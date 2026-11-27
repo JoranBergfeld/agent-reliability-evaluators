@@ -10,7 +10,11 @@ from ..evidence import ResourceMeasurement
 
 @dataclass(frozen=True, kw_only=True)
 class AttemptRequest:
-    """What the agent is asked to do for one Attempt."""
+    """What the agent is asked to do for one Attempt.
+
+    `prompt` is given to the agent exactly as it is. Under a prompt variation it is the
+    exact text of a prompt variant, so an agent target adds nothing to it and rewrites nothing.
+    """
 
     attempt_id: str
     task_id: str

@@ -415,6 +415,7 @@ class Attempt:
             "experiment_id": self.experiment_id,
             "starting_state": None if self.starting_state is None else self.starting_state.value,
             "intended_condition": self._intended_condition(),
+            "prompt_variant": None if self.prompt_variant is None else self.prompt_variant.to_dict(),
             "observed_condition": None if self.observed_condition is None else self.observed_condition.to_dict(),
             "lifecycle": [step.to_dict() for step in self.lifecycle],
         }

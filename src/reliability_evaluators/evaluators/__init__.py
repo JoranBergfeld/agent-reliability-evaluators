@@ -9,7 +9,8 @@ The three predictability Evaluators calculate from the same confidence/outcome p
 which `confidence_pairs.pair_confidence_with_outcome` builds, counts and explains.
 
 A robustness Evaluator compares the Attempts made under the baseline with the Attempts
-made under one kind of variation. `_robustness` holds the ratio they share.
+made under one kind of variation: a fault, another presentation of the tools and data, or
+another wording of the instruction. `_robustness` holds the ratio they share.
 """
 
 from . import (

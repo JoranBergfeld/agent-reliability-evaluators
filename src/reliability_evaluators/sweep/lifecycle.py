@@ -7,12 +7,15 @@ from typing import Any, Callable, Sequence
 
 from ..evidence import (
     Attempt,
+    Condition,
+    ConditionRole,
     ConfidenceUnavailable,
     ExecutionStatus,
     ExperimentStatus,
     LifecyclePoint,
     LifecycleStep,
     ObservedCondition,
+    PromptVariant,
     StartingStatePolicy,
 )
 from .confidence import ATTEMPT_NOT_COMPLETED
@@ -123,23 +126,41 @@ def planned_attempt_ids(experiment: Experiment) -> list[str]:
 
 
 def _planned_attempts(experiment: Experiment) -> list[tuple[ControlContext, int]]:
-    """The Attempts an experiment declares, in order, each with its number under its condition."""
+    """The Attempts an experiment declares, in order.
+
+    Each has its number under its condition. Under a prompt variation each has its number
+    under its prompt variant, so that every variant is attempted like the baseline is.
+    """
     return [
         (
             ControlContext(
                 experiment_id=experiment.experiment_id,
                 task_id=experiment.task.task_id,
-                attempt_id=f"{experiment.experiment_id}/{condition.condition_id}/attempt-{number}",
+                attempt_id=f"{experiment.experiment_id}/{under}/attempt-{number}",
                 condition=condition,
                 condition_role=role,
                 starting_state=experiment.starting_state,
                 authorized_resources=experiment.authorized_resources,
+                prompt_variant=variant,
             ),
             number,
         )
         for role, condition in experiment.conditions()
+        for under, variant in _prompts_under(experiment, role, condition)
         for number in range(1, experiment.task.attempts + 1)
     ]
+
+
+def _prompts_under(
+    experiment: Experiment, role: ConditionRole, condition: Condition
+) -> list[tuple[str, PromptVariant | None]]:
+    """What the agent is given under a condition: the Task's own prompt, or each prompt variant in turn.
+
+    Each comes with the part of the Attempt identity that says what the Attempt is made under.
+    """
+    if role is ConditionRole.VARIATION and experiment.varies_prompt():
+        return [(f"{condition.condition_id}/{variant.variant_id}", variant) for variant in experiment.prompt_variants]
+    return [(condition.condition_id, None)]
 
 
 def _run_controlled_attempt(
@@ -157,6 +178,10 @@ def _run_controlled_attempt(
     Returns the Attempt and, when the later Attempts of the experiment are not to be made, why.
     """
     task, controls = experiment.task, experiment.controls
+    if context.prompt_variant is not None:
+        # The same Task with the exact text of the variant as its prompt: the agent target is given
+        # that text, and the Attempt is judged by the same task-success rule.
+        task = replace(task, prompt=context.prompt_variant.text)
     steps: list[LifecycleStep] = []
     observed = None
     setup_error = None
@@ -212,6 +237,7 @@ def _run_controlled_attempt(
         starting_state=experiment.starting_state,
         intended_condition=context.condition,
         condition_role=context.condition_role,
+        prompt_variant=context.prompt_variant,
         observed_condition=observed,
         lifecycle=tuple(steps),
     )

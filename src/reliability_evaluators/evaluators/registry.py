@@ -15,6 +15,7 @@ from . import (
     environment_robustness,
     fault_robustness,
     outcome_consistency,
+    prompt_robustness,
     resource_consistency,
     sequential_trajectory_consistency,
     strict_confidence_discrimination,
@@ -64,6 +65,9 @@ EVALUATORS: dict[str, Evaluator] = {
             environment_robustness.DEFINITION,
             environment_robustness.evaluate,
             compares_variation=VariationKind.ENVIRONMENT,
+        ),
+        Evaluator(
+            prompt_robustness.DEFINITION, prompt_robustness.evaluate, compares_variation=VariationKind.PROMPT
         ),
         Evaluator(calibration.DEFINITION, calibration.evaluate, needs_confidence=True),
         Evaluator(

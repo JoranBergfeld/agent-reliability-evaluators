@@ -1,6 +1,6 @@
 """Evaluator sweep: coordinates the Attempts the Evaluators need and returns the scorecard."""
 
-from ..evidence import Condition, ObservedCondition, StartingStatePolicy, VariationKind
+from ..evidence import Condition, ObservedCondition, PromptVariant, StartingStatePolicy, VariationKind
 from .declaration import (
     ActionEvidenceDeclaration,
     ActionRecorder,
@@ -23,6 +23,7 @@ __all__ = [
     "CustomerControls",
     "Experiment",
     "ObservedCondition",
+    "PromptVariant",
     "StartingStatePolicy",
     "Task",
     "TaskSuccessRule",
