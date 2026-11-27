@@ -31,7 +31,7 @@ A *use* is one thing that could have used a model. There are four kinds.
 
 ### Attempts
 
-The two Foundry agent targets record what the platform returned about each invocation on the Attempt, including the `usage` object of the response as `invocation.token_usage`, and a reason in `invocation.token_usage_missing` when there is none. See [the Foundry prompt agent target](../foundry_prompt_agent/readme.md) and [the Foundry hosted agent target](../foundry_hosted_agent/readme.md).
+The two Foundry agent targets record what the platform returned about each invocation on the Attempt, including the `usage` object of the response as `invocation.token_usage`, and a reason in `invocation.token_usage_missing` when there is none. See [the Foundry prompt agent target](../foundry_prompt_agent/readme.md) and [the Foundry hosted agent target](../foundry_hosted_agent/readme.md). The [Foundry cloud evaluation target](../foundry_cloud_evaluation/readme.md) records the `usage` of the output item of the Attempt's run the same way.
 
 The count of an invocation is the `total_tokens` of that object, when it is a whole number. Nothing is derived from its parts: a usage that states input and output tokens and no total is missing. The identifiers the platform returned for the request, `response_id` and `request_ids`, are repeated next to the count, so that a request without a count can still be looked up on the platform.
 
@@ -262,4 +262,4 @@ Which paths expose token counts has not been verified live here. That is [#52](h
 - How per-model usage rows alias each other is not documented. The rule here counts exact repeats once and refuses to sum rows that differ.
 - The usage of a confidence follow-up has not been observed on either Foundry agent type: neither target sends one in this version.
 
-Attempts made through Foundry cloud evaluation are not covered here. An entry point that makes them reports usage by recording, on each Attempt, what the platform returned for it.
+Attempts invoked through Foundry cloud evaluation are reported like any other. The count is the `total_tokens` of the usage that the output item of the Attempt's run carried. An Attempt whose target failed, or whose run had not ended at the time limit, is missing with a reason. The run's own usage rows are kept on the Attempt as `invocation.run_per_model_usage` and are not read here: for a prompt agent they were observed to count the same tokens twice. What was observed is in [the documentation of that entry point](../foundry_cloud_evaluation/readme.md#observed-live). The counts of the two entry points were never compared on the same invocation.

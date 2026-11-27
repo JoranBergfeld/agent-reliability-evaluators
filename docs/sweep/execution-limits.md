@@ -50,7 +50,7 @@ No minimum number of Attempts and no limit is imposed. A Task with one Attempt r
 
 The sweep cannot interrupt an invocation that is running. It applies the limit of an Attempt in two ways:
 
-- It passes the limit to the agent target as `AttemptRequest.timeout_seconds`. The agent target is expected to stop there and raise `TimeoutError`. An invocation that raises `TimeoutError` is `timed_out`, with or without a declared limit.
+- It passes the limit to the agent target as `AttemptRequest.timeout_seconds`. The agent target is expected to stop there and raise `TimeoutError`. An invocation that raises `TimeoutError` is `timed_out`, with or without a declared limit. An agent target that knows something about the invocation by then, such as the run it was waiting for, raises a `TimeoutError` that is also an `InvocationFailed`: what it recorded then stays on the Attempt.
 - It measures each invocation. One that ends after the limit is `timed_out` as well, whether it ended with an answer or with an error. A late answer is not scored, so that the limit holds for every Attempt alike: the task-success rule, the violation assessor and the action recorder are not called for it, and the agent is not asked for a confidence rating.
 
 An agent target that ignores the limit and never returns blocks the sweep. Give your agent target a timeout of its own.
