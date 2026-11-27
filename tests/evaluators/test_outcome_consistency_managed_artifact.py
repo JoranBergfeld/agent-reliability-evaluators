@@ -37,7 +37,10 @@ def by_task(outcomes_by_task):
     )
 
 
-FAILED_EXECUTION = Attempt(attempt_id="task/attempt-3", task_id="task", execution_status=ExecutionStatus.FAILED)
+def not_completed(status):
+    return Attempt(attempt_id="task/attempt-3", task_id="task", execution_status=status)
+
+
 NO_OUTCOME = Attempt(attempt_id="task/attempt-3", task_id="task", execution_status=ExecutionStatus.COMPLETED)
 
 # Each: grouped evidence, and the value calculated by hand from (2p - 1)^2 per Task, Tasks weighted equally.
@@ -53,8 +56,19 @@ AVAILABLE = {
     ),
     # Only "repeated" is eligible: 0.36, and not (0.36 + 1) / 2 = 0.68.
     "a Task with one Attempt is excluded": (by_task({"repeated": [1, 1, 1, 1, 0], "once": [1]}), 0.36),
-    # p = 2/2. Scoring the failed execution as a task failure would give (1/3)^2 = 0.111...
-    "a failed execution is not a task failure": (group_by_task(attempts("task", [1, 1]) + [FAILED_EXECUTION]), 1),
+    # p = 2/2. Scoring the execution that did not complete as a task failure would give (1/3)^2 = 0.111...
+    **{
+        f"an execution that {status.value} is not a task failure": (
+            group_by_task(attempts("task", [1, 1]) + [not_completed(status)]),
+            1,
+        )
+        for status in (
+            ExecutionStatus.FAILED,
+            ExecutionStatus.TIMED_OUT,
+            ExecutionStatus.CANCELLED,
+            ExecutionStatus.RETRIED,
+        )
+    },
     # One success and one failure have an outcome: p = 1/2.
     "an Attempt without a task outcome is left out": (group_by_task(attempts("task", [1, 0]) + [NO_OUTCOME]), 0),
 }
@@ -164,9 +178,10 @@ def one_task(*attempts_of_task):
     return {"encoding": 1, "tasks": [{"task_id": "task", "attempts": list(attempts_of_task)}]}
 
 
-def attempt(number, **evidence):
-    recorded = {"execution_status": "completed", "task_outcome": {"success": True, "source": SOURCE}, **evidence}
-    return {"attempt_id": f"task/attempt-{number}", "task_id": "task", **recorded}
+def attempt(number, **changed):
+    """A successful Attempt as the Attempt record writes itself, with some of it changed afterwards."""
+    (recorded,) = attempts("task", [1])
+    return {**recorded.to_dict(), "attempt_id": f"task/attempt-{number}", **changed}
 
 
 def test_the_derived_artifact_reads_evidence_that_arrives_intact():
@@ -182,7 +197,8 @@ def test_the_derived_artifact_reads_evidence_that_arrives_intact():
         (one_task(attempt(1), attempt(2, task_outcome={"success": 0.5, "source": SOURCE})), "binary"),
         (one_task(attempt(1), attempt(2, task_outcome={"success": True, "source": ""})), "source"),
         (one_task(attempt(1), attempt(2, execution_status="finished")), "not an execution status"),
-        (one_task(attempt(1), attempt(2, confidence={"rating": "90"})), "cannot be read back"),
+        (one_task(attempt(1), attempt(2, unknown_evidence={"rating": "90"})), "unknown_evidence"),
+        (one_task(attempt(1), {"attempt_id": "task/attempt-2", "task_id": "task"}), "recorded without"),
         ({**one_task(attempt(1), attempt(2)), "encoding": 2}, "encoding"),
     ],
 )

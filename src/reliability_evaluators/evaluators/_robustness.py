@@ -11,7 +11,15 @@ from __future__ import annotations
 from fractions import Fraction
 from typing import Any, Iterable, Sequence
 
-from ..evidence import Attempt, ConditionRole, ExecutionStatus, TaskEvidence, VariationKind, require_unambiguous
+from ..evidence import (
+    Attempt,
+    ConditionRole,
+    EvidenceError,
+    ExecutionStatus,
+    TaskEvidence,
+    VariationKind,
+    require_unambiguous,
+)
 from .result import CountedReason, EvidenceCount, MetricDefinition, MetricResult, counted
 
 BASELINE = "baseline"
@@ -19,9 +27,11 @@ NOT_COMPLETED = "execution status is not completed"
 CONDITION_DIFFERS = "the observed condition differs from the intended condition"
 NOT_VERIFIED = "no observed condition shows that the intended condition occurred"
 NO_OUTCOME = "no task outcome recorded"
+NO_PROMPT_VARIANT = "no prompt variant recorded"
 NEITHER_CONDITION = "no valid Attempt under either condition"
 # In the order they are reported in.
 EXCLUSIONS = (NOT_COMPLETED, CONDITION_DIFFERS, NOT_VERIFIED)
+MISSING_EVIDENCE = (NO_PROMPT_VARIANT, NO_OUTCOME)
 
 
 def evaluate_against_baseline(
@@ -45,6 +55,7 @@ def evaluate_against_baseline(
     left_out: dict[str, dict[str, list[str]]] = {condition: {} for condition in conditions}
     other: list[str] = []
     for task in tasks:
+        _require_one_text_per_prompt_variant(task)
         for attempt in task.attempts:
             condition = _condition(attempt, kind)
             if condition is None:
@@ -83,7 +94,7 @@ def evaluate_against_baseline(
         return EvidenceCount(
             total=len(intended[condition]),
             valid=sum(entry[condition]["attempts"] for entry in per_task),
-            missing=counted(NO_OUTCOME, left_out[condition].get(NO_OUTCOME, ())),
+            missing=_counted_in_order(left_out[condition], MISSING_EVIDENCE),
             excluded=_counted_in_order(left_out[condition], EXCLUSIONS)
             + counted(f"its Task has no valid Attempt {under[other_condition]}", unmatched),
         )
@@ -100,7 +111,9 @@ def evaluate_against_baseline(
             "other_attempts": EvidenceCount(
                 total=len(other),
                 valid=0,
-                excluded=counted(f"not made under the baseline or under a {variation} variation", other),
+                excluded=counted(
+                    f"not made under the baseline or under {_article(variation)} {variation} variation", other
+                ),
             ),
         },
         "details": {
@@ -136,6 +149,25 @@ def evaluate_against_baseline(
     return MetricResult.unavailable(definition, reason, **evidence)
 
 
+def _article(noun: str) -> str:
+    return "an" if noun[0] in "aeiou" else "a"
+
+
+def _require_one_text_per_prompt_variant(task: TaskEvidence) -> None:
+    """Reject a Task whose Attempts record one variant identity for two prompt variants.
+
+    The Attempts of a variant are counted together by its identity, so the identity has to
+    stand for one exact text.
+    """
+    recorded: dict[str, Any] = {}
+    for attempt in task.attempts:
+        variant = attempt.prompt_variant
+        if variant is not None and recorded.setdefault(variant.variant_id, variant) != variant:
+            raise EvidenceError(
+                f"Task {task.task_id!r} has more than one prompt variant with the identity {variant.variant_id!r}"
+            )
+
+
 def _condition(attempt: Attempt, kind: VariationKind) -> str | None:
     """The compared condition an Attempt was intended for, or None when it was intended for neither."""
     if attempt.condition_role is ConditionRole.BASELINE:
@@ -149,7 +181,8 @@ def _why_not_valid(attempt: Attempt) -> str | None:
     """Why an Attempt does not count under the condition it was intended for, or None when it does.
 
     It counts when it completed, an observed condition shows that the intended condition
-    occurred, and it has a task outcome. The intended condition alone is a label.
+    occurred, and it has a task outcome. The intended condition alone is a label. Under a
+    prompt variation it also records the prompt variant it ran under.
     """
     status = attempt.execution_status
     if status not in (ExecutionStatus.COMPLETED, ExecutionStatus.CONDITION_NOT_MET):
@@ -158,6 +191,8 @@ def _why_not_valid(attempt: Attempt) -> str | None:
         return NOT_VERIFIED
     if not attempt.observed_condition.met or status is ExecutionStatus.CONDITION_NOT_MET:
         return CONDITION_DIFFERS
+    if attempt.intended_condition.kind is VariationKind.PROMPT and attempt.prompt_variant is None:
+        return NO_PROMPT_VARIANT
     if attempt.task_outcome is None:
         return NO_OUTCOME
     return None
@@ -188,6 +223,16 @@ def _tasks_not_compared(
 
 
 def _task_summary(attempts: Sequence[Attempt]) -> dict[str, Any]:
+    """The valid Attempts of a Task under one condition, and under each prompt variant when they ran under one."""
+    by_variant: dict[str, list[Attempt]] = {}
+    for attempt in attempts:
+        if attempt.prompt_variant is not None:
+            by_variant.setdefault(attempt.prompt_variant.variant_id, []).append(attempt)
+    variants = [{"variant_id": variant_id, **_successes(members)} for variant_id, members in by_variant.items()]
+    return {**_successes(attempts), **({"variants": variants} if variants else {})}
+
+
+def _successes(attempts: Sequence[Attempt]) -> dict[str, Any]:
     successes = sum(attempt.task_outcome.success for attempt in attempts)
     return {"attempts": len(attempts), "successes": successes, "success_frequency": successes / len(attempts)}
 

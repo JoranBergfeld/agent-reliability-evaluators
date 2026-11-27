@@ -10,11 +10,18 @@ from ..evidence import ResourceMeasurement
 
 @dataclass(frozen=True, kw_only=True)
 class AttemptRequest:
-    """What the agent is asked to do for one Attempt."""
+    """What the agent is asked to do for one Attempt.
+
+    `prompt` is given to the agent exactly as it is. Under a prompt variation it is the
+    exact text of a prompt variant, so an agent target adds nothing to it and rewrites nothing.
+
+    `timeout_seconds` is the time limit the customer declared for the Attempt, or None.
+    """
 
     attempt_id: str
     task_id: str
     prompt: str
+    timeout_seconds: float | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -68,6 +75,9 @@ class ConfidenceResponse:
 
 class AgentTarget(Protocol):
     """An agent the sweep can invoke. An invocation that fails raises.
+
+    The sweep cannot interrupt an invocation. An agent target stops at
+    `request.timeout_seconds` itself and raises `TimeoutError`.
 
     `isolated_follow_up` is the target's declaration of whether `elicit_confidence` can be
     answered in isolation. A target that does not support it need not implement

@@ -65,7 +65,7 @@ There is one definition of outcome consistency: [`evaluators/outcome_consistency
 
 A Foundry code evaluator is one Python source that defines `grade(sample, item)` and returns a number. It cannot import the offering. `derive_artifact("outcome_consistency")` therefore builds that one source from the files your own process executes:
 
-1. It starts from the canonical definition and from [`managed_scoring/grader.py`](../../src/reliability_evaluators/managed_scoring/grader.py), which reads the transported evidence.
+1. It starts from the canonical definition and from [`managed_scoring/grader.py`](../../src/reliability_evaluators/managed_scoring/grader.py), which reads the transported evidence with the Evidence model's own reader.
 2. It follows their imports of other modules of the offering, and reads the source of each.
 3. It joins those sources in import order. Every statement is kept as written. Only the imports between the joined modules, the module docstrings and `__all__` are left out, because one source does not need them.
 4. It appends `grade`, which calls the canonical `evaluate` on the decoded evidence and returns the value.
@@ -79,14 +79,14 @@ The derivation refuses, with a `DerivationError`, anything that would only fail 
 | An import of a module that the sandbox was not observed to accept | The sandbox has a fixed package list |
 | A call named `compile`, `eval`, `exec`, `globals` or `__import__`, as a function or a method | The sandbox refuses such a source before running it. `re.compile` is refused too |
 | Syntax newer than Python 3.12 | The sandbox ran Python 3.12 when observed |
-| A source of 256 KB or more | The documented code-size limit. The artifact is about 52 KB |
+| A source of 256 KB or more | The documented code-size limit. The artifact is about 71 KB |
 | Two joined modules that define the same top-level name, an import under another name, an import of a module as an object, or an import inside a function | One joined source cannot keep them apart |
 
 The canonical definitions and the Evidence model therefore have to stay inside those rules.
 
 ### Adding another Evaluator
 
-Declare the Attempt evidence it is calculated from in `MANAGED_ATTEMPT_EVIDENCE` in [`artifact.py`](../../src/reliability_evaluators/managed_scoring/artifact.py). The same derivation then produces its artifact. If the Evaluator reads Attempt evidence that `grader.py` cannot read back yet, add the reader for that field there. Then run its Evaluator-seam vectors against the derived artifact, as the outcome consistency test does. That test is what shows the declared evidence is enough. Only outcome consistency has been derived and proven.
+Declare the Attempt evidence it is calculated from in `MANAGED_ATTEMPT_EVIDENCE` in [`artifact.py`](../../src/reliability_evaluators/managed_scoring/artifact.py), by the field names of the Attempt record. The same derivation then produces its artifact, and the same reader reads its evidence. Then run its Evaluator-seam vectors against the derived artifact, as the outcome consistency test does. That test is what shows the declared evidence is enough. Only outcome consistency has been derived and proven. An Evaluator that also takes a customer declaration, such as the action types of the trajectory metrics, needs that declaration transported too, which nothing does yet.
 
 ## Registration
 
@@ -103,14 +103,16 @@ The declared range of the score is the scale of the canonical definition. The de
 
 ## The evidence that is submitted
 
-For each Attempt the evaluator is given: its identity, its Task, its execution status and its task outcome with its source. Nothing else about the Attempt is sent. It goes to your own project.
+For each Attempt the evaluator is given: its identity, its Task, its execution status and its task outcome with its source. Nothing else about the Attempt is sent: its actions, its resource measurements, its confidence rating, its violation assessments and what it records about its experiment stay in your process. It goes to your own project.
+
+Each Attempt is written exactly as the Attempt record writes itself in the scorecard, with the evidence that is not sent left empty, and is read back with the Evidence model's strict reader (`read_attempts`). That reader accepts an Attempt only when it is exactly what this version records.
 
 The evidence travels as one string in one field, `outcome_consistency_evidence`: a SHA-256 digest, a colon, and the evidence as JSON.
 
 - **A string, not structured data.** Structured numbers were altered on the way into a managed evaluator, and strings were not, in the earlier probes (decision ticket #12).
 - **A digest.** The evaluator recomputes the digest before it reads anything. Evidence that changed on the way is rejected inside Foundry. It can never produce a value calculated from other evidence.
 
-The evaluator validates what it receives with the same code as your own process: the Evidence model rejects a task outcome that is not binary, an Attempt without an identity and two Attempts with the same identity, and the result contract rejects a value outside the scale. Unknown fields are rejected, not ignored.
+The evaluator validates what it receives with the same code as your own process: the Evidence model rejects a task outcome that is not binary, an Attempt without an identity and two Attempts with the same identity, and the result contract rejects a value outside the scale. A field this version does not know is rejected, not ignored.
 
 Evidence larger than 1,900,000 characters is not submitted and the sweep fails. That is the size one run accepted in the earlier probes; a larger one was rejected. Nothing is split or truncated. Batching is not designed.
 
@@ -154,6 +156,10 @@ The sweep then stops with `ManagedScoringFailure`. It never scores the metric in
 | The metric has no Foundry-managed evaluator, or `managed_scoring` was not given | `ValueError` before any Attempt is made |
 
 Returning an unavailable measurement with its reason and counts through a managed result is not possible in this version. A managed evaluator can only return a number, and one that raises takes the whole run down (observed, see below). A partial scorecard after a failed managed run, and a customer-requested rescore in your own process, do not exist yet either.
+
+This also holds when the sweep's Attempts were cut short by an execution limit or a cancellation and too little was collected. In your own process that gives a partial scorecard. On this path the managed run fails and the sweep stops.
+
+[`recalculate`](../sweep/late-and-corrected-outcomes.md) scores in your own process. It refuses an earlier scorecard that holds a Foundry-managed result, so a correction never turns such a result into one calculated in your process.
 
 ## What stays in your project
 

@@ -453,9 +453,15 @@ def test_an_experiment_that_was_stopped_or_never_started_still_counts_as_a_task_
     )
 
     assert [entry["execution"]["status"] for entry in scorecard["experiments"]] == ["stopped", "stopped"]
+    # Both experiments stopped, so the metric has no result. That is an execution failure and
+    # not an unavailable measurement. What the Evaluator found is kept in its reason and counts.
     fault_robustness = metric(scorecard)
-    assert fault_robustness["state"] == "unavailable"
-    assert fault_robustness["reason"] == "no valid Attempt under the baseline and none under the fault variation"
+    assert fault_robustness["state"] is None
+    assert fault_robustness["value"] is None
+    assert fault_robustness["execution_failure"]["experiment_ids"] == ["add-item", "tidy-item"]
+    assert fault_robustness["execution_failure"]["reason"].endswith(
+        "no valid Attempt under the baseline and none under the fault variation"
+    )
     assert fault_robustness["counts"]["tasks"] == {
         "total": 2,
         "valid": 0,

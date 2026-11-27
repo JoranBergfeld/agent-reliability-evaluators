@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 780 390" width="780" height="390" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13">
+  <title>Worked example: two Tasks under their own prompt and under two prompt variants each</title>
+  <desc>close succeeds 4 of 4 under its own prompt. Under its variants it succeeds 1 of 2 as casual and 2 of 2 as formal, together 3 of 4. add succeeds 3 of 4 under its own prompt. Under its variants it succeeds 0 of 2 as terse and 1 of 2 as polite, together 1 of 4; a third Attempt as polite, in which the invocation of the agent failed, is left out. The baseline accuracy is 0.875, the accuracy under the prompt variants is 0.5, and prompt robustness is 0.5714.</desc>
+  <defs>
+    <g id="success">
+      <circle r="11" fill="#2e7d32"/>
+      <polyline points="-5,0 -1,4 5,-4" fill="none" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+    <g id="failure">
+      <circle r="10" fill="#ffffff" stroke="#c62828" stroke-width="2"/>
+      <path d="M-4,-4 L4,4 M-4,4 L4,-4" stroke="#c62828" stroke-width="2.2" stroke-linecap="round"/>
+    </g>
+    <g id="left-out">
+      <circle r="10" fill="#ffffff" stroke="#9e9e9e" stroke-width="2" stroke-dasharray="4 3"/>
+      <line x1="-5" y1="0" x2="5" y2="0" stroke="#9e9e9e" stroke-width="2.2" stroke-linecap="round"/>
+    </g>
+  </defs>
+  <rect width="780" height="390" fill="#ffffff"/>
+  <g fill="#616161" font-weight="600">
+    <text x="20" y="30">Task</text>
+    <text x="88" y="30">Baseline: the Task's own prompt</text>
+    <text x="360" y="30">Variation: its prompt variants</text>
+  </g>
+  <line x1="20" y1="42" x2="760" y2="42" stroke="#bdbdbd"/>
+  <line x1="340" y1="14" x2="340" y2="226" stroke="#e0e0e0"/>
+
+  <g fill="#212121">
+    <text x="20" y="90">close</text>
+    <use href="#success" x="100" y="85"/>
+    <use href="#success" x="128" y="85"/>
+    <use href="#success" x="156" y="85"/>
+    <use href="#success" x="184" y="85"/>
+    <text x="240" y="90">4/4 = 1</text>
+    <text x="360" y="75" fill="#1565c0">casual</text>
+    <use href="#success" x="440" y="70"/>
+    <use href="#failure" x="468" y="70"/>
+    <text x="360" y="105" fill="#1565c0">formal</text>
+    <use href="#success" x="440" y="100"/>
+    <use href="#success" x="468" y="100"/>
+    <text x="560" y="90">(1 + 2) / 4 = 0.75</text>
+  </g>
+  <line x1="20" y1="126" x2="760" y2="126" stroke="#eeeeee"/>
+  <g fill="#212121">
+    <text x="20" y="174">add</text>
+    <use href="#success" x="100" y="169"/>
+    <use href="#success" x="128" y="169"/>
+    <use href="#success" x="156" y="169"/>
+    <use href="#failure" x="184" y="169"/>
+    <text x="240" y="174">3/4 = 0.75</text>
+    <text x="360" y="159" fill="#ef6c00">terse</text>
+    <use href="#failure" x="440" y="154"/>
+    <use href="#failure" x="468" y="154"/>
+    <text x="360" y="189" fill="#1565c0">polite</text>
+    <use href="#success" x="440" y="184"/>
+    <use href="#failure" x="468" y="184"/>
+    <use href="#left-out" x="496" y="184"/>
+    <text x="560" y="174">(0 + 1) / 4 = 0.25</text>
+  </g>
+
+  <line x1="20" y1="226" x2="760" y2="226" stroke="#bdbdbd"/>
+  <g fill="#212121">
+    <text x="20" y="256" font-weight="600">Accuracy</text>
+    <text x="100" y="256">(1 + 0.75) / 2 = 0.875</text>
+    <text x="360" y="256">(0.75 + 0.25) / 2 = 0.5</text>
+    <text x="20" y="290" font-weight="600">Prompt robustness</text>
+    <text x="360" y="290" fill="#1565c0" font-weight="600">min(0.5 / 0.875, 1) = 0.5714</text>
+  </g>
+  <g fill="#616161">
+    <use href="#left-out" x="31" y="324"/>
+    <text x="52" y="329">Left out: the invocation of the agent failed, so the Attempt has no task outcome.</text>
+    <text x="20" y="356"><tspan fill="#ef6c00" font-weight="600">terse</tspan> is "Milk." and failed twice. A brittle agent and a variant that changed the Task give the same number.</text>
+    <text x="20" y="378">Two compared Tasks, each weighted equally. The Attempts of a Task under all of its variants count together.</text>
+  </g>
+</svg>

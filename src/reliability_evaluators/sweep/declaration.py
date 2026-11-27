@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from math import isfinite
 from typing import Any, Callable, Mapping, Protocol, Sequence
 
 from ..agent_target import AgentResponse, AttemptRequest
@@ -15,15 +16,33 @@ from ..evidence import (
     LifecyclePoint,
     ObservedCondition,
     OperationalConstraint,
+    PromptVariant,
     StartingStatePolicy,
     TaskOutcome,
+    VariationKind,
     ViolationAssessment,
     json_data,
 )
 
 # Decides the task outcome of one Attempt and says what it was decided from. It should
 # look at independent evidence, such as the state of a service, not only at the response.
-TaskSuccessRule = Callable[[AttemptRequest, AgentResponse], TaskOutcome]
+# A rule that cannot decide during the sweep returns NO_TASK_OUTCOME_YET.
+TaskSuccessRule = Callable[[AttemptRequest, AgentResponse], "TaskOutcome | NoTaskOutcomeYet"]
+
+
+class NoTaskOutcomeYet:
+    """What a task-success rule returns when the task outcome is not known during the sweep.
+
+    The Attempt is then recorded without a task outcome, for example because it is
+    labelled afterwards. It is not a task failure. The outcome can be supplied later,
+    with `recalculate`.
+    """
+
+    def __repr__(self) -> str:
+        return "NO_TASK_OUTCOME_YET"
+
+
+NO_TASK_OUTCOME_YET = NoTaskOutcomeYet()
 
 # Returns the actions of one Attempt, in order, from the declared evidence source. An empty
 # sequence confirms that the Attempt took no action; None says that nothing was recorded.
@@ -38,8 +57,55 @@ ViolationAssessor = Callable[[AttemptRequest, AgentResponse], Sequence[Violation
 
 
 @dataclass(frozen=True, kw_only=True)
+class ExecutionLimits:
+    """The limits a customer sets on the making of one Task's Attempts. None is imposed by default.
+
+    They belong to the Task, next to its number of Attempts. For a Task in an experiment
+    they are the limits of that experiment.
+
+    `attempt_timeout_seconds` is how long one invocation of the agent may take. The agent
+    target is given the limit and is expected to stop there; the sweep cannot interrupt
+    an invocation. Customer controls and the confidence follow-up are not counted.
+
+    `total_timeout_seconds` is how long all the Task's Attempts may take together, under
+    every condition of its experiment, counted from the start of the first one and with
+    everything done around them. Once it is reached no further Attempt or retry is started.
+    An Attempt that is already running is bounded by `attempt_timeout_seconds` only.
+
+    `max_retries` is how often a planned Attempt is made again after the invocation of the
+    agent failed or timed out. A completed Attempt is never retried, whatever its task
+    outcome, and neither is one that a customer control failed for.
+    """
+
+    attempt_timeout_seconds: float | None = None
+    total_timeout_seconds: float | None = None
+    max_retries: int = 0
+
+    def __post_init__(self) -> None:
+        for name in ("attempt_timeout_seconds", "total_timeout_seconds"):
+            limit = getattr(self, name)
+            if limit is None:
+                continue
+            if isinstance(limit, bool) or not isinstance(limit, (int, float)) or not isfinite(limit) or limit <= 0:
+                raise ValueError(f"{name} is a positive, finite number of seconds or None, got {limit!r}")
+        if type(self.max_retries) is not int or self.max_retries < 0:
+            raise ValueError(f"max_retries is a whole number of retries, 0 or more, got {self.max_retries!r}")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "attempt_timeout_seconds": self.attempt_timeout_seconds,
+            "total_timeout_seconds": self.total_timeout_seconds,
+            "max_retries": self.max_retries,
+        }
+
+
+@dataclass(frozen=True, kw_only=True)
 class Task:
     """A unit of work for the agent, its task-success rule, and how many Attempts to make.
+
+    `attempts` is how many Attempts to make and `limits` are the execution limits on
+    making them. Both are the customer's choice per Task. In an experiment, `attempts` is
+    the number under each condition and `limits` are the limits of the experiment.
 
     `shareable_success_rule` is the task-success rule in words, as the agent may be shown
     it when it is asked for its confidence rating. Leave it out when the rule cannot be
@@ -53,6 +119,7 @@ class Task:
     prompt: str
     success_rule: TaskSuccessRule
     attempts: int
+    limits: ExecutionLimits = ExecutionLimits()
     shareable_success_rule: str | None = None
     operational_constraints: Sequence[OperationalConstraint] = ()
     violation_assessor: ViolationAssessor | None = None
@@ -62,6 +129,8 @@ class Task:
             raise ValueError(f"a Task is identified by a task_id, got {self.task_id!r}")
         if type(self.attempts) is not int or self.attempts < 1:
             raise ValueError(f"Task {self.task_id!r} needs at least one Attempt, got {self.attempts!r}")
+        if not isinstance(self.limits, ExecutionLimits):
+            raise ValueError(f"the limits of Task {self.task_id!r} are ExecutionLimits, got {self.limits!r}")
         rule = self.shareable_success_rule
         if rule is not None and (not isinstance(rule, str) or not rule.strip()):
             raise ValueError(
@@ -119,6 +188,8 @@ class ControlContext:
     starting_state: StartingStatePolicy
     # The test resources the experiment may change. A control changes nothing else.
     authorized_resources: tuple[str, ...]
+    # The prompt variant whose text the agent is given in this Attempt. None: the Task's own instruction.
+    prompt_variant: PromptVariant | None = None
 
 
 class CustomerControls(Protocol):
@@ -158,7 +229,8 @@ class Experiment:
     """A controlled experiment on one Task, declared before any Attempt is made.
 
     The Task is attempted `task.attempts` times under the baseline and, when a variation
-    is declared, as many times under the variation. Everything else is held fixed.
+    is declared, as many times under the variation. Under a prompt variation it is attempted
+    as many times under each prompt variant. Everything else is held fixed.
 
     Nothing here has a default except the test resources: the starting-state policy in
     particular is always declared, so that state never continues by accident.
@@ -181,6 +253,10 @@ class Experiment:
     write_capable: bool
     # The test resources a write-capable experiment is authorized to change, by name.
     authorized_resources: Sequence[str] = ()
+    # The equivalent wordings of the Task's instruction, which the customer supplies or approves.
+    # Declared with a variation of the kind prompt, and only with one. The sweep generates none:
+    # under the variation the agent is given the exact text of each, and nothing else changes.
+    prompt_variants: Sequence[PromptVariant] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.experiment_id, str) or not self.experiment_id.strip():
@@ -220,6 +296,7 @@ class Experiment:
             if not callable(getattr(self.controls, point.value, None)):
                 raise ValueError(f"the controls of {this} have no {point.value} control")
         self._require_authorized_resources(this)
+        self._require_prompt_variants(this)
 
     def _require_authorized_resources(self, this: str) -> None:
         if type(self.write_capable) is not bool:
@@ -239,6 +316,58 @@ class Experiment:
         if resources and not self.write_capable:
             raise ValueError(f"{this} is not write-capable, so it is authorized to change nothing, got {resources!r}")
 
+    def _require_prompt_variants(self, this: str) -> None:
+        variants = self.prompt_variants
+        if isinstance(variants, str) or any(not isinstance(variant, PromptVariant) for variant in variants):
+            raise ValueError(
+                f"{this} declares its prompt variants as a list of PromptVariant, each with its exact text "
+                f"and its source, got {variants!r}"
+            )
+        object.__setattr__(self, "prompt_variants", tuple(variants))
+        if not self.varies_prompt():
+            if variants:
+                raise ValueError(
+                    f"{this} declares prompt variants, and its variation is not of the kind 'prompt'. A reworded "
+                    "instruction is a variation of its own: it is never mixed with the baseline or with another "
+                    "kind of variation"
+                )
+            return
+        if not variants:
+            raise ValueError(
+                f"{this} declares a prompt variation, so it declares the prompt variants that the customer "
+                "supplies or approves. The sweep generates none"
+            )
+        if self.variation.parameters != self.baseline.parameters:
+            raise ValueError(
+                f"the prompt variation of {this} changes the wording of the instruction and nothing else, so its "
+                f"parameters are those of the baseline. The baseline declares {self.baseline.parameters!r} and "
+                f"the variation {self.variation.parameters!r}"
+            )
+        texts = {self.task.prompt: "the Task's own prompt"}
+        identities: set[str] = set()
+        for variant in self.prompt_variants:
+            if variant.variant_id in identities:
+                raise ValueError(f"{this} declares more than one prompt variant as {variant.variant_id!r}")
+            identities.add(variant.variant_id)
+            if variant.text in texts:
+                raise ValueError(
+                    f"the prompt variant {variant.variant_id!r} of {this} has the same text as "
+                    f"{texts[variant.text]}, so it is not another wording"
+                )
+            texts[variant.text] = f"the prompt variant {variant.variant_id!r}"
+
+    def varies_prompt(self) -> bool:
+        """Whether the variation is the wording of the instruction."""
+        return self.variation is not None and self.variation.kind is VariationKind.PROMPT
+
+    def attempts_planned(self, role: ConditionRole) -> int:
+        """How many Attempts are planned under a condition: `task.attempts`, or as many under each prompt variant."""
+        if role is ConditionRole.BASELINE:
+            return self.task.attempts
+        if self.variation is None:
+            return 0
+        return self.task.attempts * (len(self.prompt_variants) if self.varies_prompt() else 1)
+
     def conditions(self) -> tuple[tuple[ConditionRole, Condition], ...]:
         """The conditions Attempts are made under, the baseline first."""
         declared = ((ConditionRole.BASELINE, self.baseline), (ConditionRole.VARIATION, self.variation))
@@ -255,6 +384,15 @@ class Experiment:
             "variation": None if self.variation is None else self.variation.to_dict(),
             "write_capable": self.write_capable,
             "authorized_resources": list(self.authorized_resources),
+            # The exact texts of a prompt variation: the Task's own prompt, and each variant.
+            **(
+                {
+                    "task_prompt": self.task.prompt,
+                    "prompt_variants": [variant.to_dict() for variant in self.prompt_variants],
+                }
+                if self.varies_prompt()
+                else {}
+            ),
         }
 
 

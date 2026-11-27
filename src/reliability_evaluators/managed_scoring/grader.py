@@ -6,6 +6,8 @@ may import only what the Foundry code-evaluator sandbox provides.
 Evidence travels as one string per Evaluator: `<sha256 of the JSON>:<JSON>`. A string reached
 the sandbox unchanged when observed, where structured numbers did not. The digest makes any
 other alteration a rejection inside the sandbox instead of a value calculated from other evidence.
+The Attempts in it are written by the Attempt record and read back by the Evidence model's
+strict reader, so there is one way to write an Attempt and one way to read it.
 """
 
 from __future__ import annotations
@@ -15,7 +17,7 @@ import json
 from typing import Any, Callable, Iterable, Sequence
 
 from ..evaluators.result import MetricDefinition, MetricResult, MetricState
-from ..evidence import Attempt, EvidenceError, TaskEvidence, TaskOutcome
+from ..evidence import Attempt, EvidenceError, TaskEvidence, read_attempts
 
 ENCODING_VERSION = 1
 
@@ -32,11 +34,13 @@ def evidence_field(metric_id: str) -> str:
     return f"{metric_id}_evidence"
 
 
-def encode_evidence(tasks: Iterable[TaskEvidence], attempt_fields: Sequence[str]) -> str:
+def encode_evidence(tasks: Iterable[TaskEvidence], attempt_evidence: Sequence[str]) -> str:
     """Encode grouped Attempt evidence for transport to a derived evaluator.
 
-    Every Attempt keeps its identity and its Task, and of its evidence the `attempt_fields`,
-    as the Attempt records them. Nothing is validated here: the derived evaluator validates.
+    Every Attempt keeps its identity, its Task and its execution status, and of its other
+    evidence only the fields named in `attempt_evidence`. It is written as the Attempt
+    record writes itself, so the derived evaluator reads it with the Evidence model's own
+    reader. That reader validates: nothing is validated here.
     """
     payload = json.dumps(
         {
@@ -44,7 +48,7 @@ def encode_evidence(tasks: Iterable[TaskEvidence], attempt_fields: Sequence[str]
             "tasks": [
                 {
                     "task_id": task.task_id,
-                    "attempts": [_transported(attempt, attempt_fields) for attempt in task.attempts],
+                    "attempts": [_transported(attempt, attempt_evidence).to_dict() for attempt in task.attempts],
                 }
                 for task in tasks
             ],
@@ -68,7 +72,10 @@ def decode_evidence(encoded: Any) -> tuple[TaskEvidence, ...]:
     evidence = _record(json.loads(payload, parse_constant=_not_a_number), "encoding", "tasks")
     if evidence["encoding"] != ENCODING_VERSION:
         raise EvidenceError(f"the evidence is in encoding {evidence['encoding']!r}, not {ENCODING_VERSION}")
-    return tuple(_task(task) for task in evidence["tasks"])
+    if not isinstance(evidence["tasks"], list):
+        raise EvidenceError(f"transported Tasks are a list, got {evidence['tasks']!r}")
+    tasks = [_record(task, "task_id", "attempts") for task in evidence["tasks"]]
+    return tuple(TaskEvidence(task["task_id"], read_attempts(task["attempts"])) for task in tasks)
 
 
 def managed_value(definition: MetricDefinition, evaluate: Callable[..., MetricResult], item: Any) -> float:
@@ -90,43 +97,13 @@ def managed_value(definition: MetricDefinition, evaluate: Callable[..., MetricRe
     return float(result.value)
 
 
-# How each transported field of an Attempt is read back into the Attempt record.
-_ATTEMPT_FIELDS: dict[str, Callable[[Any], Any]] = {
-    "execution_status": lambda recorded: recorded,
-    "task_outcome": lambda recorded: (
-        None if recorded is None else TaskOutcome(**_record(recorded, "success", "source"))
-    ),
-}
-_ATTEMPT_IDENTITY = ("attempt_id", "task_id")
+# What every transported Attempt keeps, whatever else its Evaluator is calculated from.
+ALWAYS_TRANSPORTED = ("attempt_id", "task_id", "execution_status")
 
 
-def transportable(attempt_fields: Iterable[str]) -> bool:
-    """Whether a derived evaluator can read every one of these Attempt fields back."""
-    return all(field in _ATTEMPT_FIELDS for field in attempt_fields)
-
-
-def _transported(attempt: Attempt, attempt_fields: Sequence[str]) -> dict[str, Any]:
-    recorded = attempt.to_dict()
-    return {field: recorded[field] for field in (*_ATTEMPT_IDENTITY, *attempt_fields)}
-
-
-def _task(transported: Any) -> TaskEvidence:
-    task = _record(transported, "task_id", "attempts")
-    return TaskEvidence(task["task_id"], tuple(_attempt(attempt) for attempt in task["attempts"]))
-
-
-def _attempt(transported: Any) -> Attempt:
-    if not isinstance(transported, dict) or any(field not in transported for field in _ATTEMPT_IDENTITY):
-        raise EvidenceError(f"a transported Attempt identifies itself and its Task, got {transported!r}")
-    evidence = {field: value for field, value in transported.items() if field not in _ATTEMPT_IDENTITY}
-    unreadable = sorted(field for field in evidence if field not in _ATTEMPT_FIELDS)
-    if unreadable:
-        raise EvidenceError(f"a transported Attempt carries {unreadable}, which cannot be read back")
-    return Attempt(
-        attempt_id=transported["attempt_id"],
-        task_id=transported["task_id"],
-        **{field: _ATTEMPT_FIELDS[field](value) for field, value in evidence.items()},
-    )
+def _transported(attempt: Attempt, attempt_evidence: Sequence[str]) -> Attempt:
+    """The Attempt with the evidence that travels and nothing else of what it records."""
+    return Attempt(**{field: getattr(attempt, field) for field in (*ALWAYS_TRANSPORTED, *attempt_evidence)})
 
 
 def _record(transported: Any, *fields: str) -> dict[str, Any]:

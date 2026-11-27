@@ -41,11 +41,12 @@ Each Evaluator declares what it needs. The sweep reads two things from that.
 | Outcome consistency | Nothing in particular. Every completed Attempt has a task outcome. |
 | Resource consistency | Nothing in particular. Every Attempt is timed, and the agent target reports the rest. |
 | Constraint compliance, conditional harm severity | Nothing in particular. The violation assessor belongs to the Task, so every Attempt at the Task is assessed the same way. |
-| Fault robustness | Nothing in particular. The fault is applied and verified by the controls of the experiment, for every Evaluator alike. |
+| Fault robustness, environment robustness | Nothing in particular. The variation is applied and verified by the controls of the experiment, for every Evaluator alike. |
+| Prompt robustness | Nothing in particular. The prompt variants are declared by the experiment, and its Attempts under them are made for every Evaluator alike. |
 | Distributional and sequential trajectory consistency | Action evidence from one declared evidence source, read by one declared recorder. |
 | Calibration, strict confidence discrimination, Brier-based score | A confidence follow-up after each completed Attempt. |
 
-**Which experimental conditions it is calculated from.** Fault robustness compares two conditions: it is calculated from the Attempts of the experiments whose variation declares the kind `fault`, under the baseline and under the fault. Every other Evaluator that exists today is calculated from Attempts under the baseline. For those, an Attempt at a Task given without an experiment had no variation applied to it and is used as a baseline Attempt.
+**Which experimental conditions it is calculated from.** Each robustness metric compares two conditions: it is calculated from the Attempts of the experiments whose variation declares its kind, under the baseline and under that variation. The kind is `fault` for fault robustness, `environment` for environment robustness and `prompt` for prompt robustness. No robustness metric is given an Attempt of an experiment that declares another kind. Every other Evaluator is calculated from Attempts under the baseline. For those, an Attempt at a Task given without an experiment had no variation applied to it and is used as a baseline Attempt.
 
 ## When Attempts are shared
 
@@ -55,7 +56,7 @@ With one `action_evidence` declaration for the whole sweep, as above, nothing di
 
 The action types are not part of what is matched. They are applied when a metric is calculated and do not change what is recorded for an Attempt. Two Evaluators that read the same recording with different action types share Attempts.
 
-Within the Attempts it shares, an Evaluator is given only those made under a condition it is calculated from. Attempts under the variation of an experiment are kept in the scorecard and are given to no Evaluator that is calculated from the baseline. Fault robustness and outcome consistency, selected together, share the baseline Attempts of an experiment that declares a fault, and only fault robustness is given its Attempts under the fault.
+Within the Attempts it shares, an Evaluator is given only those made under a condition it is calculated from. Attempts under the variation of an experiment are kept in the scorecard and are given to no Evaluator that is calculated from the baseline. Fault robustness and outcome consistency, selected together, share the baseline Attempts of an experiment that declares a fault, and only fault robustness is given its Attempts under the fault. The same holds for environment robustness and prompt robustness with their kinds of variation.
 
 ## When separate Attempts are made
 
@@ -100,7 +101,7 @@ The sets are made one after another: every Task and experiment for the first set
 
 The first set is identified exactly as in a sweep with one set. An Attempt's `task_id` is the Task either way.
 
-An experiment that is run again is a run of its own. It has its own entry under `experiments` in the scorecard, and your controls are invoked around each of its Attempts with the experiment identity `<experiment>/set-2`. A test resource that an experiment did not restore stops every later experiment that may change it, in the same set and in later ones: an experiment is not run again on state its first run left behind.
+A Task given without an experiment that is attempted again has an entry of its own under `tasks_without_experiment`, with its `attempt_set`. An experiment that is run again is a run of its own. It has its own entry under `experiments` in the scorecard, with its `attempt_set` too, and your controls are invoked around each of its Attempts with the experiment identity `<experiment>/set-2`. A test resource that an experiment did not restore stops every later experiment that may change it, in the same set and in later ones: an experiment is not run again on state its first run left behind.
 
 Two recordings are the same when they have the same `evidence_source` and the same `record` callable. A different callable is a different requirement, also when it happens to read the same data.
 
@@ -143,9 +144,11 @@ An Evaluator is given the Attempts of its own set and nothing else. Which other 
 
 ## When one Evaluator's Attempts fail
 
-An Evaluator that cannot calculate a value from its Attempts reports an unavailable measurement with its reason and counts. That concerns its own metric only. The sweep goes on to the next set, and the metrics of the other Evaluators keep the values their own Attempts support.
+An Evaluator that cannot calculate a value from its Attempts reports an unavailable measurement with its reason and counts. When its Attempts were cut short, because not all of them were made or not one of them completed, its metric has no result instead: that is an [execution failure](execution-limits.md#metrics-in-a-partial-scorecard), and the scorecard is partial. Either way it concerns its own metric only. The sweep goes on to the next set, and the metrics of the other Evaluators keep the values their own Attempts support.
 
-A customer callable that breaks its contract still stops the whole sweep: a task-success rule that returns no sourced task outcome, a violation assessor that returns no violation assessments, or an action recorder that returns something other than action events. That is a mistake in the declaration and not a failed Attempt.
+A sweep that is cancelled makes no further Attempts in any set. The [execution limits](execution-limits.md) of a Task apply to each set anew: a Task that is attempted again has its time limit and its retries again.
+
+A customer callable that breaks its contract still stops the whole sweep: a task-success rule that returns neither a sourced task outcome nor `NO_TASK_OUTCOME_YET`, a violation assessor that returns no violation assessments, or an action recorder that returns something other than action events. That is a mistake in the declaration and not a failed Attempt.
 
 ## What is not there yet
 

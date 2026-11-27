@@ -7,18 +7,19 @@ given, or on what the fake project holds afterwards. Expected values are calcula
 """
 
 import hashlib
+import json
 
 import pytest
 
-from reliability_evaluators.evidence import TaskOutcome
+from reliability_evaluators.evidence import OutcomeCorrection, TaskOutcome
 from reliability_evaluators.managed_scoring import (
     FoundryManagedScoring,
     FoundryRequestError,
     ManagedScoringFailure,
     derive_artifact,
 )
-from reliability_evaluators.scorecard import AcceptanceCriterion, render_report
-from reliability_evaluators.sweep import ConfiguredEvaluator, Task, run_sweep
+from reliability_evaluators.scorecard import AcceptanceCriterion, render_report, to_json
+from reliability_evaluators.sweep import ConfiguredEvaluator, RecalculationFailed, Task, recalculate, run_sweep
 from tests.fake_foundry import FakeFoundryProject
 from tests.fakes import FakeAgentTarget
 from tests.report_reader import assert_faithful_rendering
@@ -299,6 +300,19 @@ def test_a_run_that_does_not_end_in_time_is_cancelled_and_gives_no_value():
         )
 
     assert foundry.runs["evalrun_1"]["status"] == "canceled"
+
+
+def test_a_recalculation_does_not_score_a_foundry_managed_result_in_this_process():
+    # A recalculation scores in this process. The customer chose Foundry for this metric, so it is refused.
+    scorecard = json.loads(to_json(sweep(TWO_TASKS, FakeFoundryProject())))
+    corrected = OutcomeCorrection(
+        attempt_id="close/attempt-5",
+        task_outcome=TaskOutcome(success=True, source="label added after the run"),
+        provenance="synthetic correction",
+    )
+
+    with pytest.raises(RecalculationFailed, match="'outcome_consistency' was scored on the scoring path 'foundry_managed'"):
+        recalculate(earlier_scorecard=scorecard, outcome_corrections=[corrected])
 
 
 # Declarations that cannot be run are rejected before any Attempt, and never fall back to this process.

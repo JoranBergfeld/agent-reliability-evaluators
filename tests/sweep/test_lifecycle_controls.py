@@ -349,15 +349,27 @@ def test_the_scorecard_records_what_each_experiment_declared_and_how_it_ran():
             },
             "write_capable": True,
             "authorized_resources": ["todo-list/add"],
-            "execution": {"status": "completed", "reason": None, "attempts_planned": 4, "attempts_recorded": 4},
+            "attempt_set": 1,
+            "limits": {"attempt_timeout_seconds": None, "total_timeout_seconds": None, "max_retries": 0},
+            "execution": {
+                "status": "completed",
+                "reason": None,
+                "attempts_planned": 4,
+                "attempts_recorded": 4,
+                "attempts_completed": 4,
+                "attempts_not_completed": [],
+                "attempts_not_made": 0,
+                "retries": 0,
+            },
         }
     ]
     assert json.loads(to_json(scorecard)) == scorecard
 
 
 def execution(scorecard, experiment_id):
+    """How the execution of an experiment ended, and how many of its Attempts were planned and recorded."""
     (entry,) = [entry for entry in scorecard["experiments"] if entry["experiment_id"] == experiment_id]
-    return entry["execution"]
+    return {key: entry["execution"][key] for key in ("status", "reason", "attempts_planned", "attempts_recorded")}
 
 
 def test_a_failed_clean_up_stops_the_later_attempts_of_its_experiment():
@@ -666,8 +678,12 @@ def test_a_clean_up_that_fails_keeps_the_rating_and_leaves_the_attempt_out_of_th
     (only,) = scorecard["attempts"]
     assert only["execution_status"] == "cleanup_failed"
     assert only["confidence"]["rating"] == "100"
+    # The experiment stopped with no Attempt completed. That is an execution failure, not an
+    # unavailable measurement.
     brier = metric(scorecard, "brier_based_score")
-    assert brier["state"] == "unavailable"
+    assert brier["state"] is None
+    assert brier["value"] is None
+    assert brier["execution_failure"]["experiment_ids"] == ["add-item"]
     assert brier["counts"]["confidence_outcome_pairs"]["valid"] == 0
 
 

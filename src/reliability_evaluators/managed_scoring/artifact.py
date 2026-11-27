@@ -17,19 +17,19 @@ import importlib
 import importlib.util
 import inspect
 import symtable
-from dataclasses import dataclass
+from dataclasses import dataclass, fields
 from functools import lru_cache
 from typing import Any, Iterable
 
 from ..evaluators import EVALUATORS, RELIABILITY_METRICS, MetricDefinition
-from ..evidence import TaskEvidence
+from ..evidence import Attempt, TaskEvidence
 from . import grader
 
 # The Attempt evidence each Evaluator is calculated from, by the field names of the Attempt
-# record. Declaring an Evaluator here is what makes it derivable. Its identity and its Task
-# always travel with an Attempt.
+# record. Declaring an Evaluator here is what makes it derivable. An Attempt always travels
+# with its identity, its Task and its execution status, and with nothing that is not named here.
 MANAGED_ATTEMPT_EVIDENCE: dict[str, tuple[str, ...]] = {
-    "outcome_consistency": ("execution_status", "task_outcome"),
+    "outcome_consistency": ("task_outcome",),
 }
 
 # The sandbox limits a code evaluator has to fit. See docs/managed_scoring/readme.md for
@@ -152,8 +152,9 @@ def derive_artifact(metric_id: str) -> ManagedArtifact:
             raise DerivationError(f"{metric_id!r} has no Foundry-managed evaluator in this version")
         raise DerivationError(f"{metric_id!r} is not a reliability metric")
     attempt_evidence = MANAGED_ATTEMPT_EVIDENCE[metric_id]
-    if not grader.transportable(attempt_evidence):
-        raise DerivationError(f"a derived evaluator cannot read back all of {list(attempt_evidence)} for {metric_id!r}")
+    unknown = sorted(set(attempt_evidence) - {field.name for field in fields(Attempt)})
+    if unknown:
+        raise DerivationError(f"{unknown} is declared as Attempt evidence of {metric_id!r}, and an Attempt records no such thing")
     evaluator = EVALUATORS[metric_id]
     canonical = evaluator.evaluate.__module__
     modules = _Modules()
