@@ -621,6 +621,15 @@ def condition_of_kind(kind):
             changed(lambda scorecard: scorecard.update(cost_estimate={"total": 12})),
             "it holds what this version does not recalculate with: cost_estimate",
         ),
+        (without("token_usage"), "it does not report its token usage"),
+        (
+            changed(lambda scorecard: scorecard["token_usage"].update(shared_preparation=[{"preparation_id": "x"}])),
+            "its token usage is not what this version reports: a shared preparation is reported without its description",
+        ),
+        (
+            changed(lambda scorecard: scorecard["token_usage"].pop("shared_preparation")),
+            "its token usage is not what this version reports: shared preparation is reported as a list",
+        ),
     ],
 )
 def test_supplied_evidence_that_does_not_validate_fails_the_recalculation(supply, problem):

@@ -440,13 +440,14 @@ def reworded_experiment(service, experiment_id="add-item", task_id="add"):
     )
 
 
-def reworded_sweep(preparation_usage, metrics=(OUTCOME, "prompt_robustness")):
+def reworded_sweep(preparation_usage, metrics=(OUTCOME, "prompt_robustness"), **declared):
     service = FakeTodoService(["add"])
     return run_sweep(
         experiments=[reworded_experiment(service)],
         agent_target=MeteredTodoAgent(service),
         metrics=metrics,
         preparation_usage=preparation_usage,
+        **declared,
     )
 
 
@@ -493,6 +494,55 @@ def test_what_the_customer_reports_for_generating_variations_is_listed_apart_and
         "prompt_robustness": ("complete", 750, True, False),
     }
     assert [entry["preparation_ids"] for entry in usage["evaluators"]] == [[], ["prompt-variants"]]
+
+
+def test_a_preparation_is_counted_once_when_its_experiment_is_attempted_again_for_another_evaluator():
+    # Sequential trajectory consistency is configured with a recording of its own, so the experiment is
+    # run a second time for it: 2 * 3 Attempts of 100 tokens. The variants were generated once.
+    #   sweep: 600 + 450 = 1050 tokens
+    #   prompt robustness, from the first run: 300 + 450 = 750 tokens
+    #   distributional trajectory consistency, from the baseline Attempt of the first run: 100 tokens
+    #   sequential trajectory consistency, from the baseline Attempt of the second run: 100 tokens
+    generation = PreparationUsage(
+        preparation_id="prompt-variants",
+        description="The two prompt variants of add-item were generated with a model.",
+        source="usage logged by the customer's variant script",
+        experiment_ids=["add-item"],
+        total_tokens=450,
+    )
+
+    def recording(evidence_source):
+        return ActionEvidenceDeclaration(
+            evidence_source=evidence_source, record=lambda attempt, response: [], action_types={"add": "create"}
+        )
+
+    scorecard = reworded_sweep(
+        [generation],
+        metrics=[
+            "prompt_robustness",
+            "distributional_trajectory_consistency",
+            ConfiguredEvaluator(
+                metric_id="sequential_trajectory_consistency", action_evidence=recording("service-side effects")
+            ),
+        ],
+        action_evidence=recording("native tool calls"),
+    )
+
+    usage = scorecard["token_usage"]
+    assert [experiment["experiment_id"] for experiment in scorecard["experiments"]] == ["add-item", "add-item/set-2"]
+    (preparation,) = usage["shared_preparation"]
+    assert preparation["experiment_ids"] == ["add-item", "add-item/set-2"]
+    assert preparation["used_by"] == ["prompt_robustness"]
+    assert (usage["sweep"]["coverage"], usage["sweep"]["total_tokens"], usage["sweep"]["uses_reported"]) == (
+        "complete",
+        1050,
+        7,
+    )
+    assert per_evaluator(usage) == {
+        "distributional_trajectory_consistency": ("complete", 100, True, False),
+        "sequential_trajectory_consistency": ("complete", 100, False, True),
+        "prompt_robustness": ("complete", 750, True, False),
+    }
 
 
 def test_generated_variations_whose_usage_the_customer_does_not_know_leave_the_sweep_total_partial():
