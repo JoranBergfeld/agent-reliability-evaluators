@@ -221,7 +221,7 @@ A number is never clamped, guessed, chosen from several, or lifted out of a sent
 
 ## In the scorecard
 
-Every Attempt in `attempts` carries its confidence evidence next to its task outcome:
+Every Attempt in `attempts` carries its confidence evidence next to its task outcome. The other evidence of the Attempt is left out of this example:
 
 ```json
 {
@@ -257,6 +257,7 @@ The metric's own entry carries:
 | `details.pairs` | every valid pair: Attempt and Task identity, `rating` as written, `confidence`, `task_outcome` with its `source`, and `squared_error` |
 | `details.mean_squared_error` | the mean of the squared errors, which is the raw Brier loss; `null` when there is no valid pair |
 | `evidence.attempt_ids` | the Attempts the value rests on |
+| `acceptance` | the assessment of your acceptance criterion for this metric, or `null` when you declared none: see [acceptance criteria](../acceptance_criteria/readme.md). A criterion can require a number of valid pairs with `{"minimum_counts": {"confidence_outcome_pairs": 20}}`. |
 
 ## Evidence it needs
 
