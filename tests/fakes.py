@@ -128,11 +128,17 @@ class FakeActingAgentTarget(FakeAgentTarget):
     The service logs each call under the Attempt's identity with its tool name,
     arguments, result and error; `broken_tool` always ends in an error. An Attempt
     scripted with None instead of a list is not logged at all, which is different from
-    an Attempt that is logged with no calls.
+    an Attempt that is logged with no calls. Everything else is given as for FakeAgentTarget.
     """
 
-    def __init__(self, script: dict[str, list[str]], actions: dict[str, list[list[str] | None]]):
-        super().__init__(script)
+    def __init__(
+        self,
+        script: dict[str, list[str]],
+        actions: dict[str, list[list[str] | None]],
+        resources: dict[str, list[dict]] | None = None,
+        **options,
+    ):
+        super().__init__(script, resources, **options)
         self._actions = {task_id: list(sequences) for task_id, sequences in actions.items()}
         self.service_log: dict[str, list[dict]] = {}
 

@@ -8,10 +8,16 @@ scorecard or on the reported failure. Expected values are calculated by hand.
 
 import json
 
-from reliability_evaluators.evidence import OutcomeCorrection, TaskOutcome
+from reliability_evaluators.evidence import (
+    ActionEvent,
+    OperationalConstraint,
+    OutcomeCorrection,
+    TaskOutcome,
+    ViolationAssessment,
+)
 from reliability_evaluators.scorecard import to_json
-from reliability_evaluators.sweep import Task, recalculate, run_sweep
-from tests.fakes import FakeAgentTarget
+from reliability_evaluators.sweep import ActionEvidenceDeclaration, Task, recalculate, run_sweep
+from tests.fakes import FakeActingAgentTarget, FakeAgentTarget
 
 SOURCE = "final state of the fake service"
 RULE = "The item is marked done in the to-do service."
@@ -127,3 +133,125 @@ def test_the_attempt_carries_the_corrected_outcome_and_retains_the_record_it_rep
     assert attempt(recalculated, "close/attempt-4")["task_outcome"] == {"success": False, "source": SOURCE}
     assert attempt(recalculated, "close/attempt-4")["superseded_task_outcomes"] == []
     assert attempt(earlier, "close/attempt-3")["superseded_task_outcomes"] == []
+
+
+def test_the_new_scorecard_marks_the_earlier_result_as_superseded_and_says_what_superseded_it():
+    earlier = sweep({"close": HALF})
+
+    recalculated = recalculate(
+        earlier_scorecard=earlier, outcome_corrections=[corrected("close/attempt-3", success=True)]
+    )
+
+    assert recalculated["superseded_results"] == [
+        {
+            "status": "superseded",
+            "outcome_corrections": [
+                {
+                    "attempt_id": "close/attempt-3",
+                    "task_id": "close",
+                    "task_outcome": {"success": True, "source": REVIEW},
+                    "provenance": PROVENANCE,
+                    "superseded_task_outcome": {"success": False, "source": SOURCE},
+                }
+            ],
+            "metrics": earlier["metrics"],
+        }
+    ]
+    (superseded,) = recalculated["superseded_results"]
+    assert metric(superseded)["value"] == 0
+    assert metric(recalculated)["value"] == 0.25
+    assert "superseded_results" not in earlier
+
+
+OUTCOME_METRICS = ("outcome_consistency", "brier_based_score")
+OTHER_METRICS = (
+    "distributional_trajectory_consistency",
+    "sequential_trajectory_consistency",
+    "resource_consistency",
+    "constraint_compliance",
+)
+ACTION_TYPES = {"get_item": "read", "update_item": "update"}
+LEAVE_UNRELATED = OperationalConstraint(
+    constraint_id="leave-unrelated", description="Do not change or delete the item 'unrelated'."
+)
+
+
+def sweep_with_every_kind_of_evidence():
+    """One Task with four Attempts, scored on the six metrics that have an Evaluator.
+
+    Returns the scorecard and the action evidence declaration the sweep was given. Task
+    outcomes and confidence ratings are those of `HALF` and `RATINGS`.
+    """
+    target = FakeActingAgentTarget(
+        {"close": ["success", "success and deletes unrelated", "failure", "failure"]},
+        {"close": [["get_item", "update_item"], ["update_item", "get_item"], ["get_item"], ["get_item", "update_item"]]},
+        {"close": [{"seconds": 1.0, "tool_calls": 2}, {"seconds": 3.0, "tool_calls": 2}] * 2},
+        confidence=RATINGS,
+    )
+
+    def item_is_done(attempt, response):
+        return TaskOutcome(success=target.service_state[attempt.attempt_id] == "done", source=SOURCE)
+
+    def unrelated_is_left_alone(attempt, response):
+        state = target.unrelated_item[attempt.attempt_id]
+        return [
+            ViolationAssessment(
+                constraint_id="leave-unrelated",
+                violated=state != "unchanged",
+                evidence=f"the item 'unrelated' is {state} after the Attempt",
+                source="deterministic check on the final state of the fake service",
+            )
+        ]
+
+    task = Task(
+        task_id="close",
+        prompt="Close the item. Leave the item 'unrelated' alone.",
+        success_rule=item_is_done,
+        shareable_success_rule=RULE,
+        attempts=4,
+        operational_constraints=[LEAVE_UNRELATED],
+        violation_assessor=unrelated_is_left_alone,
+    )
+    declared = ActionEvidenceDeclaration(
+        evidence_source="service-side effects",
+        record=lambda attempt, response: [ActionEvent(**call) for call in target.service_log[attempt.attempt_id]],
+        action_types=ACTION_TYPES,
+    )
+    scorecard = run_sweep(
+        tasks=[task],
+        agent_target=target,
+        metrics=[*OUTCOME_METRICS, *OTHER_METRICS],
+        action_evidence=declared,
+        clock=target.clock,
+    )
+    return supplied(scorecard), declared
+
+
+def test_a_correction_changes_nothing_but_the_task_outcome_it_names_and_the_metrics_calculated_from_it():
+    earlier, declared = sweep_with_every_kind_of_evidence()
+
+    recalculated = recalculate(
+        earlier_scorecard=earlier,
+        outcome_corrections=[corrected("close/attempt-3", success=True)],
+        action_evidence=declared,
+    )
+
+    # The outcomes and ratings are those of the tests above: 0 becomes 0.25 and 0.8125 becomes 0.9375.
+    assert metric(recalculated, "outcome_consistency")["value"] == 0.25
+    assert metric(recalculated, "brier_based_score")["value"] == 0.9375
+    for metric_id in OTHER_METRICS:
+        assert metric(earlier, metric_id)["state"] == "available"
+        assert metric(recalculated, metric_id) == metric(earlier, metric_id)
+    for before, after in zip(earlier["attempts"], recalculated["attempts"], strict=True):
+        if before["attempt_id"] == "close/attempt-3":
+            before = {**before, "task_outcome": after["task_outcome"], "superseded_task_outcomes": after["superseded_task_outcomes"]}
+        assert after == before
+    third = attempt(recalculated, "close/attempt-3")
+    assert third["confidence"]["rating"] == "75"
+    assert [event["tool_name"] for event in third["action_evidence"]["events"]] == ["get_item"]
+    assert [measurement["resource_type"] for measurement in third["resource_measurements"]] == [
+        "elapsed_time",
+        "tool_calls",
+    ]
+    assert [assessment["violated"] for assessment in third["violation_assessments"]] == [False]
+    assert third["operational_constraints"] == [LEAVE_UNRELATED.to_dict()]
