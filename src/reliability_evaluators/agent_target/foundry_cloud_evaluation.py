@@ -100,11 +100,12 @@ class FoundryCloudEvaluationTarget:
     Under a prompt variation the prompt is the exact text of a prompt variant, so whatever
     `compose_input` adds to it has to be the same under the baseline and every variant.
 
-    `run_timeout_seconds` is how long the target waits for a run to end, from making it,
-    unless a time limit is declared for the Attempt: the target then stops at that limit.
-    Either way it asks the project to cancel the run, which does not stop an agent that was
-    already invoked. `poll_interval_seconds` is how often it asks the project for the run.
-    `clock` gives seconds and never runs backwards, and `sleep` waits for a number of them.
+    `run_timeout_seconds` is how long the target waits for a run to end, from when it is
+    invoked for the Attempt, unless a time limit is declared for the Attempt: the target then
+    stops at that limit. Either way it asks the project to cancel the run, which does not stop
+    an agent that was already invoked. `poll_interval_seconds` is how often it asks the project
+    for the run. `clock` gives seconds and never runs backwards, and `sleep` waits for a number
+    of them.
 
     The target does not ask the agent for a confidence rating: see `isolated_follow_up`.
     """

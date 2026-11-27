@@ -219,7 +219,7 @@ Each of these is an execution status of the Attempt with the reason in `executio
 | The run had not ended at the time limit | `timed_out` | `RunTimedOut: the cloud evaluation run <id> had not ended within <limit> seconds` |
 | The agent is not supported | `failed` | `UnsupportedCombination:` |
 
-The time limit is the `attempt_timeout_seconds` you declare in the Task's `ExecutionLimits`. Without one it is the target's own `run_timeout_seconds`, 900 by default. **It covers the whole run**, from just before the target makes it: the run's overhead as well as the agent's answer. A limit that just fits an invocation from customer code is too short here.
+The time limit is the `attempt_timeout_seconds` you declare in the Task's `ExecutionLimits`. Without one it is the target's own `run_timeout_seconds`, 900 by default. **It covers the whole run**, from when the target is invoked for the Attempt: the run's overhead as well as the agent's answer, and on the first Attempt also looking the agent up and making the eval. A limit that just fits an invocation from customer code is too short here.
 
 At the time limit the target asks the project to cancel the run, and records the run with the status the project answered. **Cancelling a run does not stop an agent that was already invoked.** Observed live: a run cancelled two seconds after it was made was reported as `canceled` with no output item, and the hosted agent still carried out all five operations of the Task on the service. Your clean-up control has to cope with that. The Attempt has no usage: the result of the run was not read.
 
@@ -343,7 +343,7 @@ It ran twice on one fixture and passed both times, 13 checks in 9 minutes 29 sec
 
 ### Resources
 
-One resource group was created for this work, in the subscription named `Sandbox`: `rg-are-45-f6638d25`, provisioned with `python -m live_fixture provision --ticket 45`. It held the fixture for everything above. TEARDOWN_PLACEHOLDER
+One resource group was created for this work, in the subscription named `Sandbox`: `rg-are-45-f6638d25`, provisioned with `python -m live_fixture provision --ticket 45`. It held the fixture for everything above. It was deleted with the fixture's `teardown`, which took 29 minutes, and the soft-deleted Foundry account was purged. Afterwards a separate `az group exists` returned `false`, and no soft-deleted account of the fixture was listed. The evals, the runs and the code evaluator made above were in that project and went with it.
 
 ### Not verified
 
