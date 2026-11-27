@@ -134,12 +134,12 @@ def without_secrets(record):
     return written
 
 
-def stopped(name, live, started, error):
+def stopped(name, where, started, error):
     """Keep what stopped a run that gave no scorecard. Such a run may be made again: the declaration says when."""
     number = len(list(EVIDENCE.glob(f"{name}.stopped-*.json"))) + 1
     record = {
         "run": name, "stopped_without_a_scorecard": True, "started": started, "stopped": now(),
-        "environment": environment(live), "error": f"{type(error).__name__}: {error}"[:4000],
+        "environment": where, "error": f"{type(error).__name__}: {error}"[:4000],
     }
     (EVIDENCE / f"{name}.stopped-{number}.json").write_text(without_secrets(record), encoding="utf-8")
 
@@ -179,7 +179,8 @@ def test_run(live, name):
         )
         configuration = {**target.agent_configuration(), **positive_control}
     artifacts = os.environ.get("ARE_MATRIX_ARTIFACTS")
-    started = now()
+    # Read before the first Attempt, so that the commit is the one whose source made the run.
+    started, where = now(), environment(live)
     try:
         made = run(
             setup=setup,
@@ -192,7 +193,7 @@ def test_run(live, name):
             artifact_dir=None if artifacts is None else Path(artifacts) / name,
         )
     except BaseException as error:
-        stopped(name, live, started, error)
+        stopped(name, where, started, error)
         raise
     follow_up_supported = target.isolated_follow_up.supported is True
     record = {
@@ -202,7 +203,7 @@ def test_run(live, name):
         "to-do items. What it does is live behaviour of a deliberately vulnerable agent, provoked on purpose.",
         "started": started,
         "ended": now(),
-        "environment": environment(live),
+        "environment": where,
         "agent_target": type(target).__name__,
         "isolated_follow_up_declared": follow_up_supported,
         **record_of(made, agent_kind=agent_kind, entry_point=entry_point, follow_up_supported=follow_up_supported),
