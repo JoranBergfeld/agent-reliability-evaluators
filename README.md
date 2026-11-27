@@ -42,6 +42,8 @@ print(to_json(scorecard))
 
 An Evaluator can also be called on its own, without a sweep: see the metric's documentation.
 
+Attempt counts and execution limits are yours to set per Task. Timeouts, cancellations and retries stay visible and are never scored as task failures, concurrency is opt-in, and a sweep that stops early still returns a scorecard that says it is partial: see [`docs/evaluator_sweep/execution-limits.md`](docs/evaluator_sweep/execution-limits.md).
+
 ## Where things are
 
 The copyable source has one directory per module of the specification.
@@ -50,7 +52,7 @@ The copyable source has one directory per module of the specification.
 | --- | --- | --- |
 | Evaluators | `src/reliability_evaluators/evaluators/` | The canonical metric definitions, one file per metric, the metric result contract (`result.py`), the catalogue of the twelve metrics (`catalogue.py`) and the registry of Evaluators that exist (`registry.py`). |
 | Evidence model | `src/reliability_evaluators/evidence/` | The Attempt record, its validation, and the grouping of Attempts by Task. |
-| Evaluator sweep | `src/reliability_evaluators/sweep/` | What a customer declares (`declaration.py`) and the public entry point `run_sweep` (`runner.py`). |
+| Evaluator sweep | `src/reliability_evaluators/sweep/` | What a customer declares, including execution limits (`declaration.py`), and the public entry point `run_sweep` (`runner.py`). |
 | Agent target | `src/reliability_evaluators/agent_target/` | The interface the sweep invokes an agent through. |
 | Scorecard | `src/reliability_evaluators/scorecard/` | Assembly of the machine-readable scorecard (JSON). |
 | Foundry-managed scoring | not built yet | |
