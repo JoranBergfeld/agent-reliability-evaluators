@@ -7,11 +7,17 @@ from typing import Any, Sequence
 from ..agent_target import AgentTarget, AttemptRequest
 from ..evaluators import EVALUATORS, RELIABILITY_METRICS, Evaluator, Fidelity, ScoringPath
 from ..evidence import Attempt, EvidenceError, ExecutionStatus, TaskOutcome, group_by_task
-from ..scorecard import ScoredMetric, build_scorecard
+from ..scorecard import AcceptanceCriterion, ScoredMetric, build_scorecard
 from .declaration import Task
 
 
-def run_sweep(*, tasks: Sequence[Task], agent_target: AgentTarget, metrics: Sequence[str]) -> dict[str, Any]:
+def run_sweep(
+    *,
+    tasks: Sequence[Task],
+    agent_target: AgentTarget,
+    metrics: Sequence[str],
+    acceptance_criteria: Sequence[AcceptanceCriterion] = (),
+) -> dict[str, Any]:
     """Make the declared Attempts, score the selected metrics, and return the scorecard.
 
     `metrics` names the reliability metrics to score, by metric identity. Attempts run one
@@ -35,7 +41,7 @@ def run_sweep(*, tasks: Sequence[Task], agent_target: AgentTarget, metrics: Sequ
         )
         for evaluator in evaluators
     ]
-    return build_scorecard(metrics=scored, attempts=attempts)
+    return build_scorecard(metrics=scored, attempts=attempts, acceptance_criteria=acceptance_criteria)
 
 
 def _evaluator(metric_id: str) -> Evaluator:
