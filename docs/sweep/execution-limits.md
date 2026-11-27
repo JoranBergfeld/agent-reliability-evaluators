@@ -134,7 +134,7 @@ Without the declaration it records `"mode": "sequential"` and `"max_concurrent_a
 
 ### `status` and `missing`
 
-`status` is `complete` when every planned Attempt completed, directly or through a retry. Otherwise it is `partial`, and `missing` names what is missing and why:
+`status` is `complete` when every planned Attempt completed, directly or through a retry, and every selected metric has a result. Otherwise it is `partial`, and `missing` names what is missing and why:
 
 ```json
 "status": "partial",
@@ -155,7 +155,7 @@ Without the declaration it records `"mode": "sequential"` and `"max_concurrent_a
 | `kind` | What is missing | Fields |
 | --- | --- | --- |
 | `attempt_evidence` | Planned Attempts that were not made or did not complete. | `experiment_id` (`null` for a Task given without an experiment), `task_id` and `attempt_set`; `status` and `reason` of the execution, as below; `attempts_not_made`; `attempts_not_completed`, with each Attempt's execution status and error |
-| `metric_result` | The result of a selected metric. | `metric_id`, `reason`, `experiment_ids`, `task_ids` |
+| `metric_result` | The result of a selected metric. | `metric_id`, `reason`, `experiment_ids`, `task_ids`. Both lists are empty when it is [Foundry-managed scoring that gave no result](../managed_scoring/readme.md#when-managed-scoring-gives-no-value), and not the Attempts that were cut short |
 
 A metric that is an unavailable measurement is a result. It does not make a scorecard partial.
 
@@ -236,6 +236,7 @@ Both lists are empty when none were. A metric that is `available` with a `cut_sh
 | `state` is `available` | A value was calculated. In a partial scorecard, read its `counts` to see what it rests on. | |
 | `state` is `unavailable` | The Evaluator found too little to calculate from, in evidence that was not cut short. In a partial scorecard its `counts` name the Attempts it left out. | Collect more evidence. |
 | `state` is `null` and `execution_failure` is set | The Attempts were cut short. Nothing was measured. | Investigate the failure. |
+| `state` is `null`, `execution_failure` is set and `managed_scoring.error` is set | [Foundry-managed scoring gave no result](../managed_scoring/readme.md#when-managed-scoring-gives-no-value). Nothing was measured, and the metric was not scored in your own process instead. | Investigate the failure. You can ask for a [customer-process rescore](../managed_scoring/readme.md#a-customer-process-rescore). |
 
 `execution_failure` is `null` on every metric that has a result. The same failure is listed in `missing` with the kind `metric_result`.
 
@@ -258,7 +259,7 @@ The specification leaves these open. They are stated so that you can disagree wi
 - **A retry follows the starting-state policy and adds nothing to it.** Fresh state is prepared again. Continuing state continues.
 - **Only an invocation of the agent is retried.** A failed customer control is not.
 - **Concurrency is for Tasks given without an experiment.** The Attempts of an experiment are never in flight together.
-- **A scorecard is partial as soon as one planned Attempt has no completed execution.** This holds even when every metric could still be calculated.
+- **A scorecard is partial as soon as one planned Attempt has no completed execution.** This holds even when every metric could still be calculated. It is also partial when Foundry-managed scoring gave no result for a selected metric, even when every Attempt completed.
 - **A metric without a result has no metric state.** Execution status is separate from metric state, so an execution failure is shown as `state: null` with `execution_failure`, not as a fifth state.
 - **A metric loses its result only when its Attempts were cut short.** Where every planned Attempt was made and some completed, the Evaluator's own result stands, an unavailable measurement included: only the Evaluator knows whether the Attempts it left out could have changed it. Conditional harm severity with no observed violation stays unavailable when one Attempt of several failed to execute.
 - **No confidence request after a cancellation.** Cancelling stops every further request to the agent, the follow-up of an Attempt that completed in flight included.
