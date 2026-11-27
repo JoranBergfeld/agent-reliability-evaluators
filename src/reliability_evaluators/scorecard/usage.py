@@ -29,8 +29,10 @@ SCOPE = (
     "Covered: the invocation of the agent for each Attempt, the confidence request that followed it, the "
     "scoring of each Evaluator, and preparation that the customer declares usage for. The offering generates "
     "no task variations, so what generating them used is reported only where the customer declares it. A count "
-    "is the total the platform reported for a request: usage of a model behind a tool is in it only where the "
-    "platform includes it. This is not a report of all cost."
+    "is the total that was reported for a request, as the agent target recorded it. Its source says where it "
+    "comes from, when the agent target states that. A count is not checked against what a model deployment "
+    "metered: an agent that runs the customer's own code states its own count in its response. Usage of a model "
+    "behind a tool is in a count only where what reported the count includes it. This is not a report of all cost."
 )
 EVALUATOR_TOTALS = (
     "The total of an Evaluator covers every Attempt it was given, each with its confidence follow-up, the "
@@ -395,7 +397,7 @@ def attempt_token_usage(attempt: Attempt) -> dict[str, Any]:
     confidence request was sent for the Attempt.
     """
     if attempt.execution_status is ExecutionStatus.SETUP_FAILED and attempt.invocation is None:
-        invocation = _no_model_use(NOT_INVOKED, response_id=None, request_ids={})
+        invocation = _no_model_use(NOT_INVOKED, response_id=None, request_ids={}, evaluation_run=None, source=None)
     else:
         invocation = _recorded_use(attempt.invocation, "the invocation")
     follow_up = None
@@ -420,12 +422,19 @@ _USES_OF_AN_ATTEMPT = {_INVOCATION: "agent_invocation", _FOLLOW_UP: "confidence_
 def _recorded_use(recorded: Mapping[str, Any] | None, of: str) -> dict[str, Any]:
     """The use an agent target recorded, with the identifiers the platform returned for it.
 
-    The count is the `total_tokens` of the `token_usage` the target recorded, as the platform
-    reported it. Without one the use is missing, for the reason the target recorded in
-    `token_usage_missing` when it recorded one. `of` names the request.
+    The count is the `total_tokens` of the `token_usage` the target recorded, as it was
+    reported. `source` is what the target recorded in `token_usage_source` about where that
+    count comes from, such as that an agent's own code stated it. It is None when the
+    target stated none. Without a count the use is missing, for the reason the target
+    recorded in `token_usage_missing` when it recorded one. `of` names the request.
     """
     recorded = recorded or {}
-    identifiers = {"response_id": recorded.get("response_id"), "request_ids": recorded.get("request_ids") or {}}
+    identifiers = {
+        "response_id": recorded.get("response_id"),
+        "request_ids": recorded.get("request_ids") or {},
+        "evaluation_run": _evaluation_run(recorded),
+        "source": None,
+    }
     if not recorded:
         return _missing(f"the agent target recorded nothing of {of}", **identifiers)
     usage = recorded.get("token_usage")
@@ -441,7 +450,19 @@ def _recorded_use(recorded: Mapping[str, Any] | None, of: str) -> dict[str, Any]
             f"the token usage the agent target recorded for {of} has no total_tokens that is a whole number",
             **identifiers,
         )
-    return _reported(total, **identifiers)
+    source = recorded.get("token_usage_source")
+    return _reported(total, **{**identifiers, "source": source if isinstance(source, str) and source.strip() else None})
+
+
+def _evaluation_run(recorded: Mapping[str, Any]) -> dict[str, Any] | None:
+    """The evaluation run a request was made through, as the agent target recorded it, or None for no run.
+
+    With the eval and the run named, a use whose count is missing here can still be looked for on
+    the platform: a run that was not waited for may report the usage of its item later.
+    """
+    if recorded.get("eval_id") is None and recorded.get("run_id") is None:
+        return None
+    return {key: recorded.get(key) for key in ("eval_id", "run_id", "output_item_id")}
 
 
 def _reported(total_tokens: int, **identifiers: Any) -> dict[str, Any]:

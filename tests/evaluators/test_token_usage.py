@@ -45,6 +45,8 @@ def test_a_standalone_evaluator_reports_the_usage_of_each_attempt_and_their_tota
         "reason": None,
         "response_id": "resp_1",
         "request_ids": {},
+        "evaluation_run": None,
+        "source": None,
     }
     assert usage["total"] == {
         "coverage": "complete",
@@ -94,6 +96,8 @@ def test_usage_that_was_not_reported_is_missing_with_its_reason_and_the_sum_of_t
         "reason": "the platform returned an error and no usage",
         "response_id": None,
         "request_ids": {},
+        "evaluation_run": None,
+        "source": None,
     }
 
 
@@ -142,6 +146,8 @@ def test_a_recorded_usage_without_a_whole_number_total_is_missing_and_nothing_is
         "reason": "the token usage the agent target recorded for the invocation has no total_tokens that is a whole number",
         "response_id": "resp_1",
         "request_ids": {},
+        "evaluation_run": None,
+        "source": None,
     }
     assert (usage["total"]["coverage"], usage["total"]["total_tokens"]) == ("unavailable", None)
 
@@ -211,6 +217,8 @@ def test_an_attempt_the_agent_was_not_invoked_for_used_no_tokens_and_that_zero_i
         "reason": "the agent was not invoked for this Attempt",
         "response_id": None,
         "request_ids": {},
+        "evaluation_run": None,
+        "source": None,
     }
     assert (usage["attempts"][1]["coverage"], usage["attempts"][1]["total_tokens"]) == ("complete", 0)
     assert usage["total"] == {

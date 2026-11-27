@@ -175,6 +175,10 @@ def test_each_attempt_keeps_the_identifiers_the_usage_and_the_ordered_tool_calls
         "error": None,
         "token_usage": usage(500, 60),
         "token_usage_missing": None,
+        "token_usage_source": (
+            "the usage of the output item that Foundry cloud evaluation returned for the Attempt: what Foundry "
+            "reports for the response of the prompt agent"
+        ),
         # The run's own usage rows, as returned. For a prompt agent both rows count the same tokens.
         "run_per_model_usage": [
             {"model_name": "todo-gpt-41-mini", "invocation_count": 1, **usage(500, 60)},
@@ -408,6 +412,11 @@ def test_the_token_usage_report_counts_what_the_output_item_reported_and_nothing
         "reason": None,
         "response_id": "resp_fake_1",
         "request_ids": {},
+        "evaluation_run": {"eval_id": "eval_fake_1", "run_id": "evalrun_fake_1", "output_item_id": "1"},
+        "source": (
+            "the usage of the output item that Foundry cloud evaluation returned for the Attempt: what Foundry "
+            "reports for the response of the prompt agent"
+        ),
     }
     assert usage["attempts"][1]["invocation"] == {
         "basis": "missing",
@@ -415,8 +424,25 @@ def test_the_token_usage_report_counts_what_the_output_item_reported_and_nothing
         "reason": "the output item of the cloud evaluation run carried no usage",
         "response_id": None,
         "request_ids": {},
+        # No response identifies the invocation, so the run and its item are what it can be looked up by.
+        "evaluation_run": {"eval_id": "eval_fake_1", "run_id": "evalrun_fake_2", "output_item_id": "1"},
+        "source": None,
     }
     assert (usage["sweep"]["coverage"], usage["sweep"]["total_tokens"]) == ("partial", 670)
+
+def test_the_count_of_a_hosted_agent_through_cloud_evaluation_is_reported_as_the_agents_own_count(todo_service):
+    # The output item of a hosted agent repeats the usage its response stated, which the agent's own code
+    # produced. The report gives that count, 670 for five tool calls, and says whose count it is.
+    scorecard = sweep(todo_service, ["completes"], kind="hosted")
+
+    (entry,) = scorecard["token_usage"]["attempts"]
+    assert (entry["invocation"]["basis"], entry["invocation"]["total_tokens"]) == ("reported", 670)
+    assert entry["invocation"]["source"] == (
+        "the usage of the output item that Foundry cloud evaluation returned for the Attempt: what the response "
+        "of the hosted agent stated. A hosted agent's own code produces its response, so this is the agent's own "
+        "count: Foundry passes it on, and it is not checked against what a model deployment metered"
+    )
+
 
 def test_the_labels_foundry_gives_an_item_are_platform_diagnostics_and_decide_nothing(todo_service):
     # The fake project labels the criterion as failed on every item. The Attempts completed all the
@@ -464,6 +490,7 @@ def not_invoked(**recorded):
         "error": None,
         "token_usage": None,
         "token_usage_missing": "the cloud evaluation run returned no output item, so no usage was reported",
+        "token_usage_source": None,
         "run_per_model_usage": None,
         "latency_ms": None,
         "tool_calls": None,
@@ -605,6 +632,17 @@ def test_a_run_that_has_not_ended_at_the_time_limit_timed_out_and_keeps_the_iden
                 "results": None,
             },
         ),
+    }
+    # The count is missing because the result was not read. Observed live, a few cancelled runs reported the
+    # usage of their item later and most never did, so the usage names the run it can be looked for in.
+    assert scorecard["token_usage"]["attempts"][0]["invocation"] == {
+        "basis": "missing",
+        "total_tokens": None,
+        "reason": RESULT_NOT_READ,
+        "response_id": None,
+        "request_ids": {},
+        "evaluation_run": {"eval_id": "eval_fake_1", "run_id": "evalrun_fake_1", "output_item_id": None},
+        "source": None,
     }
 
 

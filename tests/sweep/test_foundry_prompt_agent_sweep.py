@@ -29,6 +29,7 @@ STATE = "run-1"
 TARGET = {"id": "target", "title": "Synthetic target", "done": False}
 SCRATCH = {"id": "scratch", "title": "Temporary", "done": False}
 NO_RESPONSE = "the Foundry project returned no response, so no usage was reported"
+USAGE_SOURCE = "the usage of the response the Foundry project returned for the prompt agent"
 ACTION_TYPES = {
     "todos_readTodo": "read",
     "todos_createTodo": "create",
@@ -78,6 +79,7 @@ def without_a_response(invocation, http_status, error):
         "error": error,
         "token_usage": None,
         "token_usage_missing": NO_RESPONSE,
+        "token_usage_source": None,
         "tool_calls": None,
     }
 
@@ -167,6 +169,7 @@ def test_each_attempt_keeps_the_response_identifiers_the_usage_and_the_ordered_t
         "error": None,
         "token_usage": usage(500, 60),
         "token_usage_missing": None,
+        "token_usage_source": USAGE_SOURCE,
         "tool_calls": [
             tool_call(1, 1, "todos_readTodo", {"attempt_id": STATE, "todo_id": "target"}, TARGET),
             tool_call(1, 2, "todos_createTodo", {"id": "scratch", "title": "Temporary", "attempt_id": STATE}, SCRATCH),
@@ -321,6 +324,10 @@ def test_the_usage_the_project_returned_is_reported_per_attempt_and_a_refused_in
         ("todo/update-fails/attempt-2", "failed", "missing", None),
     ]
     assert usage_reported["attempts"][0]["invocation"]["response_id"] == "resp_fake_1"
+    # A count says where it comes from: Foundry reports the usage of a prompt agent's response itself.
+    assert usage_reported["attempts"][0]["invocation"]["source"] == (
+        "the usage of the response the Foundry project returned for the prompt agent"
+    )
     # The refused request is still identified, so that what it used can be looked up on the platform.
     assert usage_reported["attempts"][2]["invocation"] == {
         "basis": "missing",
@@ -328,6 +335,8 @@ def test_the_usage_the_project_returned_is_reported_per_attempt_and_a_refused_in
         "reason": NO_RESPONSE,
         "response_id": None,
         "request_ids": {"x-request-id": "req_fake_3", "apim-request-id": "apim_fake_3"},
+        "evaluation_run": None,
+        "source": None,
     }
     assert (usage_reported["sweep"]["coverage"], usage_reported["sweep"]["total_tokens"]) == ("partial", 1340)
     assert usage_reported["sweep"]["uses_missing"] == 2
@@ -365,6 +374,7 @@ def test_a_response_that_was_delivered_but_did_not_complete_is_an_execution_fail
             # What the failed response used is kept: it was spent.
             "token_usage": usage(200, 30),
             "token_usage_missing": None,
+            "token_usage_source": USAGE_SOURCE,
             "tool_calls": [tool_call(2, 1, "todos_readTodo", {"attempt_id": STATE, "todo_id": "target"}, TARGET)],
         },
     }

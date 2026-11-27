@@ -129,12 +129,28 @@ def _usage(usage: Mapping[str, Any]) -> list[str]:
             ],
         )
         lines.append("")
+        sources = _sources(attempts)
+        if sources:
+            lines += ["### Where the counts of the Attempts come from", ""]
+            lines += [f"- {_text(source)}" for source in sources]
+            lines.append("")
     missing = _records(sweep.get("missing"))
     if missing:
         lines += ["### Missing usage", ""]
         lines += [_missing(entry) for entry in missing]
         lines.append("")
     return lines[:-1]
+
+
+def _sources(attempts: list[dict[str, Any]]) -> list[str]:
+    """Each source the uses of the Attempts state for their counts, once, in the order of the Attempts."""
+    stated = [
+        use.get("source")
+        for entry in attempts
+        for use in (entry.get("invocation"), entry.get("confidence_follow_up"))
+        if isinstance(use, dict)
+    ]
+    return list(dict.fromkeys(source for source in stated if isinstance(source, str) and source))
 
 
 def _overlapping(entry: Mapping[str, Any]) -> str:
