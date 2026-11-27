@@ -308,6 +308,13 @@ def _scored_earlier(earlier: _EarlierScorecard) -> list[_ScoredEarlier]:
             raise EvidenceError(f"the result of {metric_id!r} is recorded without its state")
         if entry["state"] == MetricState.NOT_CONFIGURED.value:
             continue
+        if entry.get("scoring_path") not in (None, ScoringPath.CUSTOMER_PROCESS.value):
+            # Not an EvidenceError: the evidence may be sound. It is the scoring path that is not this one.
+            raise ValueError(
+                f"{metric_id!r} was scored on the scoring path {entry['scoring_path']!r}, and a "
+                "recalculation scores in this process. A result is not scored again on another scoring "
+                "path than the one that was chosen for it"
+            )
         used = entry.get("attempts_used")
         attempt_ids = used.get("attempt_ids") if isinstance(used, Mapping) else None
         if not isinstance(attempt_ids, list):
@@ -376,6 +383,11 @@ def _selected(
         metric_id = metric.metric_id if isinstance(metric, ConfiguredEvaluator) else metric
         if metric_id in configured:
             raise ValueError(f"{metric_id!r} is selected more than once, and a scorecard reports each metric once")
+        if isinstance(metric, ConfiguredEvaluator) and metric.scoring_path is not ScoringPath.CUSTOMER_PROCESS:
+            raise ValueError(
+                f"{metric_id!r} is configured for the scoring path {metric.scoring_path.value!r}, "
+                "and a recalculation scores in this process"
+            )
         configured[metric_id] = metric
     scored_ids = [scored.metric_id for scored in scored_earlier]
     for metric_id in configured:

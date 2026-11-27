@@ -113,7 +113,7 @@ The metric's entry in the scorecard carries:
 | `execution_failure` | `null`, unless the metric has no result because the Attempts that supply its evidence were cut short; see [execution limits and partial scorecards](../sweep/execution-limits.md#metrics-in-a-partial-scorecard) |
 | `cut_short` | The experiments, and the Tasks given without one, whose Attempts for this metric were cut short. Both lists are empty when none were |
 | `definition` | version, what it measures, the calculation, the fidelity conventions, the scale and the interpretation |
-| `scoring_path`, `fidelity` | `customer_process` and `authoritative` for a value scored in your own process |
+| `scoring_path`, `fidelity` | `customer_process` and `authoritative` for a value scored in your own process. For Foundry-managed scoring see below |
 | `counts` | Tasks and Attempts: total, valid (the denominator used), missing and excluded with reasons and identities |
 | `details.per_task` | Attempts, successes and Task value of each eligible Task |
 | `evidence.attempt_ids` | the Attempts the value rests on, which are listed under `attempts` in the same scorecard |
@@ -121,6 +121,12 @@ The metric's entry in the scorecard carries:
 | `acceptance` | the assessment of your acceptance criterion for this metric, or `null` when you declared none: see [acceptance criteria](../acceptance_criteria/readme.md) |
 
 The other eleven metrics appear with the state `not_configured`. The scorecard has no combined score and no threshold.
+
+## Scoring it in your Foundry project
+
+Outcome consistency can also be calculated by a custom evaluator in your own Foundry project. That evaluator is derived from the canonical definition above; there is no second formula. Select the metric as `ConfiguredEvaluator(metric_id="outcome_consistency", scoring_path="foundry_managed")` and give the sweep your project as `managed_scoring`.
+
+The value is then the number Foundry returned. It is reported with `scoring_path` `foundry_managed` and `fidelity` `unverified`, with its limitation, and without counts and per-Task details, which Foundry does not return. An unverified result cannot be met or not met by an acceptance criterion. When the metric is an unavailable measurement for the evidence, managed scoring fails explicitly and the sweep stops; it does not score in your own process instead. See [Foundry-managed scoring](../managed_scoring/readme.md).
 
 ## Evidence it needs
 

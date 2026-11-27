@@ -62,6 +62,24 @@ generated per fixture and live only in that resource group: in the container app
 which `connect` reads them back, and, for the agents' key, in the project connection and the hosted
 agent's settings.
 
+## A project with nothing in it
+
+A live check that needs neither agent nor the service can stand up much less: one Foundry account
+and one empty project, with no model deployment, in a resource group named the same way. The
+check of Foundry-managed scoring (`tests/live/`) does.
+
+```python
+from live_fixture.project_only import provision_project, connect_project
+from live_fixture import teardown
+
+project = provision_project(ticket="46")       # or connect_project(resource_group)
+project.project_request("GET", "/evaluators?api-version=v1")
+teardown(project.resource_group)
+```
+
+`provision_project` waits until the project honours the role assignments it just made, and tears
+the group down again if anything fails.
+
 ## Interface for live checks
 
 ```python

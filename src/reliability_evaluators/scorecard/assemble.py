@@ -157,6 +157,15 @@ class ScoredMetric:
     attempts_used: tuple[str, ...] = ()
     # Where the Attempts for this Evaluator were cut short.
     cut_short: CutShort = CutShort()
+    # Why the value is not known to equal what the Evaluator computed. An unverified result says.
+    limitation: str | None = None
+    # What Foundry-managed scoring recorded about the result: the evaluator and the run it
+    # came from, and what the platform added to it. JSON-compatible data.
+    managed_scoring: Mapping[str, Any] | None = None
+
+    def __post_init__(self) -> None:
+        if self.fidelity is Fidelity.UNVERIFIED and not (self.limitation or "").strip():
+            raise ValueError("an unverified result is reported with its limitation")
 
 
 def build_scorecard(
@@ -285,6 +294,11 @@ def _metric_entry(
     if execution_failure is not None:
         # There is no metric result, so the metric is in no metric state.
         entry.update(state=None, reason=None)
+    # Only a result that has them carries these, so that an entry never shows an empty limitation.
+    if scored.limitation is not None:
+        entry["limitation"] = scored.limitation
+    if scored.managed_scoring is not None:
+        entry["managed_scoring"] = json.loads(json.dumps(scored.managed_scoring, allow_nan=False))
     return entry
 
 
