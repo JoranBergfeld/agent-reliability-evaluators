@@ -17,6 +17,8 @@ Four metrics, end to end, scored in your own process:
 
 You can declare your own acceptance criteria per metric, and the scorecard reports each as met, not met, or not assessed with a reason: see [`docs/acceptance_criteria/readme.md`](docs/acceptance_criteria/readme.md).
 
+Several metrics can be selected in one sweep. Evaluators share Attempts only where that is valid, and the scorecard shows which Attempts each one used: see [`docs/evaluator_sweep/several-evaluators.md`](docs/evaluator_sweep/several-evaluators.md).
+
 The other eight metrics are listed in every scorecard as not configured. No Foundry agent target and no Foundry-managed scoring exists yet; the agent target is an interface that you implement.
 
 ## Using it in your project
@@ -55,7 +57,7 @@ The copyable source has one directory per module of the specification.
 | --- | --- | --- |
 | Evaluators | `src/reliability_evaluators/evaluators/` | The canonical metric definitions, one file per metric, the metric result contract (`result.py`), the catalogue of the twelve metrics (`catalogue.py`) and the registry of Evaluators that exist (`registry.py`). |
 | Evidence model | `src/reliability_evaluators/evidence/` | The Attempt record with its ordered action evidence (`actions.py`), its validation, and the grouping of Attempts by Task. |
-| Evaluator sweep | `src/reliability_evaluators/sweep/` | What a customer declares (`declaration.py`) and the public entry point `run_sweep` (`runner.py`). |
+| Evaluator sweep | `src/reliability_evaluators/sweep/` | What a customer declares (`declaration.py`), the public entry point `run_sweep` (`runner.py`) and the rule for which Evaluators share Attempts (`reuse.py`). |
 | Agent target | `src/reliability_evaluators/agent_target/` | The interface the sweep invokes an agent through. |
 | Scorecard | `src/reliability_evaluators/scorecard/` | Assembly of the machine-readable scorecard (JSON), and the assessment of customer acceptance criteria (`acceptance.py`). |
 | Foundry-managed scoring | not built yet | |
