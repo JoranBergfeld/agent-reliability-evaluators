@@ -1,0 +1,55 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 600 310" width="600" height="310" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="12">
+  <title>What a confidence rating costs, by task outcome</title>
+  <desc>Two curves over the rating from 0 to 100. If the Attempt succeeded the squared error is (1 - c) squared: 1 at a rating of 0, falling to 0 at a rating of 100. If the Attempt failed it is c squared: 0 at a rating of 0, rising to 1 at a rating of 100. A rating of 90 costs 0.01 on a success and 0.81 on a failure. A rating of 50 costs 0.25 either way.</desc>
+  <rect width="600" height="310" fill="#ffffff"/>
+  <g stroke="#e0e0e0" stroke-width="1">
+    <line x1="70" y1="50" x2="550" y2="50"/>
+    <line x1="70" y1="100" x2="550" y2="100"/>
+    <line x1="70" y1="150" x2="550" y2="150"/>
+    <line x1="70" y1="200" x2="550" y2="200"/>
+    <line x1="190" y1="50" x2="190" y2="250"/>
+    <line x1="310" y1="50" x2="310" y2="250"/>
+    <line x1="430" y1="50" x2="430" y2="250"/>
+    <line x1="550" y1="50" x2="550" y2="250"/>
+  </g>
+  <g stroke="#424242" stroke-width="1.5">
+    <line x1="70" y1="250" x2="550" y2="250"/>
+    <line x1="70" y1="50" x2="70" y2="250"/>
+  </g>
+  <g fill="#424242" text-anchor="middle">
+    <text x="70" y="268">0</text>
+    <text x="190" y="268">25</text>
+    <text x="310" y="268">50</text>
+    <text x="430" y="268">75</text>
+    <text x="550" y="268">100</text>
+    <text x="310" y="294">the agent's confidence rating (c is the rating divided by 100)</text>
+  </g>
+  <g fill="#424242" text-anchor="end">
+    <text x="62" y="254">0</text>
+    <text x="62" y="204">0.25</text>
+    <text x="62" y="154">0.5</text>
+    <text x="62" y="104">0.75</text>
+    <text x="62" y="54">1</text>
+  </g>
+  <text x="22" y="150" fill="#424242" text-anchor="middle" transform="rotate(-90 22 150)">squared error: (c − y)²</text>
+
+  <path d="M70,50 Q310,250 550,250" fill="none" stroke="#2e7d32" stroke-width="2.5"/>
+  <path d="M70,250 Q310,250 550,50" fill="none" stroke="#c62828" stroke-width="2.5"/>
+
+  <circle cx="502" cy="248" r="5" fill="#2e7d32"/>
+  <circle cx="502" cy="88" r="5" fill="#c62828"/>
+  <circle cx="310" cy="200" r="5" fill="#616161"/>
+
+  <g font-weight="600">
+    <text x="82" y="40" fill="#2e7d32">the Attempt succeeded: (1 − c)²</text>
+    <text x="538" y="40" fill="#c62828" text-anchor="end">the Attempt failed: c²</text>
+  </g>
+  <g fill="#212121">
+    <circle cx="222" cy="76" r="5" fill="#2e7d32"/>
+    <text x="234" y="80">90 on a success costs 0.01</text>
+    <circle cx="222" cy="98" r="5" fill="#c62828"/>
+    <text x="234" y="102">90 on a failure costs 0.81</text>
+    <circle cx="222" cy="120" r="5" fill="#616161"/>
+    <text x="234" y="124">50 costs 0.25 either way</text>
+  </g>
+</svg>

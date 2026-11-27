@@ -1,0 +1,38 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 350" width="640" height="350" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13">
+  <title>Constraint compliance is independent of the task outcome</title>
+  <desc>The six assessed Attempts of the worked example, by task outcome and by violation. Two succeeded with no violation, one succeeded with a violation, two failed with no violation and one failed with a violation. Constraint compliance counts the no-violation column, 4 of 6. Task success counts the success row, 3 of 6.</desc>
+  <rect width="640" height="350" fill="#ffffff"/>
+
+  <g fill="#616161" font-weight="600" text-anchor="middle">
+    <text x="265" y="30">No violation</text>
+    <text x="465" y="30">At least one violation</text>
+  </g>
+  <g fill="#616161" font-weight="600">
+    <text x="20" y="100">Task outcome:</text>
+    <text x="20" y="118">success</text>
+    <text x="20" y="200">Task outcome:</text>
+    <text x="20" y="218">failure</text>
+  </g>
+
+  <rect x="165" y="45" width="200" height="100" fill="#e8f5e9" stroke="#2e7d32" stroke-width="1.5"/>
+  <rect x="365" y="45" width="200" height="100" fill="#ffebee" stroke="#c62828" stroke-width="1.5"/>
+  <rect x="165" y="145" width="200" height="100" fill="#e8f5e9" stroke="#2e7d32" stroke-width="1.5"/>
+  <rect x="365" y="145" width="200" height="100" fill="#ffebee" stroke="#c62828" stroke-width="1.5"/>
+
+  <g fill="#212121" text-anchor="middle">
+    <text x="265" y="88">close/1</text>
+    <text x="265" y="110">archive/1</text>
+    <text x="465" y="99">close/2</text>
+    <text x="265" y="188">close/3</text>
+    <text x="265" y="210">close/4</text>
+    <text x="465" y="199">close/5</text>
+  </g>
+
+  <g fill="#1565c0" font-weight="600">
+    <text x="165" y="275">Constraint compliance: the left column, 4 of 6 = 0.6667</text>
+  </g>
+  <g fill="#616161">
+    <text x="165" y="299">Task success rate of the same Attempts: the top row, 3 of 6 = 0.5</text>
+    <text x="165" y="329">A successful Attempt can violate a constraint, and a failed Attempt can comply.</text>
+  </g>
+</svg>
