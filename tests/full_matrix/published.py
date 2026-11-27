@@ -49,8 +49,25 @@ def records() -> dict[str, dict]:
     }
 
 
-def rendered(made: dict[str, dict]) -> str:
-    return "\n\n".join([_overview(made), _counts(made), *(_run(name, made[name]) for name in RUNS if name in made)])
+def supplements() -> dict[str, dict]:
+    """The record of every supplement that was made, by the name of its run."""
+    return {
+        name: json.loads((EVIDENCE / f"{name}.supplement.json").read_text(encoding="utf-8"))
+        for name in RUNS
+        if (EVIDENCE / f"{name}.supplement.json").exists()
+    }
+
+
+def rendered(made: dict[str, dict], supplementary: dict[str, dict] | None = None) -> str:
+    supplementary = supplements() if supplementary is None else supplementary
+    return "\n\n".join(
+        [
+            _overview(made),
+            _counts(made),
+            *(_run(name, made[name]) for name in RUNS if name in made),
+            *(_run(name, supplementary[name], supplement=True) for name in RUNS if name in supplementary),
+        ]
+    )
 
 
 def _overview(made: dict[str, dict]) -> str:
@@ -86,7 +103,7 @@ def _counts(made: dict[str, dict]) -> str:
     return "\n".join(lines)
 
 
-def _run(name: str, record: dict) -> str:
+def _run(name: str, record: dict, supplement: bool = False) -> str:
     attempts = record["attempts"]
     witnessed = [attempt["witnessed"] for attempt in attempts]
     returned = [seen for seen in witnessed if seen["invocation_returned"]]
@@ -103,15 +120,16 @@ def _run(name: str, record: dict) -> str:
         f"The sweep took {record['sweep_seconds']} seconds, scoring in Foundry included, and its scorecard was "
         f"`{record['scorecard_status']}`.",
     ]
+    file = f"evidence/{name}.supplement.json" if supplement else f"evidence/{name}.json"
     lines = [
-        f"### {RUNS[name]}",
+        f"### {'Supplement, constructed evidence: ' if supplement else ''}{RUNS[name]}",
         "",
-        " ".join(facts) + f" Record: [`evidence/{name}.json`](evidence/{name}.json).",
+        " ".join(facts) + f" Record: [`{file}`]({file}).",
         "",
         "| Evaluator | Expected | Foundry-managed | Customer-process | Why, where a cell did not work |",
         "| --- | --- | --- | --- | --- |",
     ]
-    for metric_id in METRIC_IDS:
+    for metric_id in record["metrics"]:
         entry = record["metrics"][metric_id]
         reasons = []
         for path in PATHS:

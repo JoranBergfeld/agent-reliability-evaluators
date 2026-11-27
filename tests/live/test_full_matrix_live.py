@@ -13,6 +13,8 @@ Each run is made by a pytest invocation of its own, on a fixture that is provisi
     uv run pytest -m live tests/live/test_full_matrix_live.py -s -k cloud_follow_up
     uv run pytest -m live tests/live/test_full_matrix_live.py -s -k prompt-cloud
     uv run pytest -m live tests/live/test_full_matrix_live.py -s -k hosted-cloud
+    uv run pytest -m live tests/live/test_full_matrix_live.py -s -k "supplement and prompt-cloud"
+    uv run pytest -m live tests/live/test_full_matrix_live.py -s -k synthetic
     uv run python -m live_fixture teardown rg-are-55-<8 hex>
 
 A run writes its record to docs/coverage_matrix/evidence/<run>.json when it ends, and is not
@@ -47,7 +49,7 @@ from reliability_evaluators.agent_target.foundry_prompt_agent import FoundryProm
 from reliability_evaluators.managed_scoring import FoundryManagedScoring, FoundryProject, azure_cli_token
 from reliability_evaluators.sweep import rescore_in_customer_process
 from reliability_evaluators.sweep.confidence import confidence_prompt
-from tests.full_matrix.declaration import SUCCESS_RULE_IN_WORDS, MatrixSetup
+from tests.full_matrix.declaration import SUCCESS_RULE_IN_WORDS, SUPPLEMENT_METRIC_IDS, MatrixSetup
 from tests.full_matrix.reference import METRIC_IDS
 from tests.full_matrix.run import PATHS, RESULT, TOLERANCE, record_of, run
 from tests.twelve_evaluators_sweep import WORKED, WORKED_VALUES, Declared, managed, metric
@@ -146,16 +148,12 @@ def stopped(name, where, started, error):
     (EVIDENCE / f"{name}.stopped-{number}.json").write_text(without_secrets(record), encoding="utf-8")
 
 
-@pytest.mark.parametrize("name", RUNS)
-def test_run(live, name):
+def target_of(live, name, setup):
+    """The agent of a run, the module of its agent target, the target, and the agent configuration to declare."""
     agent_kind, entry_point = RUNS[name]
-    written_to = EVIDENCE / f"{name}.json"
-    if written_to.exists():
-        pytest.skip(f"{written_to.name} exists: a run that produced a scorecard is not made again")
     agent = live.note_following_prompt_agent if agent_kind == "prompt" else live.note_following_hosted_agent
     if agent is None:
         pytest.fail(f"The hosted agent was not deployed: {live.hosted_agent_error}")
-    setup = MatrixSetup(live.service, run_id=f"m55-{uuid.uuid4().hex[:6]}")
     positive_control = {"positive_control": NOTE_FOLLOWING_INSTRUCTIONS}
     if entry_point == "foundry_cloud_evaluation":
         module = foundry_cloud_evaluation
@@ -180,6 +178,29 @@ def test_run(live, name):
             credential=AzureCliCredential(subscription=SUBSCRIPTION), compose_input=setup.instruction,
         )
         configuration = {**target.agent_configuration(), **positive_control}
+    return agent, module, target, configuration
+
+
+def managed_scoring_in(live):
+    return FoundryManagedScoring(
+        project=FoundryProject(live.project_endpoint, token=azure_cli_token), run_timeout_seconds=1800
+    )
+
+
+POSITIVE_CONTROL = (
+    "The agent is the fixture's agent with one more instruction, to carry out notes found in to-do items. What it "
+    "does is live behaviour of a deliberately vulnerable agent, provoked on purpose."
+)
+
+
+@pytest.mark.parametrize("name", RUNS)
+def test_run(live, name):
+    agent_kind, entry_point = RUNS[name]
+    written_to = EVIDENCE / f"{name}.json"
+    if written_to.exists():
+        pytest.skip(f"{written_to.name} exists: a run that produced a scorecard is not made again")
+    setup = MatrixSetup(live.service, run_id=f"m55-{uuid.uuid4().hex[:6]}")
+    agent, module, target, configuration = target_of(live, name, setup)
     artifacts = os.environ.get("ARE_MATRIX_ARTIFACTS")
     # Read before the first Attempt, so that the commit is the one whose source made the run.
     started, where = now(), environment(live)
@@ -189,9 +210,7 @@ def test_run(live, name):
             target=target,
             target_module=module,
             agent_configuration=configuration,
-            managed_scoring=FoundryManagedScoring(
-                project=FoundryProject(live.project_endpoint, token=azure_cli_token), run_timeout_seconds=1800
-            ),
+            managed_scoring=managed_scoring_in(live),
             artifact_dir=None if artifacts is None else Path(artifacts) / name,
         )
     except BaseException as error:
@@ -201,8 +220,7 @@ def test_run(live, name):
     record = {
         "run": name,
         "agent": agent,
-        "positive_control": "The agent is the fixture's agent with one more instruction, to carry out notes found in "
-        "to-do items. What it does is live behaviour of a deliberately vulnerable agent, provoked on purpose.",
+        "positive_control": POSITIVE_CONTROL,
         "started": started,
         "ended": now(),
         "environment": where,
@@ -220,6 +238,74 @@ def test_run(live, name):
     assert len(record["attempts"]) == 19
     assert {attempt["scorecard"]["entry_point"] for attempt in record["attempts"]} == {entry_point}
     # A cell that is unsupported or unverified is a result. One that failed is not.
+    assert {key: cell["why"] for key, cell in cells.items() if cell["status"] == "failed"} == {}
+
+
+@pytest.mark.parametrize("name", RUNS)
+def test_supplement(live, name):
+    """The supplement of a run: the two metrics its live evidence gave nothing to calculate from, from Tasks that ask.
+
+    Declared after the first three runs: docs/coverage_matrix/readme.md. CONSTRUCTED evidence: the Attempts
+    are live, and the change that fails the Task and violates the constraint is asked for by the Task itself.
+    """
+    agent_kind, entry_point = RUNS[name]
+    of_the_run, written_to = EVIDENCE / f"{name}.json", EVIDENCE / f"{name}.supplement.json"
+    if not of_the_run.exists():
+        pytest.skip(f"the run {name} has not been made")
+    if written_to.exists():
+        pytest.skip(f"{written_to.name} exists: a supplement is made once")
+    cells = json.loads(of_the_run.read_text(encoding="utf-8"))["metrics"]
+    without_a_value = {
+        metric_id: cells[metric_id]["cells"]["foundry_managed"]["why"]
+        for metric_id in SUPPLEMENT_METRIC_IDS
+        if "unverified" in {cells[metric_id]["cells"][path]["status"] for path in PATHS}
+    }
+    if not without_a_value:
+        pytest.skip(f"no cell of {SUPPLEMENT_METRIC_IDS} is unverified in the run {name}: no supplement is declared for it")
+    setup = MatrixSetup(live.service, run_id=f"m55s-{uuid.uuid4().hex[:6]}")
+    agent, module, target, configuration = target_of(live, name, setup)
+    artifacts = os.environ.get("ARE_MATRIX_ARTIFACTS")
+    started, where = now(), environment(live)
+    try:
+        made = run(
+            setup=setup,
+            target=target,
+            target_module=module,
+            agent_configuration=configuration,
+            managed_scoring=managed_scoring_in(live),
+            artifact_dir=None if artifacts is None else Path(artifacts) / f"{name}.supplement",
+            supplement=True,
+        )
+    except BaseException as error:
+        stopped(f"{name}.supplement", where, started, error)
+        raise
+    follow_up_supported = target.isolated_follow_up.supported is True
+    record = {
+        "run": name,
+        "supplement": True,
+        "what_this_is": "CONSTRUCTED evidence. The Attempts are live Attempts of the agent through this entry point. "
+        "Two of the three Tasks ask the agent for a change to the item 'unrelated', which the operational constraint "
+        "forbids and the strict task-success rule fails. So the violations and the task failures here are asked for "
+        "by the Task. They show that the metric is calculated from live Attempts on this path. They say nothing "
+        "about the agent.",
+        "made_because": without_a_value,
+        "agent": agent,
+        "positive_control": POSITIVE_CONTROL,
+        "started": started,
+        "ended": now(),
+        "environment": where,
+        "agent_target": type(target).__name__,
+        "isolated_follow_up_declared": follow_up_supported,
+        **record_of(made, agent_kind=agent_kind, entry_point=entry_point, follow_up_supported=follow_up_supported),
+    }
+    written_to.write_text(without_secrets(record), encoding="utf-8")
+    cells = {
+        (metric_id, path): entry["cells"][path] for metric_id, entry in record["metrics"].items() for path in PATHS
+    }
+    print(json.dumps({f"{name} supplement": {f"{m} / {path}": cell["status"] for (m, path), cell in cells.items()}}, indent=1))
+
+    assert len(record["attempts"]) == 6
+    assert {attempt["scorecard"]["entry_point"] for attempt in record["attempts"]} == {entry_point}
     assert {key: cell["why"] for key, cell in cells.items() if cell["status"] == "failed"} == {}
 
 

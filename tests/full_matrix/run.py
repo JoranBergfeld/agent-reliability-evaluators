@@ -15,6 +15,7 @@ from fractions import Fraction
 from reliability_evaluators.scorecard import to_json
 from reliability_evaluators.sweep import RescoreFailed, rescore_in_customer_process, run_sweep
 from tests.full_matrix.declaration import (
+    SUPPLEMENT_METRIC_IDS,
     MatrixSetup,
     Witness,
     managed_metrics,
@@ -57,18 +58,22 @@ def declared_unsupported(metric_id: str, agent_kind: str, follow_up_supported: b
     return None
 
 
-def run(*, setup: MatrixSetup, target, target_module, agent_configuration, managed_scoring, artifact_dir=None) -> dict:
+def run(
+    *, setup: MatrixSetup, target, target_module, agent_configuration, managed_scoring, artifact_dir=None, supplement=False
+) -> dict:
     """Make the run's sweep and rescore, and return what they gave with what was witnessed of every Attempt.
 
     `target` is the agent target of `target_module`, made with `compose_input=setup.instruction`.
+    With `supplement`, the sweep is the supplement's: its three Tasks and its two metrics.
     """
     witness = Witness(target)
     action_evidence = native_tool_calls_of(target_module)
+    metric_ids = SUPPLEMENT_METRIC_IDS if supplement else METRIC_IDS
     started = time.monotonic()
     scorecard = run_sweep(
-        experiments=setup.experiments(agent_configuration),
+        experiments=setup.supplement(agent_configuration) if supplement else setup.experiments(agent_configuration),
         agent_target=witness,
-        metrics=managed_metrics(),
+        metrics=managed_metrics(metric_ids),
         action_evidence=action_evidence,
         managed_scoring=managed_scoring,
         artifact_dir=artifact_dir,
@@ -77,7 +82,7 @@ def run(*, setup: MatrixSetup, target, target_module, agent_configuration, manag
     # As a customer has it: the scorecard read back from its JSON.
     earlier = json.loads(to_json(scorecard))
     rescored, refused = {}, {}
-    for metric_id in METRIC_IDS:
+    for metric_id in metric_ids:
         # One metric at a time, so that a rescore that is refused costs no other metric its rescore.
         try:
             again = rescore_in_customer_process(
@@ -92,6 +97,7 @@ def run(*, setup: MatrixSetup, target, target_module, agent_configuration, manag
         "sweep_seconds": seconds,
         "rescored": rescored,
         "rescore_refused": refused,
+        "metric_ids": metric_ids,
         "facts": witnessed(setup, witness),
         "native_calls_differ": native_calls_differ(setup, witness),
         "setup": setup,
@@ -110,7 +116,7 @@ def record_of(made: dict, *, agent_kind: str, entry_point: str, follow_up_suppor
     expected = expected_results(facts)
     recorded = {attempt["attempt_id"]: attempt for attempt in scorecard["attempts"]}
     metrics = {}
-    for metric_id in METRIC_IDS:
+    for metric_id in made["metric_ids"]:
         managed = _entry(scorecard, metric_id)
         rescore = made["rescored"].get(metric_id)
         unsupported = declared_unsupported(metric_id, agent_kind, follow_up_supported)
