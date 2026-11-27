@@ -1,7 +1,7 @@
 """A fake Foundry project with a prompt agent, for driving the Foundry prompt agent target without Foundry access.
 
 It serves, on this machine, the one route of a project that the target calls, and answers
-in the shapes observed on a live project on 2026-11-27 (see docs/agent_target/foundry-prompt-agent.md).
+in the shapes observed on a live project on 2026-11-27 (see docs/foundry_prompt_agent/readme.md).
 Its prompt agent is scripted. It works on a to-do service through the four tools of the live
 fixture's agent, with the agents' key, so only the service knows what it really did.
 """

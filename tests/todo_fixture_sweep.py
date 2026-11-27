@@ -3,6 +3,10 @@
 The default tests use it on the service run on this machine and the live checks on the
 deployed one. Either way the task outcome and the observed condition come from what the
 service recorded, never from the agent's response.
+
+`tests/todo_experiment.py` declares the same Task with a state of the service per Attempt,
+named by a composed input. Here the prompt names one state for the whole experiment, so
+that nothing is composed and an experiment can declare continuing state or a variation.
 """
 
 from live_fixture import TodoServiceError, strict_task_outcome, task_prompt
