@@ -39,6 +39,8 @@ TOOL_CHOICE_NONE = "none"
 NATIVE_TOOL_CALLS = "tool calls in the response of the Foundry prompt agent"
 NO_USAGE = "the response of the prompt agent carried no usage"
 NO_RESPONSE = "the Foundry project returned no response, so no usage was reported"
+# Where a count comes from. Foundry runs a prompt agent and reports the usage of its response itself.
+USAGE_SOURCE = "the usage of the response the Foundry project returned for the prompt agent"
 REQUEST_ID_HEADERS = ("x-request-id", "apim-request-id")
 SERVED_MODEL_HEADER = "x-ms-served-model"
 # How much of an answer's body is quoted in an error.
@@ -239,6 +241,7 @@ def _invocation(answer: _Answer, response: dict[str, Any], composed_input: str |
         # As the platform reported it. Usage that was not reported is missing, never zero.
         "token_usage": usage,
         "token_usage_missing": None if usage is not None else NO_USAGE if response else NO_RESPONSE,
+        "token_usage_source": None if usage is None else USAGE_SOURCE,
         "tool_calls": _tool_calls(response),
     }
 

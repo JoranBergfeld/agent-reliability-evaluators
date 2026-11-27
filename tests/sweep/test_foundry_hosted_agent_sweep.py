@@ -229,6 +229,29 @@ def test_each_attempt_records_the_token_usage_the_platform_reported(project, set
     assert attempt["invocation"]["token_usage_missing"] is None
 
 
+def test_the_count_of_a_hosted_agent_is_reported_as_the_agents_own_count(project, setup):
+    # A hosted agent's own code produces its response, usage included, and Foundry passes it on. Observed live,
+    # the fixture's agent counted every model call again for each later one. The report gives the count as the
+    # response stated it, 9400 for each Attempt, and says whose count it is: 9400 + 9400 = 18800.
+    scorecard = run_sweep(
+        experiments=[setup.experiment("todo", 2, ALL_TOOLS_WORK, AGENT)],
+        agent_target=hosted_agent(project, setup),
+        metrics=["outcome_consistency"],
+    )
+
+    usage = scorecard["token_usage"]
+    assert [(entry["invocation"]["basis"], entry["invocation"]["total_tokens"]) for entry in usage["attempts"]] == [
+        ("reported", 9400),
+        ("reported", 9400),
+    ]
+    assert {entry["invocation"]["source"] for entry in usage["attempts"]} == {
+        "the usage of the response the hosted agent returned. A hosted agent's own code produces its response, "
+        "so this is the agent's own count: Foundry passes it on, and it is not checked against what a model "
+        "deployment metered"
+    }
+    assert (usage["sweep"]["coverage"], usage["sweep"]["total_tokens"]) == ("complete", 18800)
+
+
 def test_token_usage_the_platform_did_not_report_is_missing_with_a_reason_and_not_zero(setup):
     agent = FakeHostedAgent(FakeTodoHostedAgent(todo_tools, usage=None))
     with fake_foundry_project({"todo-hosted": agent}) as project:

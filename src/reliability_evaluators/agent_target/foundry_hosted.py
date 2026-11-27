@@ -26,6 +26,13 @@ RESPONSES_PROTOCOL = "responses"
 # The evidence source to declare when `native_tool_calls` records the action evidence.
 NATIVE_TOOL_CALLS = "tool calls in the response of the Foundry hosted agent"
 NO_USAGE = "the response of the hosted agent carried no usage"
+# Where a count comes from. Foundry returns the response as the agent's own code made it. Observed live,
+# the usage of a response made with Agent Framework counted every model call again for each later one.
+USAGE_SOURCE = (
+    "the usage of the response the hosted agent returned. A hosted agent's own code produces its response, "
+    "so this is the agent's own count: Foundry passes it on, and it is not checked against what a model "
+    "deployment metered"
+)
 REQUEST_ID_HEADERS = ("x-request-id", "apim-request-id")
 # How much of an answer's body is quoted in an error.
 _SHOWN_BODY = 2000
@@ -285,6 +292,7 @@ def _invocation(answer: _Answer, response: dict[str, Any], composed_input: str |
         # As the platform reported it. Usage that was not reported is missing, never zero.
         "token_usage": usage,
         "token_usage_missing": NO_USAGE if usage is None else None,
+        "token_usage_source": None if usage is None else USAGE_SOURCE,
         "tool_calls": _tool_calls(response),
     }
 
