@@ -9,7 +9,7 @@ one that fails takes no other metric's result with it.
 from __future__ import annotations
 
 import time
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from typing import Any, Callable, Iterable, Mapping, Protocol, Sequence
 
 from ..evaluators import MetricResult
@@ -90,7 +90,10 @@ class ManagedFailure:
     # The execution error, in words.
     error: str
     # How far the managed run of the metric got, in the fields of a result's provenance.
-    provenance: dict[str, Any]
+    # What was not reached is None.
+    provenance: dict[str, Any] = field(
+        default_factory=lambda: dict.fromkeys(("evaluator", "eval_id", "run_id", "output_item_id", "evidence_sha256"))
+    )
 
 
 @dataclass

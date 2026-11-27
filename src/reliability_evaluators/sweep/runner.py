@@ -339,9 +339,9 @@ def _score_managed(
     try:
         returned = dict(managed_scoring.score(evidence))
     except Exception as error:
-        failure = ManagedFailure(error=f"{type(error).__name__}: {error}", provenance={})
+        failure = ManagedFailure(error=f"{type(error).__name__}: {error}")
         return dict.fromkeys(evidence, failure)
-    not_returned = ManagedFailure(error="Foundry-managed scoring returned nothing for this metric", provenance={})
+    not_returned = ManagedFailure(error="Foundry-managed scoring returned nothing for this metric")
     return {metric_id: returned.get(metric_id, not_returned) for metric_id in evidence}
 
 

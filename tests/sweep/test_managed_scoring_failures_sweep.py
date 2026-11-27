@@ -319,7 +319,15 @@ def test_managed_scoring_that_stops_altogether_still_leaves_a_partial_scorecard_
 
     outcome_consistency = metric(scorecard)
     assert outcome_consistency["state"] is None
-    assert outcome_consistency["managed_scoring"]["error"] == "RuntimeError: the connection to the project was lost"
+    # No run was reached, and the scorecard says so in the fields it has for a run.
+    assert outcome_consistency["managed_scoring"] == {
+        "evaluator": None,
+        "eval_id": None,
+        "run_id": None,
+        "output_item_id": None,
+        "evidence_sha256": None,
+        "error": "RuntimeError: the connection to the project was lost",
+    }
     assert metric(scorecard, "resource_consistency")["value"] == pytest.approx(RESOURCE_CONSISTENCY, abs=1e-12)
     assert scorecard["status"] == "partial"
     assert len(scorecard["attempts"]) == 5
