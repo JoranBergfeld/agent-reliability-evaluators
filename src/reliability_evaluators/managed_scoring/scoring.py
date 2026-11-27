@@ -77,6 +77,8 @@ class ManagedResult:
     result: MetricResult
     limitation: str
     provenance: dict[str, Any]
+    # What Foundry reported of the token usage of the managed run, as `_reported_usage` gives it.
+    reported_usage: dict[str, Any] | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -94,6 +96,8 @@ class ManagedFailure:
     provenance: dict[str, Any] = field(
         default_factory=lambda: dict.fromkeys(("evaluator", "eval_id", "run_id", "output_item_id", "evidence_sha256"))
     )
+    # What Foundry reported of the token usage of the managed run. None: no run is known.
+    reported_usage: dict[str, Any] | None = None
 
 
 @dataclass
@@ -120,7 +124,7 @@ class _ManagedRun:
             "output_item_id": self.output_item_id,
             "evidence_sha256": self.evidence_sha256,
         }
-        return ManagedFailure(error=error, provenance=provenance)
+        return ManagedFailure(error=error, provenance=provenance, reported_usage=_reported_usage(self.run))
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -370,4 +374,25 @@ def _recover(
             "passed": returned.get("passed"),
         },
     }
-    return ManagedResult(result=result, limitation=UNVERIFIED_LIMITATION, provenance=provenance)
+    return ManagedResult(
+        result=result,
+        limitation=UNVERIFIED_LIMITATION,
+        provenance=provenance,
+        reported_usage=_reported_usage(run, returned),
+    )
+
+
+def _reported_usage(run: Mapping[str, Any] | None, result: Mapping[str, Any] | None = None) -> dict[str, Any] | None:
+    """What Foundry reported of the token usage of one managed run, as it reported it. None: there is no run.
+
+    The usage on the result of the metric's criterion and the per-model rows of the run are
+    kept apart and are not interpreted here: they can be two views of the same use, and rows
+    were observed to repeat each other's counts (decision ticket #24).
+    """
+    if run is None:
+        return None
+    sample = (result or {}).get("sample")
+    return {
+        "result_sample_usage": sample.get("usage") if isinstance(sample, Mapping) else None,
+        "per_model_usage": run.get("per_model_usage"),
+    }

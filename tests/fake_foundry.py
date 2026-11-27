@@ -21,10 +21,13 @@ live project was observed to behave (docs/managed_scoring/readme.md, "Observed l
 - An evaluator that raises on one of several items leaves the run completed. The result for that
   item has the status `error`, no score, and the error under its own `sample`. The item itself
   carries no error.
+- A run of a code evaluator reports an empty list of per-model usage, and no usage on its results.
 
 A test scripts what a live project could do to a run: alter the submitted item or the score,
 report an error on a completed item or on one of its results, refuse every request or only
-the making of a run, or never finish.
+the making of a run, or never finish. It can also script the usage a run reports: the rows of
+its per-model usage, and the usage on the result of a criterion, as a run whose criterion used
+a model was observed to report them.
 """
 
 from __future__ import annotations
@@ -55,7 +58,11 @@ class FakeFoundryProject:
         refuses_evals: FoundryRequestError | None = None,
         polls_until_finished: int = 0,
         never_finishes: bool = False,
+        per_model_usage: Any = (),
+        result_usage: dict | None = None,
     ):
+        self._per_model_usage = list(per_model_usage) if isinstance(per_model_usage, (list, tuple)) else per_model_usage
+        self._result_usage = result_usage
         self._alter_item = alter_item
         self._alter_score = alter_score
         self._sample_error = sample_error
@@ -158,6 +165,7 @@ class FakeFoundryProject:
             "error": error,
             "report_url": f"https://ai.azure.com/nextgen/r/encoded-subscription-identifier/{eval_id}/{run_id}",
             "result_counts": {"total": len(items)},
+            "per_model_usage": self._per_model_usage,
         }
         self._output_items[run_id] = items
         self._polls[run_id] = 0
@@ -257,6 +265,7 @@ class FakeFoundryProject:
             "threshold": 0.5,
             "passed": score >= 0.5,
             "status": "completed",
+            **({"sample": {"usage": self._result_usage}} if self._result_usage is not None else {}),
         }
 
 

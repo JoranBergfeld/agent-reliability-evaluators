@@ -121,9 +121,72 @@ def _scoring_of(evaluator: EvaluatorUse) -> tuple[dict[str, Any], Mapping[str, A
     return {"use": "scoring", "metric_id": evaluator.metric_id}, evaluator.scoring
 
 
-def scoring_use(scoring_path: ScoringPath) -> dict[str, Any]:
-    """The use that scoring an Evaluator on a scoring path was."""
+def code_scoring_use() -> dict[str, Any]:
+    """The use that scoring an Evaluator in the customer's process was: none of a model, so zero is known."""
     return dict(CODE_IN_THE_CUSTOMER_PROCESS)
+
+
+ON_THE_RESULT = "the usage Foundry reported on the result of this Evaluator in its managed run"
+PER_MODEL_USAGE = (
+    "the per-model usage Foundry reported for the managed run of this Evaluator. Rows that repeat the same "
+    "counts under another name are counted once"
+)
+NO_MANAGED_RUN = "no managed run is known for this Evaluator, so no usage was reported for its scoring"
+NO_MANAGED_USAGE = (
+    "Foundry reported no usage for the managed run of this Evaluator: none on its result and no per-model "
+    "usage row. That is not a report of zero"
+)
+UNREADABLE_ROWS = (
+    "the per-model usage Foundry reported for the managed run of this Evaluator is not a list of rows that "
+    "each have a total_tokens that is a whole number"
+)
+ROWS_THAT_DIFFER = (
+    "Foundry reported per-model usage rows with different counts for the managed run of this Evaluator. "
+    "Whether such rows overlap is not documented, so they are listed as reported and are not summed"
+)
+
+
+def managed_scoring_use(reported: Any, provenance: Mapping[str, Any] | None) -> dict[str, Any]:
+    """The use that scoring an Evaluator in its managed run was, from what Foundry reported of that run.
+
+    `reported` is what managed scoring kept of the run's usage: the usage on the result of
+    the Evaluator, and the per-model rows of the run. None: no run is known. `provenance`
+    identifies the run. Each Evaluator has a managed run of its own, so what a run reports
+    is the scoring of that Evaluator alone.
+
+    The usage on the result is counted when it states a total, and the rows are then not
+    added to it: they are another view of the same run. Without it, rows that repeat the
+    same counts under another name are one use. Rows with different counts are not summed,
+    because how they overlap is not documented: the count is then missing. A run that
+    reports nothing is missing too, and is never zero. A zero is counted when it is reported.
+    """
+    provenance = provenance or {}
+    identifiers = {
+        "scoring_path": ScoringPath.FOUNDRY_MANAGED.value,
+        "source": None,
+        **{name: provenance.get(name) for name in ("eval_id", "run_id", "output_item_id")},
+        "reported": reported,
+    }
+    if reported is None:
+        return _missing(NO_MANAGED_RUN, **identifiers)
+    on_result = reported.get("result_sample_usage") if isinstance(reported, Mapping) else None
+    if isinstance(on_result, Mapping) and _is_count(on_result.get("total_tokens")):
+        return _reported(on_result["total_tokens"], **{**identifiers, "source": ON_THE_RESULT})
+    rows = reported.get("per_model_usage") if isinstance(reported, Mapping) else reported
+    if rows is None or rows == []:
+        return _missing(NO_MANAGED_USAGE, **identifiers)
+    if not isinstance(rows, list) or not all(
+        isinstance(row, Mapping) and _is_count(row.get("total_tokens")) for row in rows
+    ):
+        return _missing(UNREADABLE_ROWS, **identifiers)
+    counts: list[dict[str, Any]] = []
+    for row in rows:
+        counted = {name: count for name, count in row.items() if name != "model_name"}
+        if counted not in counts:
+            counts.append(counted)
+    if len(counts) > 1:
+        return _missing(ROWS_THAT_DIFFER, **identifiers)
+    return _reported(counts[0]["total_tokens"], **{**identifiers, "source": PER_MODEL_USAGE})
 
 
 def attempt_token_usage(attempt: Attempt) -> dict[str, Any]:

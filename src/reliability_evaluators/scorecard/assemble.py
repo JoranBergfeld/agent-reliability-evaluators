@@ -18,7 +18,7 @@ from ..evaluators import (
 )
 from ..evidence import Attempt, EvidenceError, ExperimentStatus
 from .acceptance import AcceptanceCriterion, assess, criteria_by_metric
-from .usage import EvaluatorUse, scoring_use, sweep_token_usage
+from .usage import EvaluatorUse, code_scoring_use, managed_scoring_use, sweep_token_usage
 
 SCHEMA_VERSION = 1
 # Where a scorecard reports token usage. It is metadata, apart from the metrics and their acceptance.
@@ -173,6 +173,8 @@ class ScoredMetric:
     # What Foundry-managed scoring recorded about the result: the evaluator and the run it
     # came from, and what the platform added to it. JSON-compatible data.
     managed_scoring: Mapping[str, Any] | None = None
+    # What Foundry reported of the token usage of the managed run. It is reported as usage, not with the metric.
+    reported_usage: Mapping[str, Any] | None = None
 
     def __post_init__(self) -> None:
         if self.fidelity is Fidelity.UNVERIFIED and not (self.limitation or "").strip():
@@ -200,6 +202,8 @@ class MissingResult:
     cut_short: CutShort = CutShort()
     # What Foundry-managed scoring recorded about the run that failed. JSON-compatible data.
     managed_scoring: Mapping[str, Any] | None = None
+    # What Foundry reported of the token usage of the run that failed. None: no run is known.
+    reported_usage: Mapping[str, Any] | None = None
     scoring_path = ScoringPath.FOUNDRY_MANAGED
 
     def __post_init__(self) -> None:
@@ -279,7 +283,7 @@ def build_scorecard(
                 EvaluatorUse(
                     metric_id=metric.metric_id,
                     attempt_ids=tuple(scored_by_id[metric.metric_id].attempts_used),
-                    scoring=scoring_use(scored_by_id[metric.metric_id].scoring_path),
+                    scoring=_scoring_use(scored_by_id[metric.metric_id]),
                 )
                 for metric in RELIABILITY_METRICS
                 if metric.metric_id in scored_by_id
@@ -287,6 +291,18 @@ def build_scorecard(
         ),
         "attempts": [attempt.to_dict() for attempt in attempts],
     }
+
+
+def _scoring_use(scored: ScoredMetric | MissingResult) -> dict[str, Any]:
+    """The use that scoring a metric was, on the scoring path the metric is attributed to."""
+    if scored.scoring_path is ScoringPath.CUSTOMER_PROCESS:
+        return code_scoring_use()
+    try:
+        reported = json.loads(json.dumps(scored.reported_usage, allow_nan=False))
+    except (TypeError, ValueError):
+        # What cannot be written to a scorecard is kept as text, and is then not read as a count.
+        reported = repr(scored.reported_usage)
+    return managed_scoring_use(reported, scored.managed_scoring)
 
 
 MANAGED_SCORING_GAVE_NO_RESULT = (

@@ -293,6 +293,7 @@ def _sweep(
                         definition=evaluator.evaluator.definition,
                         execution_error=managed_result.error,
                         managed_scoring={**managed_result.provenance, "error": managed_result.error},
+                        reported_usage=managed_result.reported_usage,
                         **attributed,
                     )
                 )
@@ -305,6 +306,7 @@ def _sweep(
                     fidelity=Fidelity.UNVERIFIED,
                     limitation=managed_result.limitation,
                     managed_scoring=managed_result.provenance,
+                    reported_usage=managed_result.reported_usage,
                     **attributed,
                 )
             )
