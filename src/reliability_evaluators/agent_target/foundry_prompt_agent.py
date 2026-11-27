@@ -32,11 +32,11 @@ API_VERSION = "v1"
 RESPONSES_ROUTE = f"/openai/{API_VERSION}/responses"
 AGENT_TARGET = "foundry_prompt_agent"
 RESPONSES_PROTOCOL = "responses"
+# The tool choice under which the project runs the agent without letting it call a tool.
+TOOL_CHOICE_NONE = "none"
 # The evidence source to declare when `native_tool_calls` records the action evidence.
 NATIVE_TOOL_CALLS = "tool calls in the response of the Foundry prompt agent"
 NO_USAGE = "the response of the prompt agent carried no usage"
-# The tool choice under which the project lets the agent call no tool.
-NO_TOOL_CHOICE = "none"
 NO_RESPONSE = "the Foundry project returned no response, so no usage was reported"
 REQUEST_ID_HEADERS = ("x-request-id", "apim-request-id")
 SERVED_MODEL_HEADER = "x-ms-served-model"
@@ -146,7 +146,7 @@ class FoundryPromptAgentTarget:
             "previous_response_id": previous,
             # The version that answered the Attempt answers the question about it.
             "agent_reference": attempt.get("agent") or self._agent,
-            "tool_choice": NO_TOOL_CHOICE,
+            "tool_choice": TOOL_CHOICE_NONE,
             "metadata": {
                 "attempt_id": request.attempt.attempt_id,
                 "task_id": request.attempt.task_id,
@@ -283,10 +283,10 @@ def _not_isolated(follow_up: dict[str, Any], previous: str | None) -> str | None
             f"the agent called a tool while it answered the follow-up ({called}). "
             "The follow-up was not isolated, so its answer is not used"
         )
-    if follow_up["tool_choice"] != NO_TOOL_CHOICE:
+    if follow_up["tool_choice"] != TOOL_CHOICE_NONE:
         return (
             f"the Foundry project reports the tool choice {follow_up['tool_choice']!r} for the follow-up and not "
-            f"{NO_TOOL_CHOICE!r}. The agent could act, so its answer is not used"
+            f"{TOOL_CHOICE_NONE!r}. The agent could act, so its answer is not used"
         )
     return None
 

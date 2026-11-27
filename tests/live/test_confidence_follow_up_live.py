@@ -283,6 +283,7 @@ def test_a_live_prompt_agent_rates_each_attempt_in_a_follow_up_during_which_the_
 
     assert len(attempts) == 5 and set(attempts) == set(setup.evidence)
     assert all(attempt["execution_status"] == "completed" for attempt in attempts.values())
+    usage = {entry["attempt_id"]: entry for entry in scorecard["token_usage"]["attempts"]}
     # The agent was asked once for every Attempt, and every question was answered with a rating.
     assert set(watching.around_follow_up) == set(attempts) == set(pairs)
     for attempt_id, attempt in attempts.items():
@@ -300,6 +301,11 @@ def test_a_live_prompt_agent_rates_each_attempt_in_a_follow_up_during_which_the_
             "attempt_id": attempt_id, "task_id": attempt["task_id"], "request": "confidence"
         }
         assert follow_up["token_usage"]["total_tokens"] > 0 and follow_up["request_ids"]
+        # What the follow-up used is reported with its Attempt, apart from the invocation.
+        used = usage[attempt_id]
+        assert used["confidence_follow_up"]["basis"] == "reported"
+        assert used["confidence_follow_up"]["total_tokens"] == follow_up["token_usage"]["total_tokens"]
+        assert used["total_tokens"] == invocation["token_usage"]["total_tokens"] + follow_up["token_usage"]["total_tokens"]
         # The agent was sent the question with the success rule, word for word, and nothing else.
         assert follow_up["input"] == QUESTION
         # The model was given the completed conversation of this Attempt and the question. That is all it
