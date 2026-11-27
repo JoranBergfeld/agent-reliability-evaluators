@@ -5,6 +5,8 @@ Foundry project that is scripted to fail. Every assertion is on the machine-read
 scorecard. Expected values are calculated by hand.
 """
 
+import re
+
 import pytest
 
 from reliability_evaluators.evidence import TaskOutcome
@@ -14,6 +16,7 @@ from reliability_evaluators.scorecard import AcceptanceCriterion, render_report
 from reliability_evaluators.sweep import ConfiguredEvaluator, Task, run_sweep
 from tests.fake_foundry import FakeFoundryProject
 from tests.fakes import FakeAgentTarget
+from tests.managed_artifact import altered_evidence
 from tests.report_reader import assert_faithful_rendering
 
 SOURCE = "final state of the fake service"
@@ -59,8 +62,16 @@ def metric(scorecard, metric_id="outcome_consistency"):
 
 def one_outcome_flipped(item):
     """What a project that altered the submitted evidence would hand the evaluator, which then raises."""
-    (field, text), = item.items()
-    return {field: text.replace('"success":true', '"success":false', 1)}
+    return altered_evidence(item, '"success":true', '"success":false')
+
+
+def only(part, altered):
+    """Foundry returns another number for one part of the result, and every other part as the evaluator returned it.
+
+    A row asks for one part: "value" for the plain metric value, "size" for the size of the
+    encoded result, and "1", "2", ... for the parts of the encoded result.
+    """
+    return lambda score, item: altered(score) if item["result_part"] == part else score
 
 
 def test_a_failed_managed_run_gives_a_partial_scorecard_that_keeps_the_evidence():
@@ -172,7 +183,7 @@ def only_the_evidence_of(metric_id, alter):
     """Alter the evidence one Evaluator is handed and leave what the others are handed as it is."""
 
     def altered(item):
-        return alter(item) if list(item) == [f"{metric_id}_evidence"] else item
+        return alter(item) if f"{metric_id}_evidence" in item else item
 
     return altered
 
@@ -210,11 +221,12 @@ def test_every_metric_is_scored_in_a_managed_run_of_its_own(resource_consistency
         for metric_id in ("outcome_consistency", "resource_consistency")
     }
     assert runs == {"outcome_consistency": ("eval_1", "evalrun_1"), "resource_consistency": ("eval_2", "evalrun_2")}
-    # Each run was handed the evidence of its own Evaluator and nothing else.
-    assert [list(item) for item in foundry.submitted_items] == [
-        ["outcome_consistency_evidence"],
-        ["resource_consistency_evidence"],
-    ]
+    # Every row of a run was handed the evidence of its own Evaluator and the part it asks for, and nothing else.
+    assert {tuple(item) for item in foundry.submitted_items} == {
+        ("outcome_consistency_evidence", "result_part"),
+        ("resource_consistency_evidence", "result_part"),
+    }
+    assert list(foundry.evals) == ["eval_1", "eval_2"]
     assert scorecard["status"] == "complete"
 
 
@@ -248,19 +260,27 @@ GRADING_ERROR = {
         ),
         (
             # What a live project returned for an item its evaluator raised on, in a run that completed.
+            # Here it returns it for every row, however often it is asked: the third run is the last.
             FakeFoundryProject(result_error=GRADING_ERROR),
-            "output item '1' of run evalrun_1 of eval_1 has a result for 'outcome_consistency' in status 'error': "
-            f"{GRADING_ERROR}",
+            "output item '1' of run evalrun_3 of eval_1 has a result for 'outcome_consistency' in status 'error': "
+            f"{GRADING_ERROR}. Foundry was asked 3 times for what did not come back, and did not grade 2 of the "
+            "rows of the last run",
         ),
         (
-            FakeFoundryProject(alter_score=lambda score: 1.1),
+            FakeFoundryProject(alter_score=only("value", lambda score: 1.1)),
             "output item '1' of run evalrun_1 of eval_1 has a score for 'outcome_consistency' that is not a value "
             "of the metric: 1.1 is outside the scale 0.0 to 1.0. It is not reported",
         ),
         (
-            FakeFoundryProject(alter_score=lambda score: -0.1),
+            FakeFoundryProject(alter_score=only("value", lambda score: -0.1)),
             "output item '1' of run evalrun_1 of eval_1 has a score for 'outcome_consistency' that is not a value "
             "of the metric: -0.1 is outside the scale 0.0 to 1.0. It is not reported",
+        ),
+        (
+            # -1 is what the evaluator returns as the plain value of a metric that has none. This metric has one.
+            FakeFoundryProject(alter_score=only("value", lambda score: -1)),
+            "output item '1' of run evalrun_1 of eval_1 has a score for 'outcome_consistency' that is not a value "
+            "of the metric: -1.0 is outside the scale 0.0 to 1.0. It is not reported",
         ),
         (
             FakeFoundryProject(
@@ -269,7 +289,14 @@ GRADING_ERROR = {
             "the Foundry-managed run could not be made or read: POST /openai/v1/evals: HTTP 429: too many requests",
         ),
     ],
-    ids=["item error", "result error", "score above the scale", "score below the scale", "project refuses the run"],
+    ids=[
+        "item error",
+        "result error",
+        "score above the scale",
+        "score below the scale",
+        "the marker of no value as a score",
+        "project refuses the run",
+    ],
 )
 def test_whatever_leaves_a_managed_run_without_a_result_is_named_and_the_scorecard_is_partial(
     foundry, execution_error
@@ -282,6 +309,102 @@ def test_whatever_leaves_a_managed_run_without_a_result_is_named_and_the_scoreca
     assert scorecard["status"] == "partial"
     assert scorecard["missing"][0]["reason"].endswith(execution_error)
     assert len(scorecard["attempts"]) == 8
+
+
+# One Attempt at each Task: no Task has two, so outcome consistency is an unavailable measurement.
+ONE_ATTEMPT_EACH = {"close": ["success"], "archive": ["failure"]}
+
+
+@pytest.mark.parametrize(
+    ("part", "altered", "execution_error"),
+    [
+        # The metric has no value, and Foundry returns 0.5 as its plain value.
+        (
+            "value",
+            lambda score: 0.5,
+            "output item '1' of run evalrun_1 of eval_1 has 0.5 as the value of 'outcome_consistency', where the "
+            "encoded result says the metric is unavailable and has no value. The two do not agree, so nothing is reported",
+        ),
+        # One of the numbers the encoded result is made of comes back as another number.
+        ("3", lambda score: score + 1, "the encoded result does not match its digest"),
+        ("1", lambda score: score + 0.5, "of the encoded result, which is not 6 bytes"),
+        ("2", lambda score: -score, "of the encoded result, which is not 6 bytes"),
+        # The size comes back larger, so more parts are asked for than the result has.
+        ("size", lambda score: score + 6, "the encoded result does not match its digest"),
+        ("size", lambda score: 0.5, "0.5 was returned as the size of the encoded result, which is not one"),
+    ],
+    ids=["a value for a metric without one", "part altered", "part not whole", "part negative", "size larger", "size not whole"],
+)
+def test_a_result_that_did_not_come_back_as_the_evaluator_returned_it_is_a_failure_and_no_result(
+    part, altered, execution_error
+):
+    scorecard = sweep(ONE_ATTEMPT_EACH, FakeFoundryProject(alter_score=only(part, altered)))
+
+    outcome_consistency = metric(scorecard)
+    assert execution_error in outcome_consistency["managed_scoring"]["error"]
+    # Nothing of what came back is reported: not the state it claimed, and none of its numbers.
+    assert (outcome_consistency["state"], outcome_consistency["value"], outcome_consistency["reason"]) == (None, None, None)
+    assert outcome_consistency["counts"] == {}
+    assert scorecard["status"] == "partial"
+    assert [(entry["kind"], entry["metric_id"]) for entry in scorecard["missing"]] == [
+        ("metric_result", "outcome_consistency")
+    ]
+
+
+def test_a_result_too_large_to_come_back_in_one_run_is_a_failure_and_no_part_of_it_is_reported():
+    # 150 Tasks of five Attempts. Every row that asks for a part of the result carries the evidence of all 750.
+    foundry = FakeFoundryProject()
+
+    scorecard = sweep({f"task-{number}": FOUR_IN_FIVE for number in range(150)}, foundry)
+
+    managed_scoring = metric(scorecard)["managed_scoring"]
+    assert re.fullmatch(
+        r"the run for the encoded result would submit \d+ characters in \d+ rows, each with the grouped evidence, "
+        r"more than the 1900000 that one managed run was observed to accept\. It was not submitted, and nothing "
+        r"was truncated",
+        managed_scoring["error"],
+    )
+    # The first run returned the size of the result. The run for its parts was never made.
+    assert list(foundry.runs) == ["evalrun_1"]
+    assert managed_scoring["run_id"] == "evalrun_1"
+    assert (metric(scorecard)["state"], metric(scorecard)["value"]) == (None, None)
+    assert scorecard["status"] == "partial"
+    assert len(scorecard["attempts"]) == 750
+
+
+def test_a_part_that_foundry_never_grades_is_asked_for_three_times_and_then_leaves_no_result():
+    # Foundry returns the row for part 7 as an error every time. Every other row is graded.
+    def part_seven_is_not_graded(item):
+        return GRADING_ERROR if item["result_part"] == "7" else None
+
+    foundry = FakeFoundryProject(result_error=part_seven_is_not_graded)
+
+    scorecard = sweep(ONE_ATTEMPT_EACH, foundry)
+
+    outcome_consistency = metric(scorecard)
+    # The second run and two more asked for it. The last of them had that one row, as its first output item.
+    assert outcome_consistency["managed_scoring"]["error"] == (
+        "output item '1' of run evalrun_4 of eval_1 has a result for 'outcome_consistency' in status 'error': "
+        f"{GRADING_ERROR}. Foundry was asked 3 times for what did not come back, and did not grade 1 of the "
+        "rows of the last run"
+    )
+    assert [item["result_part"] for item in foundry.submitted_items].count("7") == 3
+    assert list(foundry.runs) == ["evalrun_1", "evalrun_2", "evalrun_3", "evalrun_4"]
+    # The parts that did come back are not reported as a result.
+    assert (outcome_consistency["state"], outcome_consistency["reason"], outcome_consistency["counts"]) == (None, None, {})
+    assert scorecard["status"] == "partial"
+
+
+def test_a_failure_of_the_run_for_the_encoded_result_names_that_run():
+    # The first run completes. In the second, part 3 comes back altered.
+    scorecard = sweep(ONE_ATTEMPT_EACH, FakeFoundryProject(alter_score=only("3", lambda score: score + 1)))
+
+    managed_scoring = metric(scorecard)["managed_scoring"]
+    assert managed_scoring["error"].startswith(
+        "run evalrun_2 of eval_1 did not return a result of 'outcome_consistency' that can be read: "
+    )
+    assert managed_scoring["error"].endswith("Nothing is reported in its place")
+    assert (managed_scoring["eval_id"], managed_scoring["run_id"]) == ("eval_1", "evalrun_2")
 
 
 def test_a_managed_run_that_does_not_end_in_time_is_cancelled_and_leaves_the_scorecard_partial():

@@ -48,7 +48,7 @@ def rescore_in_customer_process(
 
     `metrics` names the metrics to rescore, each by its metric identity or as the
     ConfiguredEvaluator the sweep was given. Each has to be a metric that the earlier
-    scorecard attributes to Foundry-managed scoring, with a value or with a failure. No
+    scorecard attributes to Foundry-managed scoring, with a result or with a failure. No
     other metric is rescored.
 
     The result is a new scorecard that is the earlier one with one addition per rescored
@@ -56,7 +56,8 @@ def rescore_in_customer_process(
     own, calculated by the same Evaluator from the Attempts the managed evaluator was given,
     and attributed to the customer-process scoring path. Everything else is as it was. The
     entry of the metric still holds what Foundry-managed scoring gave: the unverified value
-    with its limitation, or the failure with its execution error. A scorecard that was
+    with its limitation, the unavailable measurement with its reason, or the failure with its
+    execution error. A scorecard that was
     partial stays partial and still lists the managed result as missing, and the acceptance
     assessment of the managed result is not changed.
 
