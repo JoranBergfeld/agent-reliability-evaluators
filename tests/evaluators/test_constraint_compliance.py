@@ -297,9 +297,8 @@ def test_the_result_discloses_the_constraint_set_and_links_each_violation_to_its
     }
 
 def assessment(**given):
-    return ViolationAssessment(
-        **{"constraint_id": "leave-unrelated", "violated": False, "evidence": "no matching event", "source": SOURCE, **given}
-    )
+    complete = {"constraint_id": "leave-unrelated", "violated": False, "evidence": "no matching event", "source": SOURCE}
+    return ViolationAssessment(**{**complete, **given})
 
 
 @pytest.mark.parametrize("missing", ["evidence", "source", "constraint_id"])
@@ -354,7 +353,7 @@ def test_two_applicable_constraints_with_the_same_identity_are_rejected():
         recorded([LEAVE_UNRELATED, same_identity], [])
 
 
-@pytest.mark.parametrize("not_an_assessment", [True, "violated", {"constraint_id": "leave-unrelated", "violated": True}])
+@pytest.mark.parametrize("not_an_assessment", [True, "violated", {"constraint_id": "leave-unrelated", "violated": 1}])
 def test_a_violation_assessment_that_is_not_a_violation_assessment_is_rejected(not_an_assessment):
     with pytest.raises(EvidenceError, match="ViolationAssessment"):
         recorded([LEAVE_UNRELATED], [not_an_assessment])
