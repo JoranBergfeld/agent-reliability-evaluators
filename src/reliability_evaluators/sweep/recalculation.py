@@ -6,8 +6,15 @@ from copy import deepcopy
 from typing import Any, Mapping, Sequence
 
 from ..evaluators import EVALUATORS, Fidelity, MetricState, ScoringPath
-from ..evidence import Attempt, OutcomeCorrection, apply_outcome_corrections, group_by_task, read_attempt
-from ..scorecard import ScoredMetric, build_scorecard
+from ..evidence import (
+    Attempt,
+    EvidenceError,
+    OutcomeCorrection,
+    apply_outcome_corrections,
+    group_by_task,
+    read_attempts,
+)
+from ..scorecard import SCHEMA_VERSION, ScoredMetric, build_scorecard
 from .declaration import ActionEvidenceDeclaration
 
 SUPERSEDED = "superseded"
@@ -35,7 +42,10 @@ def _recalculate(
     outcome_corrections: Sequence[OutcomeCorrection],
     action_evidence: ActionEvidenceDeclaration | None,
 ) -> dict[str, Any]:
-    earlier_attempts = [read_attempt(recorded) for recorded in earlier_scorecard["attempts"]]
+    try:
+        earlier_metrics, earlier_attempts = _read(earlier_scorecard)
+    except EvidenceError as error:
+        raise EvidenceError(f"the supplied evidence does not validate: {error}") from error
     attempts = apply_outcome_corrections(earlier_attempts, outcome_corrections)
     if not outcome_corrections:
         raise ValueError(
@@ -45,7 +55,7 @@ def _recalculate(
     evidence = group_by_task(attempts)
     declared = {"action_types": None if action_evidence is None else action_evidence.mapping}
     scored = []
-    for entry in earlier_scorecard["metrics"]:
+    for entry in earlier_metrics:
         if entry["state"] == MetricState.NOT_CONFIGURED.value:
             continue
         evaluator = EVALUATORS[entry["metric_id"]]
@@ -59,10 +69,32 @@ def _recalculate(
     superseded = {
         "status": SUPERSEDED,
         "outcome_corrections": _correction_records(outcome_corrections, earlier_attempts),
-        "metrics": deepcopy(earlier_scorecard["metrics"]),
+        "metrics": deepcopy(earlier_metrics),
     }
     superseded_results = [*deepcopy(earlier_scorecard.get("superseded_results", [])), superseded]
     return {**build_scorecard(metrics=scored, attempts=attempts), "superseded_results": superseded_results}
+
+
+def _read(earlier_scorecard: Any) -> tuple[list[Any], tuple[Attempt, ...]]:
+    """The metric results and the Attempts of the scorecard the customer supplied."""
+    if not isinstance(earlier_scorecard, Mapping):
+        raise EvidenceError(
+            "the earlier scorecard is supplied as the data of its JSON, with the attempt-level evidence in it. "
+            f"Got {earlier_scorecard!r}"
+        )
+    version = earlier_scorecard.get("schema_version")
+    if version != SCHEMA_VERSION:
+        raise EvidenceError(
+            f"it has schema version {version!r}, and this version reads schema version {SCHEMA_VERSION}"
+        )
+    if not isinstance(earlier_scorecard.get("attempts"), list):
+        raise EvidenceError("it has no attempt-level evidence: 'attempts' is not a list of Attempts")
+    if not isinstance(earlier_scorecard.get("metrics"), list):
+        raise EvidenceError(
+            "it has no metric results to supersede. Supply the earlier scorecard, which holds the "
+            "attempt-level evidence as well, and not the evidence alone"
+        )
+    return earlier_scorecard["metrics"], read_attempts(earlier_scorecard["attempts"])
 
 
 def _correction_records(

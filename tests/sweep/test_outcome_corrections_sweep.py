@@ -446,3 +446,72 @@ def test_a_recalculation_without_a_correction_it_can_read_fails(corrections):
 
     with pytest.raises(RecalculationFailed, match="OutcomeCorrection"):
         recalculate(earlier_scorecard=earlier, outcome_corrections=corrections)
+
+
+def changed(change):
+    """A change to a supplied scorecard, made in place."""
+
+    def supply(scorecard):
+        change(scorecard)
+        return scorecard
+
+    return supply
+
+
+def without(key):
+    return changed(lambda scorecard: scorecard.pop(key))
+
+
+def with_attempt(**evidence):
+    """The record of the third Attempt in the supplied evidence, with some of it changed."""
+    return changed(lambda scorecard: attempt(scorecard, "close/attempt-3").update(evidence))
+
+
+def without_attempt_evidence(key):
+    return changed(lambda scorecard: attempt(scorecard, "close/attempt-3").pop(key))
+
+
+def instead(supplied_instead):
+    return lambda scorecard: supplied_instead
+
+
+@pytest.mark.parametrize(
+    ("supply", "problem"),
+    [
+        (instead(None), "the earlier scorecard is supplied as the data of its JSON"),
+        (instead("scorecard.json"), "the earlier scorecard is supplied as the data of its JSON"),
+        (instead([]), "the earlier scorecard is supplied as the data of its JSON"),
+        (without("attempts"), "no attempt-level evidence"),
+        (changed(lambda scorecard: scorecard.update(attempts={})), "no attempt-level evidence"),
+        (without("metrics"), "no metric results"),
+        (without("schema_version"), "schema version None"),
+        (changed(lambda scorecard: scorecard.update(schema_version=2)), "schema version 2"),
+        (changed(lambda scorecard: scorecard["attempts"].append("close/attempt-5")), "the Attempt at position 5"),
+        (with_attempt(task_outcome={"success": 0.5, "source": SOURCE}), "'close/attempt-3'.*binary"),
+        (with_attempt(task_outcome={"success": True}), "'close/attempt-3'.*source"),
+        (with_attempt(task_outcome=True), "'close/attempt-3'.*task outcome"),
+        (with_attempt(execution_status="exploded"), "'close/attempt-3'.*not an execution status"),
+        (with_attempt(task_id=""), "'close/attempt-3'.*task_id"),
+        (without_attempt_evidence("task_outcome"), "'close/attempt-3'.*task_outcome"),
+        (without_attempt_evidence("confidence"), "'close/attempt-3'.*confidence"),
+        (without_attempt_evidence("attempt_id"), "the Attempt at position 3.*attempt_id"),
+        (with_attempt(reviewed_by="J. Jansen"), "'close/attempt-3'.*reviewed_by"),
+        (
+            with_attempt(confidence={"rating": "150", "normalized": 1.5, "original_response": "150", "unavailable_reason": None}),
+            "'close/attempt-3'.*outside 0 to 100",
+        ),
+        (
+            with_attempt(confidence={"rating": "75", "normalized": 0.5, "original_response": "75", "unavailable_reason": None}),
+            "'close/attempt-3'.*confidence",
+        ),
+        (
+            with_attempt(superseded_task_outcomes=[{"task_outcome": None}]),
+            "'close/attempt-3'.*correction_provenance",
+        ),
+    ],
+)
+def test_supplied_evidence_that_does_not_validate_fails_the_recalculation(supply, problem):
+    earlier = supply(sweep({"close": HALF}, metrics=["outcome_consistency", "brier_based_score"], ratings=RATINGS))
+
+    with pytest.raises(RecalculationFailed, match=f"recalculation failed: the supplied evidence does not validate: .*{problem}"):
+        recalculate(earlier_scorecard=earlier, outcome_corrections=[corrected("close/attempt-3", success=True)])

@@ -17,7 +17,7 @@ from .confidence import ConfidenceRating, ConfidenceUnavailable, read_confidence
 from .corrections import OutcomeCorrection, apply_outcome_corrections
 from .errors import EvidenceError
 from .grouping import TaskEvidence, group_by_task, require_unambiguous
-from .reading import read_attempt
+from .reading import read_attempts
 
 __all__ = [
     "ActionEvent",
@@ -37,7 +37,7 @@ __all__ = [
     "ViolationAssessment",
     "apply_outcome_corrections",
     "group_by_task",
-    "read_attempt",
+    "read_attempts",
     "read_confidence_response",
     "require_unambiguous",
 ]
