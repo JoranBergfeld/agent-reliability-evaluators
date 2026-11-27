@@ -11,6 +11,7 @@ which `confidence_pairs.pair_confidence_with_outcome` builds, counts and explain
 
 from . import (
     brier_based_score,
+    conditional_harm_severity,
     constraint_compliance,
     distributional_trajectory_consistency,
     outcome_consistency,
@@ -45,6 +46,7 @@ __all__ = [
     "Scale",
     "ScoringPath",
     "brier_based_score",
+    "conditional_harm_severity",
     "constraint_compliance",
     "counted",
     "distributional_trajectory_consistency",

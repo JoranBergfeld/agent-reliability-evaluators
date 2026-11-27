@@ -6,7 +6,7 @@ Vocabulary is defined in [`GLOSSARY.md`](GLOSSARY.md). Decisions that are hard t
 
 ## What exists today
 
-Six metrics, end to end, scored in your own process:
+Seven metrics, end to end, scored in your own process:
 
 | Metric | Documentation |
 | --- | --- |
@@ -16,6 +16,7 @@ Six metrics, end to end, scored in your own process:
 | Resource consistency | [`docs/resource_consistency/readme.md`](docs/resource_consistency/readme.md) |
 | Brier-based score | [`docs/brier_based_score/readme.md`](docs/brier_based_score/readme.md) |
 | Constraint compliance | [`docs/constraint_compliance/readme.md`](docs/constraint_compliance/readme.md) |
+| Conditional harm severity | [`docs/conditional_harm_severity/readme.md`](docs/conditional_harm_severity/readme.md) |
 
 You can declare your own acceptance criteria per metric, and the scorecard reports each as met, not met, or not assessed with a reason: see [`docs/acceptance_criteria/readme.md`](docs/acceptance_criteria/readme.md).
 
@@ -23,7 +24,7 @@ When a selected metric uses confidence, the sweep asks the agent for a confidenc
 
 The Evaluator sweep can also run controlled experiments, with your own controls for preparing state, applying a condition, verifying what occurred and cleaning up: see [`docs/sweep/controlled-experiments.md`](docs/sweep/controlled-experiments.md).
 
-The other six metrics have no Evaluator yet. Every scorecard lists all twelve, and a metric that was not selected appears as not configured. No Foundry agent target and no Foundry-managed scoring exists yet; the agent target is an interface that you implement.
+The other five metrics have no Evaluator yet. Every scorecard lists all twelve, and a metric that was not selected appears as not configured. No Foundry agent target and no Foundry-managed scoring exists yet; the agent target is an interface that you implement.
 
 The sweep returns the machine-readable scorecard. Given a directory, it also writes the scorecard, a human-readable report rendered from it and the attempt-level evidence there, or raises an explicit reporting failure: see [`docs/report/readme.md`](docs/report/readme.md).
 

@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 760 300" width="760" height="300" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13">
+  <title>The scale of conditional harm severity runs from 0 to 0.75 and is not rescaled</title>
+  <desc>A number line from 0 to 1. The metric can take values from 0, when every violating Attempt had a high violation, to 0.75, when the worst violation of every violating Attempt was low. Values above 0.75 cannot be reached, because the least severe violation still has weight 0.25. All worst violations medium gives 0.5. The worked example is at 0.4. No observed violation is not a point on this line: it is an unavailable measurement.</desc>
+  <defs>
+    <pattern id="unreachable" width="8" height="8" patternUnits="userSpaceOnUse" patternTransform="rotate(45)">
+      <rect width="8" height="8" fill="#fafafa"/>
+      <line x1="0" y1="0" x2="0" y2="8" stroke="#e0e0e0" stroke-width="2"/>
+    </pattern>
+    <linearGradient id="reachable" x1="0" x2="1" y1="0" y2="0">
+      <stop offset="0" stop-color="#c62828"/>
+      <stop offset="0.6667" stop-color="#ef6c00"/>
+      <stop offset="1" stop-color="#fbc02d"/>
+    </linearGradient>
+  </defs>
+  <rect width="760" height="300" fill="#ffffff"/>
+
+  <g fill="#616161" font-weight="600">
+    <text x="60" y="28">← more severe</text>
+    <text x="510" y="28" text-anchor="end">less severe →</text>
+  </g>
+
+  <text x="300" y="68" text-anchor="middle" fill="#1565c0" font-weight="600">worked example: 0.4</text>
+  <path d="M300,90 l-7,-12 h14 z" fill="#1565c0"/>
+
+  <rect x="60" y="90" width="450" height="36" fill="url(#reachable)"/>
+  <rect x="510" y="90" width="150" height="36" fill="url(#unreachable)" stroke="#bdbdbd"/>
+  <text x="250" y="113" text-anchor="middle" fill="#ffffff" font-weight="600">the values the metric can take</text>
+  <text x="585" y="113" text-anchor="middle" fill="#616161" font-size="12">cannot be reached</text>
+
+  <g stroke="#212121" stroke-width="1.5">
+    <line x1="60" y1="126" x2="60" y2="136"/>
+    <line x1="210" y1="126" x2="210" y2="136"/>
+    <line x1="360" y1="126" x2="360" y2="136"/>
+    <line x1="510" y1="84" x2="510" y2="136"/>
+    <line x1="660" y1="126" x2="660" y2="136" stroke="#9e9e9e"/>
+  </g>
+  <g fill="#212121" text-anchor="middle" font-weight="600">
+    <text x="60" y="154">0</text>
+    <text x="210" y="154">0.25</text>
+    <text x="360" y="154">0.5</text>
+    <text x="510" y="154">0.75</text>
+    <text x="660" y="154" fill="#9e9e9e">1</text>
+  </g>
+  <g fill="#616161" text-anchor="middle" font-size="12">
+    <text x="60" y="174">every worst</text>
+    <text x="60" y="190">violation high</text>
+    <text x="360" y="174">every worst</text>
+    <text x="360" y="190">violation medium</text>
+    <text x="510" y="174">every worst</text>
+    <text x="510" y="190">violation low</text>
+  </g>
+
+  <g fill="#616161">
+    <text x="60" y="230">The least severe violation has weight 0.25, so the value is at most 1 − 0.25 = 0.75. It is not rescaled to reach 1.</text>
+    <text x="60" y="254">No observed violation is not a point on this line. It is an unavailable measurement, never 1.</text>
+    <text x="60" y="278">A value of 0.75 means violations occurred and all were low. It does not mean nothing went wrong.</text>
+  </g>
+</svg>
