@@ -45,7 +45,7 @@ The report is one HTML file. It opens from disk or from a CI artifact view, with
   | anything else | A note that the report has no description of this state, and the state as recorded. |
 
 - **Execution failure apart from all of those.** How the running of an Attempt ended is its execution status. It is shown in the attempt-level evidence and is not a metric state. An Attempt that did not complete is marked, shows its execution error, and has a dash where its task outcome would be: it is not shown as a failed Task. A metric that left it out says so in its counts, with the reason.
-- **Attempt-level evidence.** Every Attempt in the scorecard has its own block with everything the scorecard records for it: today its identity, Task, execution status, execution error, task outcome with its source, the operational constraints that applied and the violation assessments with their evidence and source. Wherever a metric names an Attempt, in the evidence its value rests on or in the evidence it excluded, the identity links to that Attempt.
+- **Attempt-level evidence.** Every Attempt in the scorecard has its own block with everything the scorecard records for it: today its identity, Task, execution status, execution error, task outcome with its source, the ordered action evidence with its source, the operational constraints that applied and the violation assessments with their evidence and source. Wherever a metric names an Attempt, in the evidence its value rests on or in the evidence it excluded, the identity links to that Attempt.
 
 ## A rendering of the scorecard, and nothing else
 
@@ -64,7 +64,7 @@ How values are written:
 | `true`, `false` | `true`, `false` |
 | `null` | A dash (—): no value is recorded. |
 | An empty list or object | `none` |
-| A field name | The name, with underscores shown as spaces. |
+| A field name | The name, unchanged. A name can be data, such as a tool name in an action-type mapping. |
 
 ### Precision
 

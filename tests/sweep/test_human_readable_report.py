@@ -242,6 +242,17 @@ def test_an_acceptance_assessment_and_violation_assessments_are_shown_as_the_sco
     assert report.value("/attempts/0/violation_assessments/0/violated") == "false"
 
 
+def test_a_field_name_is_shown_unchanged_because_it_can_be_data():
+    scorecard = sweep({"close": ["success", "success"]})
+    # The trajectory metrics key their action-type mapping by tool name, and "get item" is not that tool.
+    scorecard["metrics"][0]["details"]["action_type_mapping"] = {"get_item": "read"}
+
+    report = assert_faithful_rendering(render_report(scorecard), scorecard)
+
+    assert ("get_item", "get_item") in report.keys
+    assert ("action_type_mapping", "action_type_mapping") in report.keys
+
+
 def test_the_report_is_one_self_contained_file():
     report = Report(render_report(sweep({"close": ["success", "error", "failure"]})))
 

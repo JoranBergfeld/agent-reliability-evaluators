@@ -2,7 +2,7 @@
 
 A report marks every scorecard value it shows with where that value is in the scorecard:
 `data-scorecard` holds a JSON Pointer (RFC 6901). A field name is marked with its key in
-`data-key`. Everything else a reader sees is the report's own wording.
+`data-key` and shown unchanged. Everything else a reader sees is the report's own wording.
 """
 
 from __future__ import annotations
@@ -99,7 +99,7 @@ def assert_faithful_rendering(html: str, scorecard: dict[str, Any]) -> Report:
     keys = set(_keys(scorecard))
     for key, label in report.keys:
         assert key in keys, f"the report names a field {key!r} that the scorecard does not have"
-        assert label == key.replace("_", " ")
+        assert label == key
     return report
 
 

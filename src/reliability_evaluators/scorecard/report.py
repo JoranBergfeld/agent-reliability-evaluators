@@ -79,8 +79,7 @@ class _Report:
                 self._attempt(entry, _child(pointer, position), position) for position, entry in enumerate(value)
             )
             return f'<section id="attempts">\n<h2>Attempt-level evidence</h2>\n{_ATTEMPTS_NOTE}\n{attempts}\n</section>'
-        heading = escape(key.replace("_", " "))
-        return f'<section>\n<h2 data-key="{escape(key)}">{heading}</h2>\n{self._render(value, pointer)}\n</section>'
+        return f'<section>\n<h2 data-key="{escape(key)}">{escape(key)}</h2>\n{self._render(value, pointer)}\n</section>'
 
     def _metric(self, entry: dict[str, Any], pointer: str, position: int) -> str:
         promoted = {key for key in ("name", "state") if key in entry and not isinstance(entry[key], (dict, list))}
@@ -170,7 +169,7 @@ def _is_records(value: Any) -> bool:
 
 
 def _key(key: str, scope: str) -> str:
-    return f'<th scope="{scope}" data-key="{escape(key)}">{escape(key.replace("_", " "))}</th>'
+    return f'<th scope="{scope}" data-key="{escape(key)}">{escape(key)}</th>'
 
 
 def _text(value: Any) -> str:
@@ -214,7 +213,6 @@ a{color:var(--link)}
 table{border-collapse:collapse}
 th,td{text-align:left;vertical-align:top;padding:.3rem 1rem .3rem 0;border-bottom:1px solid var(--line)}
 th{font-weight:600;white-space:nowrap}
-th::first-letter,h2[data-key]::first-letter{text-transform:uppercase}
 thead th{border-bottom-width:2px}
 td table{margin:-.3rem 0}
 td tr:last-child>*{border-bottom:0}
@@ -271,7 +269,7 @@ scorecard. Nothing is calculated, combined or rounded for display.</p>
 double-precision floating-point number. A value that floating-point arithmetic cannot hold exactly is shown with \
 the small error it was calculated with.</p>
 <p>A dash (\N{EM DASH}) means that the scorecard records no value for a field. The word none means that a list or \
-a group of fields is empty. Field names are the scorecard's own, with underscores shown as spaces.</p>
+a group of fields is empty. Field names are the scorecard's own.</p>
 <p>This report is one file, with no scripts and no external resources. The platform it was written to governs \
 access to it, its retention and its deletion.</p>
 </footer>
