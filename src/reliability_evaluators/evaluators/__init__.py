@@ -17,6 +17,7 @@ from .result import (
     MetricState,
     Scale,
     ScoringPath,
+    counted,
 )
 
 __all__ = [
@@ -32,5 +33,6 @@ __all__ = [
     "ReliabilityMetric",
     "Scale",
     "ScoringPath",
+    "counted",
     "outcome_consistency",
 ]

@@ -7,11 +7,11 @@ module, so anything it imports must be available in the Foundry code-evaluator s
 from __future__ import annotations
 
 from math import fsum
-from typing import Sequence
+from typing import Iterable
 
 from ..evidence import ExecutionStatus, TaskEvidence, require_unambiguous
 from .catalogue import OUTCOME_CONSISTENCY
-from .result import CountedReason, EvidenceCount, MetricDefinition, MetricResult, Scale
+from .result import EvidenceCount, MetricDefinition, MetricResult, Scale, counted
 
 MINIMUM_ATTEMPTS = 2
 TOO_FEW_ATTEMPTS = "fewer than two Attempts with a task outcome"
@@ -25,8 +25,8 @@ DEFINITION = MetricDefinition(
         "The metric is the mean of the Task values, each eligible Task weighted equally."
     ),
     fidelity_conventions=(
-        "Paper v3 Table 2: (2p - 1)^2, which is 1 - 4p(1 - p). The companion code's normalization "
-        "by each Task's own sample variance is not used.",
+        "Paper v3 Table 2: (2p - 1)^2, which is 1 - 4p(1 - p). The companion code's normalization, "
+        "which divides the sample variance by each Task's own p(1 - p), is not used.",
         "Tasks are weighted equally. Attempts are not pooled across Tasks.",
         "Assumption (spec assumption 11): a Task needs at least two Attempts with a task outcome. "
         "A Task with fewer is excluded with a reason, because the formula would return 1 with no "
@@ -49,8 +49,9 @@ DEFINITION = MetricDefinition(
 )
 
 
-def evaluate(tasks: Sequence[TaskEvidence]) -> MetricResult:
+def evaluate(tasks: Iterable[TaskEvidence]) -> MetricResult:
     """Calculate outcome consistency from Attempts grouped by Task."""
+    tasks = tuple(tasks)
     require_unambiguous(tasks)
     per_task = []
     used_attempts: list[str] = []
@@ -89,14 +90,14 @@ def evaluate(tasks: Sequence[TaskEvidence]) -> MetricResult:
             "tasks": EvidenceCount(
                 total=len(tasks),
                 valid=len(per_task),
-                excluded=_counted(TOO_FEW_ATTEMPTS, excluded_tasks),
+                excluded=counted(TOO_FEW_ATTEMPTS, excluded_tasks),
             ),
             "attempts": EvidenceCount(
                 total=sum(len(task.attempts) for task in tasks),
                 valid=len(used_attempts),
-                missing=_counted("no task outcome recorded", without_outcome),
-                excluded=_counted("execution status is not completed", not_completed)
-                + _counted(f"its Task has {TOO_FEW_ATTEMPTS}", attempts_of_excluded_tasks),
+                missing=counted("no task outcome recorded", without_outcome),
+                excluded=counted("execution status is not completed", not_completed)
+                + counted(f"its Task has {TOO_FEW_ATTEMPTS}", attempts_of_excluded_tasks),
             ),
         },
         "details": {"per_task": per_task},
@@ -111,6 +112,3 @@ def evaluate(tasks: Sequence[TaskEvidence]) -> MetricResult:
     value = fsum(entry["value"] for entry in per_task) / len(per_task)
     return MetricResult.available(DEFINITION, value, **evidence)
 
-
-def _counted(reason: str, ids: list[str]) -> tuple[CountedReason, ...]:
-    return (CountedReason(reason, tuple(ids)),) if ids else ()

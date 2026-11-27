@@ -62,7 +62,10 @@ class Attempt:
             value = getattr(self, name)
             if not isinstance(value, str) or not value.strip():
                 raise EvidenceError(f"an Attempt identifies itself and its Task: {name} is {value!r}")
-        object.__setattr__(self, "execution_status", ExecutionStatus(self.execution_status))
+        try:
+            object.__setattr__(self, "execution_status", ExecutionStatus(self.execution_status))
+        except ValueError:
+            raise EvidenceError(f"{self.execution_status!r} is not an execution status") from None
         if self.task_outcome is not None and not isinstance(self.task_outcome, TaskOutcome):
             raise EvidenceError(
                 f"a task outcome is a TaskOutcome with its source. Got {self.task_outcome!r}"

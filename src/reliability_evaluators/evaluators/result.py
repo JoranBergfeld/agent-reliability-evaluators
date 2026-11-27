@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from enum import Enum
 from math import isfinite
-from typing import Any
+from typing import Any, Iterable
 
 from .catalogue import ReliabilityMetric
 
@@ -80,6 +80,12 @@ class CountedReason:
 
     def to_dict(self) -> dict[str, Any]:
         return {"reason": self.reason, "count": len(self.ids), "ids": list(self.ids)}
+
+
+def counted(reason: str, ids: Iterable[str]) -> tuple[CountedReason, ...]:
+    """One CountedReason for the given identities, or nothing when there are none."""
+    ids = tuple(ids)
+    return (CountedReason(reason, ids),) if ids else ()
 
 
 @dataclass(frozen=True, kw_only=True)

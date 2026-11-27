@@ -1,0 +1,58 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 300" width="640" height="300" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13">
+  <title>Worked example: four Tasks, three of them eligible</title>
+  <desc>steady succeeds 4 of 4 and scores 1. mostly succeeds 3 of 4 and scores 0.25. coin succeeds 1 of 2 and scores 0. once has a single Attempt and is excluded. The mean of the three eligible Task values is 0.4167.</desc>
+  <defs>
+    <g id="success">
+      <circle r="11" fill="#2e7d32"/>
+      <polyline points="-5,0 -1,4 5,-4" fill="none" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+    <g id="failure">
+      <circle r="10" fill="#ffffff" stroke="#c62828" stroke-width="2"/>
+      <path d="M-4,-4 L4,4 M-4,4 L4,-4" stroke="#c62828" stroke-width="2.2" stroke-linecap="round"/>
+    </g>
+  </defs>
+  <rect width="640" height="300" fill="#ffffff"/>
+  <g fill="#616161" font-weight="600">
+    <text x="20" y="30">Task</text>
+    <text x="118" y="30">Attempts</text>
+    <text x="290" y="30">p</text>
+    <text x="390" y="30">Task value (2p − 1)²</text>
+  </g>
+  <line x1="20" y1="42" x2="620" y2="42" stroke="#bdbdbd"/>
+
+  <g fill="#212121">
+    <text x="20" y="75">steady</text>
+    <use href="#success" x="130" y="70"/>
+    <use href="#success" x="160" y="70"/>
+    <use href="#success" x="190" y="70"/>
+    <use href="#success" x="220" y="70"/>
+    <text x="290" y="75">4/4 = 1</text>
+    <text x="390" y="75">(2 × 1 − 1)² = 1</text>
+
+    <text x="20" y="115">mostly</text>
+    <use href="#success" x="130" y="110"/>
+    <use href="#success" x="160" y="110"/>
+    <use href="#success" x="190" y="110"/>
+    <use href="#failure" x="220" y="110"/>
+    <text x="290" y="115">3/4 = 0.75</text>
+    <text x="390" y="115">(2 × 0.75 − 1)² = 0.25</text>
+
+    <text x="20" y="155">coin</text>
+    <use href="#success" x="130" y="150"/>
+    <use href="#failure" x="160" y="150"/>
+    <text x="290" y="155">1/2 = 0.5</text>
+    <text x="390" y="155">(2 × 0.5 − 1)² = 0</text>
+  </g>
+
+  <g fill="#9e9e9e">
+    <text x="20" y="195">once</text>
+    <use href="#success" x="130" y="190" opacity="0.45"/>
+    <text x="290" y="195">not used</text>
+    <text x="390" y="195">excluded: fewer than two Attempts</text>
+  </g>
+
+  <line x1="20" y1="218" x2="620" y2="218" stroke="#bdbdbd"/>
+  <text x="20" y="250" fill="#212121" font-weight="600">Outcome consistency</text>
+  <text x="390" y="250" fill="#1565c0" font-weight="600">(1 + 0.25 + 0) / 3 = 0.4167</text>
+  <text x="20" y="278" fill="#616161">Three eligible Tasks, each weighted equally. Pooling the ten Attempts would give 0.36 instead.</text>
+</svg>

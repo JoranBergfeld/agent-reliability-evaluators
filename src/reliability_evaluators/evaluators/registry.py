@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable, Sequence
+from typing import Callable, Iterable
 
 from ..evidence import TaskEvidence
 from . import outcome_consistency
@@ -15,7 +15,7 @@ class Evaluator:
     """A canonical metric definition together with its calculation."""
 
     definition: MetricDefinition
-    evaluate: Callable[[Sequence[TaskEvidence]], MetricResult]
+    evaluate: Callable[[Iterable[TaskEvidence]], MetricResult]
 
 
 EVALUATORS: dict[str, Evaluator] = {
