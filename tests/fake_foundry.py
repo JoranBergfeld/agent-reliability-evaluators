@@ -17,13 +17,14 @@ live project was observed to behave (docs/managed_scoring/readme.md, "Observed l
 - Every result carries a threshold of 0.5 with a pass or fail label, and the declared range of
   the score is not enforced.
 - A score that is a whole number comes back as an integer.
+- Rows are graded one by one, and an output item names its row by the position of the row.
 
 - An evaluator that raises on one of several items leaves the run completed. The result for that
   item has the status `error`, no score, and the error under its own `sample`. The item itself
   carries no error.
 
-A test scripts what a live project could do to a run: alter the submitted item or the score,
-report an error on a completed item or on one of its results, refuse every request or only
+A test scripts what a live project could do to a run: alter the submitted item or the score
+of a row, report an error on a completed item or on one of its results, refuse every request or only
 the making of a run, or never finish.
 """
 
@@ -37,6 +38,8 @@ from typing import Any, Callable
 from reliability_evaluators.managed_scoring import FoundryRequestError
 from tests.managed_artifact import load_grader
 
+# The sandbox checks and loads the code for every row. Doing it once gives the same grades sooner.
+_GRADERS: dict[str, Callable] = {}
 REFUSED_CALLS = {"compile", "eval", "exec", "globals", "__import__"}
 ENDPOINT = "https://fake.services.ai.azure.com/api/projects/fake"
 VERSIONS_PAGE = 10
@@ -48,9 +51,11 @@ class FakeFoundryProject:
         self,
         *,
         alter_item: Callable[[dict], dict] | None = None,
-        alter_score: Callable[[Any], Any] | None = None,
+        # Given the score and the item of its row, as the evaluator received it.
+        alter_score: Callable[[Any, dict], Any] | None = None,
         sample_error: dict | None = None,
-        result_error: dict | None = None,
+        # An error for every result, or a function of the item of a row that gives the error of that row or None.
+        result_error: dict | Callable[[dict], dict | None] | None = None,
         refuses: FoundryRequestError | None = None,
         refuses_evals: FoundryRequestError | None = None,
         polls_until_finished: int = 0,
@@ -73,6 +78,10 @@ class FakeFoundryProject:
         self.requests: list[tuple[str, str]] = []
         # Every item that was submitted to a run, as it was sent.
         self.submitted_items: list[dict] = []
+
+    def output_items(self) -> list[dict]:
+        """Every output item of every run, as the project returned it."""
+        return copy.deepcopy([item for items in self._output_items.values() for item in items])
 
     def register_other_code(self, name: str, code_text: str) -> str:
         """Register a version of an evaluator as someone else would have. Returns its version."""
@@ -195,17 +204,19 @@ class FakeFoundryProject:
             results = []
             for criterion in self.evals[eval_id]["testing_criteria"]:
                 code_text = self._code_of(criterion)
-                refused = _refused_call(code_text)
-                if refused:
-                    message = f"Invalid grader source: use of builtin '{refused}()' is not allowed in Python graders"
-                    return {"code": "UserError", "message": message}, []
+                if code_text not in _GRADERS:
+                    refused = _refused_call(code_text)
+                    if refused:
+                        message = f"Invalid grader source: use of builtin '{refused}()' is not allowed in Python graders"
+                        return {"code": "UserError", "message": message}, []
+                    _GRADERS[code_text] = load_grader(code_text)
                 try:
-                    score = load_grader(code_text)({}, item)
+                    score = _GRADERS[code_text]({}, item)
                 except Exception:
                     return {"code": "UserError", "message": ALL_FAILED}, []
                 if isinstance(score, bool) or not isinstance(score, (int, float)):
                     return {"code": "UserError", "message": ALL_FAILED}, []
-                results.append(self._result(criterion["name"], score))
+                results.append(self._result(criterion["name"], score, item))
             items.append(
                 {
                     "object": "eval.run.output_item",
@@ -227,14 +238,15 @@ class FakeFoundryProject:
         (version,) = [v for v in versions if v["version"] == pinned] if pinned else versions[-1:]
         return version["definition"]["code_text"]
 
-    def _result(self, name: str, score: float) -> dict:
+    def _result(self, name: str, score: float, item: dict) -> dict:
         if self._alter_score:
-            score = self._alter_score(score)
+            score = self._alter_score(score, item)
         if isinstance(score, float) and score.is_integer():
             score = int(score)
         if self._sample_error:
             return {"type": "azure_ai_evaluator", "name": name, "metric": name, "score": None, "status": "error"}
-        if self._result_error:
+        result_error = self._result_error(item) if callable(self._result_error) else self._result_error
+        if result_error:
             return {
                 "type": "azure_ai_evaluator",
                 "name": name,
@@ -245,7 +257,7 @@ class FakeFoundryProject:
                 "threshold": 0.5,
                 "passed": None,
                 "status": "error",
-                "sample": {"input": [], "output": [], "usage": None, "error": self._result_error},
+                "sample": {"input": [], "output": [], "usage": None, "error": result_error},
             }
         return {
             "type": "azure_ai_evaluator",
