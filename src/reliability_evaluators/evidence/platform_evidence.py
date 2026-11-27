@@ -58,7 +58,8 @@ class PlatformEvidence:
                 tool_calls = (self.tool_calls,)
             if not all(isinstance(call, ActionEvent) for call in tool_calls):
                 raise EvidenceError(
-                    f"the tool calls a platform exposed are a sequence of ActionEvent, in order. Got {self.tool_calls!r}"
+                    "the tool calls a platform exposed are a sequence of ActionEvent, in order. "
+                    f"Got {self.tool_calls!r}"
                 )
             object.__setattr__(self, "tool_calls", tool_calls)
 

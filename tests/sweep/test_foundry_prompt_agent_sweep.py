@@ -169,6 +169,17 @@ def test_the_tool_call_count_is_measured_so_that_resource_consistency_includes_i
     assert resource_consistency["value"] == pytest.approx(0.9459594689067654, abs=1e-12)
 
 
+def test_a_response_without_a_tool_call_is_a_confirmed_empty_sequence_and_a_count_of_zero(todo_service):
+    scorecard = sweep(todo_service, ["does nothing", "completes"])
+
+    answered_only = scorecard["attempts"][0]
+    assert answered_only["execution_status"] == "completed"
+    assert answered_only["task_outcome"] == {"success": False, "source": OUTCOME_SOURCE}
+    # An empty list, not null: the response arrived and holds no tool call.
+    assert answered_only["platform_evidence"]["tool_calls"] == []
+    assert [m["value"] for m in answered_only["resource_measurements"] if m["resource_type"] == "tool_calls"] == [0]
+
+
 def test_the_tool_calls_the_platform_exposed_can_be_declared_as_the_action_evidence(todo_service):
     # read, create, read, delete, update against read, create, read, update, delete.
     # Sequential: two substitutions, 2 / 5 = 0.4, so 1 - 0.4 = 0.6.
