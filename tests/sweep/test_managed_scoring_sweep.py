@@ -159,7 +159,7 @@ def test_the_scorecard_says_which_evaluator_and_which_run_the_value_came_from():
     assert (managed_scoring["eval_id"], managed_scoring["run_id"]) == ("eval_1", "evalrun_1")
     assert managed_scoring["output_item_id"] == "1"
     encoded = managed_scoring["encoded_result"]
-    assert encoded["run_id"] == "evalrun_2"
+    assert encoded["run_ids"] == ["evalrun_2"]
     # Six bytes to a part, and one submitted row for each part.
     assert encoded["parts"] == -(-encoded["bytes"] // 6)
     assert [item["result_part"] for item in foundry.submitted_items] == ["value", "size"] + [
@@ -370,6 +370,55 @@ def test_a_sweep_that_was_cut_short_gives_a_partial_scorecard_on_the_managed_pat
     )
     assert outcome_consistency["scoring_path"] == "foundry_managed"
     assert [missing["kind"] for missing in scorecard["missing"]] == ["attempt_evidence", "metric_result"]
+
+
+# A row that Foundry did not grade. It was seen to return one row of a run as an error, in a run whose
+# other rows it graded, where the evaluator had not raised.
+
+GRADING_ERROR = {
+    "code": "ProviderGradingError",
+    "message": "An error occurred during grading (provider run eval_x/evalrun_x; item 6)",
+}
+
+
+def not_graded(part, times):
+    """Foundry returns the row that asks for one part as an error that many times, and grades it after that."""
+    remaining = [times]
+
+    def error(item):
+        if item["result_part"] == part and remaining[0]:
+            remaining[0] -= 1
+            return GRADING_ERROR
+        return None
+
+    return error
+
+
+def test_a_part_of_the_result_that_foundry_did_not_grade_is_asked_for_again():
+    foundry = FakeFoundryProject(result_error=not_graded("7", times=1))
+
+    outcome_consistency = metric(sweep(ONE_ATTEMPT_EACH, foundry))
+
+    assert outcome_consistency["state"] == "unavailable"
+    assert outcome_consistency["reason"] == "no Task has at least two Attempts with a task outcome"
+    assert outcome_consistency["counts"]["attempts"]["excluded"][0]["ids"] == ["close/attempt-1", "archive/attempt-1"]
+    # The second run returned every part but one. A third run was asked for that part and for nothing else.
+    encoded = outcome_consistency["managed_scoring"]["encoded_result"]
+    assert encoded["run_ids"] == ["evalrun_2", "evalrun_3"]
+    asked_for = [item["result_part"] for item in foundry.submitted_items]
+    assert asked_for == ["value", "size"] + [str(number) for number in range(1, encoded["parts"] + 1)] + ["7"]
+
+
+def test_a_plain_value_that_foundry_did_not_grade_is_asked_for_again():
+    foundry = FakeFoundryProject(result_error=not_graded("value", times=2))
+
+    outcome_consistency = metric(sweep(TWO_TASKS, foundry))
+
+    assert outcome_consistency["value"] == pytest.approx(0.68, abs=1e-12)
+    managed_scoring = outcome_consistency["managed_scoring"]
+    # The value is attributed to the run that returned it: the third, which asked for it alone.
+    assert (managed_scoring["run_id"], managed_scoring["output_item_id"]) == ("evalrun_3", "1")
+    assert [item["result_part"] for item in foundry.submitted_items][:4] == ["value", "size", "value", "value"]
 
 
 # Registration in the customer's project.

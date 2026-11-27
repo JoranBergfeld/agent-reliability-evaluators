@@ -54,7 +54,8 @@ class FakeFoundryProject:
         # Given the score and the item of its row, as the evaluator received it.
         alter_score: Callable[[Any, dict], Any] | None = None,
         sample_error: dict | None = None,
-        result_error: dict | None = None,
+        # An error for every result, or a function of the item of a row that gives the error of that row or None.
+        result_error: dict | Callable[[dict], dict | None] | None = None,
         refuses: FoundryRequestError | None = None,
         refuses_evals: FoundryRequestError | None = None,
         polls_until_finished: int = 0,
@@ -244,7 +245,8 @@ class FakeFoundryProject:
             score = int(score)
         if self._sample_error:
             return {"type": "azure_ai_evaluator", "name": name, "metric": name, "score": None, "status": "error"}
-        if self._result_error:
+        result_error = self._result_error(item) if callable(self._result_error) else self._result_error
+        if result_error:
             return {
                 "type": "azure_ai_evaluator",
                 "name": name,
@@ -255,7 +257,7 @@ class FakeFoundryProject:
                 "threshold": 0.5,
                 "passed": None,
                 "status": "error",
-                "sample": {"input": [], "output": [], "usage": None, "error": self._result_error},
+                "sample": {"input": [], "output": [], "usage": None, "error": result_error},
             }
         return {
             "type": "azure_ai_evaluator",

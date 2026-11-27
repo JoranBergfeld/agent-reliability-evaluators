@@ -260,9 +260,11 @@ GRADING_ERROR = {
         ),
         (
             # What a live project returned for an item its evaluator raised on, in a run that completed.
+            # Here it returns it for every row, however often it is asked: the third run is the last.
             FakeFoundryProject(result_error=GRADING_ERROR),
-            "output item '1' of run evalrun_1 of eval_1 has a result for 'outcome_consistency' in status 'error': "
-            f"{GRADING_ERROR}",
+            "output item '1' of run evalrun_3 of eval_1 has a result for 'outcome_consistency' in status 'error': "
+            f"{GRADING_ERROR}. Foundry was asked 3 times for what did not come back, and did not grade 2 of the "
+            "rows of the last run",
         ),
         (
             FakeFoundryProject(alter_score=only("value", lambda score: 1.1)),
@@ -368,6 +370,29 @@ def test_a_result_too_large_to_come_back_in_one_run_is_a_failure_and_no_part_of_
     assert (metric(scorecard)["state"], metric(scorecard)["value"]) == (None, None)
     assert scorecard["status"] == "partial"
     assert len(scorecard["attempts"]) == 750
+
+
+def test_a_part_that_foundry_never_grades_is_asked_for_three_times_and_then_leaves_no_result():
+    # Foundry returns the row for part 7 as an error every time. Every other row is graded.
+    def part_seven_is_not_graded(item):
+        return GRADING_ERROR if item["result_part"] == "7" else None
+
+    foundry = FakeFoundryProject(result_error=part_seven_is_not_graded)
+
+    scorecard = sweep(ONE_ATTEMPT_EACH, foundry)
+
+    outcome_consistency = metric(scorecard)
+    # The second run and two more asked for it. The last of them had that one row, as its first output item.
+    assert outcome_consistency["managed_scoring"]["error"] == (
+        "output item '1' of run evalrun_4 of eval_1 has a result for 'outcome_consistency' in status 'error': "
+        f"{GRADING_ERROR}. Foundry was asked 3 times for what did not come back, and did not grade 1 of the "
+        "rows of the last run"
+    )
+    assert [item["result_part"] for item in foundry.submitted_items].count("7") == 3
+    assert list(foundry.runs) == ["evalrun_1", "evalrun_2", "evalrun_3", "evalrun_4"]
+    # The parts that did come back are not reported as a result.
+    assert (outcome_consistency["state"], outcome_consistency["reason"], outcome_consistency["counts"]) == (None, None, {})
+    assert scorecard["status"] == "partial"
 
 
 def test_a_failure_of_the_run_for_the_encoded_result_names_that_run():
