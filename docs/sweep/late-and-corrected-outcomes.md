@@ -154,11 +154,27 @@ Every metric the earlier scorecard scored is scored again, by the same Evaluator
 - A metric that is calculated from task outcomes uses the corrected outcome. Today these are outcome consistency, fault robustness, calibration, strict confidence discrimination and the Brier-based score.
 - A metric that is not calculated from task outcomes keeps its result. Today these are the two trajectory metrics, resource consistency, constraint compliance and conditional harm severity.
 - An Attempt that an Evaluator was not given stays out of that metric. Correcting an Attempt made under the variation of an experiment does not change a metric that is calculated from the baseline. It does change [fault robustness](../fault_robustness/readme.md) when the variation is a fault: that metric is given the Attempts under both conditions, so a correction under either one changes it.
-- The declared experiments are carried over as they were.
+- The declared experiments are carried over as they were, and so is everything else the scorecard records about how the sweep was executed. See the next section.
 
 **The corrected outcome does not depend on the confidence rating.** The outcome is the one you supply. The recalculation does not read the rating to decide it and does not change the rating. An Attempt the agent rated 100 can be corrected to a failure, and the pair then counts against the agent.
 
 The new results are scored in your own process and are attributed to that scoring path.
+
+## A partial scorecard, an execution failure and retries
+
+A recalculation makes no Attempt. So nothing about how the sweep was [executed](execution-limits.md) changes, and a correction cannot make up for what the sweep did not collect.
+
+**The record of the execution is carried over unchanged.** These parts of the new scorecard are the earlier scorecard's: `status`, `concurrency`, `experiments` and `tasks_without_experiment` with their `attempt_set`, `limits` and `execution`, and the entries of `missing` for Attempts that were not made or did not complete. A partial scorecard stays partial, and still names what it is missing and why. Recalculating does not hide that the earlier run was cut short.
+
+**A metric that had no result still has none.** A metric with an `execution_failure` in the earlier scorecard is not scored again. Its entry in the new scorecard is the earlier entry as it was, with the same `execution_failure`, and it stays listed in `missing`. This holds even when the outcomes you supply would now permit a calculation: for example when a sweep was cancelled early, its task outcomes were left open with `NO_TASK_OUTCOME_YET`, and they are supplied afterwards. The outcomes are recorded on their Attempts all the same, with the record that they replaced. To get a value for such a metric, run the sweep again.
+
+The reason is that the new scorecard is to differ from the superseded one by the corrected outcomes and by nothing else. A metric whose Attempts were cut short had no result to correct, and an outcome supplied later says nothing about the Attempts that were never made or never completed.
+
+**A metric that had a result is scored as the sweep would have scored it.** It is scored again from the same Attempts, and where the sweep cut those short is carried over in its `cut_short`. If the corrected outcomes leave its Evaluator unable to calculate a value from Attempts that were cut short, the metric has an execution failure in the new scorecard, as it would have had in the sweep.
+
+**A retried Attempt and its retry stay two Attempts.** Each is read and written back with its own identity, its own execution status and its `retry_of`. A correction names one of them by identity. Correcting the retry does not touch the Attempt it retries, which still has no task outcome.
+
+**No task outcome can be supplied for an Attempt that did not complete.** That includes an Attempt that timed out, one that answered after its time limit, one that was cancelled and one that was retried. In a sweep a late answer is not scored, so that the time limit holds for every Attempt alike, and a label supplied afterwards does not change that. Such an Attempt is not a task failure, and a recalculation never makes it count as one: a correction that names it fails the recalculation, and nothing is superseded.
 
 ## When a recalculation fails
 
@@ -169,11 +185,15 @@ A recalculation either gives a new scorecard or raises `RecalculationFailed`. Th
 | A correction names an Attempt that is not in the supplied evidence | `there is no Attempt '...' in the evidence` |
 | A correction matches more than one Attempt in the supplied evidence | `more than one Attempt has the identity '...'` |
 | Two corrections name the same Attempt | `more than one task outcome is supplied for '...'` |
-| A correction names an Attempt whose execution did not complete | `the execution of '...' did not complete`. An execution failure is not a task failure, and no label makes it one. |
+| A correction names an Attempt whose execution did not complete, which includes one that timed out, answered late, was cancelled or was retried | `the execution of '...' did not complete`. An execution failure is not a task failure, and no label makes it one. |
 | No correction is given | `no task outcome was supplied or corrected` |
 | The supplied scorecard is not a scorecard this version reads | `the supplied evidence does not validate`, followed by what is wrong: the schema version, a missing part, or a part this version does not know |
 | An Attempt in the supplied evidence is not valid evidence, or is not exactly what this version records for it | `the supplied evidence does not validate`, with the Attempt and the field |
 | The supplied evidence, scored as it is, does not give the earlier results | `it does not reproduce the earlier result of '...'`, with the parts that differ |
+| An execution record under `experiments` or `tasks_without_experiment` is not exactly what this version records, or its limits are not execution limits | `the supplied evidence does not validate`, with the experiment or the Task |
+| A retry names an Attempt that is not in the supplied evidence | `Attempt '...' retries '...', which is not in the attempt-level evidence` |
+| The `status`, `missing` or `concurrency` of the earlier scorecard is not what its evidence and its execution records give | `it does not reproduce the earlier 'status'`, or the part that differs |
+| A metric says its Attempts were cut short in an experiment or Task that the scorecard has no execution record of | `the result of '...' says its Attempts were cut short in '...'` |
 | A metric needs a declaration that was not given | `'...' needs action evidence to be declared` |
 | The earlier scorecard assessed an acceptance criterion that is not declared again | `the earlier scorecard assessed an acceptance criterion for '...'` |
 

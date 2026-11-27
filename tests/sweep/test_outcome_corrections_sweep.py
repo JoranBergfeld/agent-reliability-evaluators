@@ -27,6 +27,7 @@ from reliability_evaluators.sweep import (
     ActionEvidenceDeclaration,
     Condition,
     ConfiguredEvaluator,
+    ExecutionLimits,
     Experiment,
     RecalculationFailed,
     Task,
@@ -38,8 +39,11 @@ from tests.fakes import (
     FakeAgentTarget,
     FakeControls,
     FakeScriptedTodoAgent,
+    FakeSelfAssessingTodoAgent,
     FakeTodoAgent,
     FakeTodoService,
+    cancelling,
+    taking,
     todo_list,
 )
 from tests.report_reader import assert_faithful_rendering
@@ -793,7 +797,17 @@ def test_the_supplied_scorecard_is_left_as_it_was_and_the_new_scorecard_is_json_
 
     assert earlier == as_supplied
     assert json.loads(to_json(recalculated)) == recalculated
-    assert set(recalculated) == {"schema_version", "metrics", "experiments", "attempts", "superseded_results"}
+    assert set(recalculated) == {
+        "schema_version",
+        "status",
+        "missing",
+        "concurrency",
+        "metrics",
+        "experiments",
+        "tasks_without_experiment",
+        "attempts",
+        "superseded_results",
+    }
     recalculated["superseded_results"][0]["metrics"][0]["value"] = 1
     recalculated["attempts"][0]["task_outcome"]["success"] = False
     assert earlier == as_supplied
@@ -1261,3 +1275,308 @@ def test_corrections_given_as_they_are_produced_are_all_recorded():
         "close/attempt-3",
         "close/attempt-4",
     ]
+
+
+# What a scorecard records about how the sweep was executed. A correction concerns none of it.
+EXECUTION_RECORD = ("status", "missing", "concurrency", "experiments", "tasks_without_experiment")
+
+
+def limited_sweep(
+    script, *, attempts=None, limits=None, honours_time_limits=True, not_known_yet=(), ratings=None, **options
+):
+    """Run a sweep of Tasks under execution limits, which the caller can cancel.
+
+    A Task plans one Attempt per scripted behaviour, unless `attempts` gives its count by
+    task_id. `limits` are the execution limits of every Task. `not_known_yet` names the
+    Attempts whose task outcome the task-success rule cannot decide during the sweep.
+    `ratings` gives the fake agent's answer to the confidence request of each Attempt.
+    """
+    target = FakeAgentTarget(script, honours_time_limits=honours_time_limits, confidence=ratings)
+
+    def item_is_done(attempt, response):
+        if attempt.attempt_id in not_known_yet:
+            return NO_TASK_OUTCOME_YET
+        return TaskOutcome(success=target.service_state[attempt.attempt_id] == "done", source=SOURCE)
+
+    tasks = [
+        Task(
+            task_id=task_id,
+            prompt=f"Do {task_id}.",
+            success_rule=item_is_done,
+            shareable_success_rule=RULE,
+            attempts=(attempts or {}).get(task_id, len(behaviours)),
+            limits=limits or ExecutionLimits(),
+        )
+        for task_id, behaviours in script.items()
+    ]
+    return supplied(
+        run_sweep(
+            **{
+                "tasks": tasks,
+                "agent_target": target,
+                "metrics": ["outcome_consistency"],
+                "cancellation": lambda: target.cancel_requested,
+                "clock": target.clock,
+                **options,
+            }
+        )
+    )
+
+
+def executions(scorecard):
+    return [(entry["attempt_id"], entry["execution_status"], entry["retry_of"]) for entry in scorecard["attempts"]]
+
+
+def test_a_partial_scorecard_with_retries_and_a_timed_out_attempt_is_recalculated_and_stays_as_partial_as_it_was():
+    # Five planned Attempts, each retried once at most. The second fails to execute and its retry
+    # fails the Task. The third times out, and so does its retry.
+    # Earlier, scored: success, failure (the retry), failure, failure. p = 1/4 and (2 * 1/4 - 1)^2 = 0.25.
+    # The retry is corrected to a success: p = 2/4 and the value is 0.
+    earlier = limited_sweep(
+        {"close": ["success", "error", "failure", taking(45, "success"), taking(45, "success"), "failure", "failure"]},
+        attempts={"close": 5},
+        limits=ExecutionLimits(attempt_timeout_seconds=30, max_retries=1),
+    )
+    assert metric(earlier)["value"] == 0.25
+    assert earlier["status"] == "partial"
+
+    recalculated = recalculate(
+        earlier_scorecard=earlier, outcome_corrections=[corrected("close/attempt-2/retry-1", success=True)]
+    )
+
+    assert metric(recalculated)["value"] == 0
+    assert recalculated["superseded_results"][0]["metrics"][0]["value"] == 0.25
+    for part in EXECUTION_RECORD:
+        assert recalculated[part] == earlier[part]
+    assert recalculated["status"] == "partial"
+    assert [entry["attempts_not_completed"][0]["attempt_id"] for entry in recalculated["missing"]] == [
+        "close/attempt-3/retry-1"
+    ]
+    # A retried Attempt and its retry stay two Attempts, and only the one that was named is corrected.
+    assert executions(recalculated) == executions(earlier)
+    assert executions(recalculated)[1:5] == [
+        ("close/attempt-2", "retried", None),
+        ("close/attempt-2/retry-1", "completed", "close/attempt-2"),
+        ("close/attempt-3", "retried", None),
+        ("close/attempt-3/retry-1", "timed_out", "close/attempt-3"),
+    ]
+    assert attempt(recalculated, "close/attempt-2") == attempt(earlier, "close/attempt-2")
+    assert attempt(recalculated, "close/attempt-2/retry-1")["task_outcome"] == {"success": True, "source": REVIEW}
+    assert json.loads(to_json(recalculated)) == recalculated
+
+
+def test_a_recalculation_keeps_the_limits_and_the_execution_of_an_experiment_that_was_cut_off_by_its_time_limit():
+    # An invocation takes 2 seconds and the experiment may take 3, so two of its three Attempts
+    # are made. Under continuing state the list holds one item and then two: p = 1/2, value 0.
+    # The second Attempt is corrected to a success: p = 2/2, value 1.
+    service = FakeTodoService(["add"])
+    agent = FakeSelfAssessingTodoAgent(service)
+    experiment = Experiment(
+        experiment_id="add-item",
+        task=Task(
+            task_id="add",
+            prompt="Add one item to the list.",
+            success_rule=lambda attempt, response: TaskOutcome(
+                success=len(service.lists.get(todo_list("add"), [])) == 1, source=SOURCE
+            ),
+            attempts=3,
+            limits=ExecutionLimits(total_timeout_seconds=3),
+        ),
+        agent_configuration={"agent": "todo-agent", "version": "3"},
+        starting_state="continuing",
+        baseline=Condition(condition_id="baseline", description="The to-do service accepts every request."),
+        variation=None,
+        controls=FakeControls(service),
+        write_capable=True,
+        authorized_resources=[todo_list("add")],
+    )
+    earlier = supplied(
+        run_sweep(experiments=[experiment], agent_target=agent, metrics=["outcome_consistency"], clock=agent.clock)
+    )
+    assert metric(earlier)["value"] == 0
+
+    recalculated = recalculate(
+        earlier_scorecard=earlier, outcome_corrections=[corrected("add-item/baseline/attempt-2", success=True)]
+    )
+
+    assert metric(recalculated)["value"] == 1
+    for part in EXECUTION_RECORD:
+        assert recalculated[part] == earlier[part]
+    (recorded,) = recalculated["experiments"]
+    assert recorded["limits"] == {"attempt_timeout_seconds": None, "total_timeout_seconds": 3, "max_retries": 0}
+    assert (recorded["execution"]["status"], recorded["execution"]["attempts_not_made"]) == ("timed_out", 1)
+    assert recalculated["status"] == "partial"
+
+
+def test_a_recalculation_keeps_the_record_of_each_set_of_attempts():
+    earlier, native, effects = sweep_with_an_evaluator_configured_on_its_own()
+
+    recalculated = recalculate(
+        earlier_scorecard=earlier,
+        outcome_corrections=[corrected("close/attempt-2", success=True)],
+        metrics=[ConfiguredEvaluator(metric_id=DISTRIBUTIONAL, action_evidence=effects)],
+        action_evidence=native,
+    )
+
+    assert [(entry["task_id"], entry["attempt_set"]) for entry in recalculated["tasks_without_experiment"]] == [
+        ("close", 1),
+        ("close", 2),
+    ]
+    for part in EXECUTION_RECORD:
+        assert recalculated[part] == earlier[part]
+    assert recalculated["status"] == "complete"
+
+
+def test_an_outcome_supplied_later_does_not_turn_an_execution_failure_into_a_value():
+    # The caller cancels while the second of three Attempts is in flight, and the task outcomes
+    # of the two that were made are not known during the sweep. The Attempts were cut short, so
+    # outcome consistency has no result. The outcomes are supplied later: a success and a failure.
+    # Scoring them would give p = 1/2 and the value 0. The metric still has no result.
+    earlier = limited_sweep(
+        {"close": ["success", cancelling("failure"), "success"]},
+        not_known_yet={"close/attempt-1", "close/attempt-2"},
+    )
+    assert metric(earlier)["state"] is None
+    assert metric(earlier)["execution_failure"]["task_ids"] == ["close"]
+
+    recalculated = recalculate(
+        earlier_scorecard=earlier,
+        outcome_corrections=[
+            corrected("close/attempt-1", success=True),
+            corrected("close/attempt-2", success=False),
+        ],
+    )
+
+    assert metric(recalculated) == metric(earlier)
+    assert metric(recalculated)["value"] is None
+    assert recalculated["status"] == "partial"
+    assert recalculated["missing"] == earlier["missing"]
+    assert [entry["kind"] for entry in recalculated["missing"]] == ["attempt_evidence", "metric_result"]
+    # The outcomes are on the Attempts all the same, each with the record that it had none before.
+    assert [entry["task_outcome"]["success"] for entry in recalculated["attempts"]] == [True, False]
+    assert attempt(recalculated, "close/attempt-1")["superseded_task_outcomes"] == [
+        {"task_outcome": None, "correction_provenance": PROVENANCE}
+    ]
+    assert recalculated["superseded_results"][0]["metrics"][0] == metric(earlier)
+    assert_faithful_rendering(render_report(recalculated), recalculated)
+
+
+def test_a_correction_that_leaves_nothing_to_calculate_from_attempts_that_were_cut_short_is_an_execution_failure():
+    # Each Attempt takes 40 seconds and the three together may take 60, so two are made: a success
+    # rated 90 and a failure rated 10. Earlier: one success/failure pair, and the success has the
+    # higher rating: 1 / 1 = 1. The failure is corrected to a success, so no pair is left to compare.
+    # In a sweep that would be an execution failure, because the Attempts were cut short. It is here.
+    earlier = limited_sweep(
+        {"close": [taking(40, "success"), taking(40, "failure"), taking(40, "success")]},
+        limits=ExecutionLimits(total_timeout_seconds=60),
+        ratings={"close/attempt-1": "90", "close/attempt-2": "10"},
+        metrics=["strict_confidence_discrimination"],
+    )
+    discrimination = "strict_confidence_discrimination"
+    assert metric(earlier, discrimination)["value"] == 1
+    assert metric(earlier, discrimination)["cut_short"] == {"experiment_ids": [], "task_ids": ["close"]}
+    assert [entry["kind"] for entry in earlier["missing"]] == ["attempt_evidence"]
+
+    recalculated = recalculate(
+        earlier_scorecard=earlier, outcome_corrections=[corrected("close/attempt-2", success=True)]
+    )
+
+    current = metric(recalculated, discrimination)
+    assert current["state"] is None
+    assert current["value"] is None
+    assert current["execution_failure"]["task_ids"] == ["close"]
+    assert current["cut_short"] == metric(earlier, discrimination)["cut_short"]
+    assert [entry["kind"] for entry in recalculated["missing"]] == ["attempt_evidence", "metric_result"]
+    assert recalculated["missing"][0] == earlier["missing"][0]
+    assert recalculated["status"] == "partial"
+    (superseded,) = recalculated["superseded_results"]
+    assert metric(superseded, discrimination)["value"] == 1
+
+
+@pytest.mark.parametrize(
+    ("script", "options", "named"),
+    [
+        # It reached its time limit, and the agent target stopped there.
+        (["success", taking(45, "failure"), "success"], {}, "close/attempt-2"),
+        # It answered after its time limit: a late answer is not scored, in a sweep or afterwards.
+        (["success", taking(45, "failure"), "success"], {"honours_time_limits": False}, "close/attempt-2"),
+        # Its invocation was aborted when the sweep was cancelled.
+        (["success", "success", cancelling("aborted")], {}, "close/attempt-3"),
+        # It failed to execute and was made again. Its retry is another Attempt.
+        (["success", "error", "success", "failure"], {"attempts": {"close": 3}}, "close/attempt-2"),
+    ],
+)
+def test_no_task_outcome_can_be_supplied_for_an_attempt_that_timed_out_was_late_was_cancelled_or_was_retried(
+    script, options, named
+):
+    earlier = limited_sweep(
+        {"close": script}, limits=ExecutionLimits(attempt_timeout_seconds=30, max_retries=1), **options
+    )
+    assert attempt(earlier, named)["execution_status"] in ("timed_out", "cancelled", "retried")
+
+    with pytest.raises(RecalculationFailed, match=f"the execution of '{named}' did not complete"):
+        recalculate(earlier_scorecard=earlier, outcome_corrections=[corrected(named, success=False)])
+
+
+def in_execution_of(task_id, **record):
+    """The execution record of a Task given without an experiment, with some of it changed."""
+
+    def change(scorecard):
+        (entry,) = [entry for entry in scorecard["tasks_without_experiment"] if entry["task_id"] == task_id]
+        entry["execution"].update(record)
+
+    return changed(change)
+
+
+@pytest.mark.parametrize(
+    ("supply", "problem"),
+    [
+        (without("status"), "it records no status"),
+        (changed(lambda scorecard: scorecard.update(status="complete")), "does not reproduce the earlier 'status'"),
+        (changed(lambda scorecard: scorecard["missing"].pop()), "does not reproduce the earlier 'missing'"),
+        (
+            changed(lambda scorecard: scorecard["missing"][0].update(reason="the agent was slow")),
+            "does not reproduce the earlier 'missing'",
+        ),
+        (without("concurrency"), "concurrency"),
+        (
+            changed(lambda scorecard: scorecard["concurrency"].update(mode="concurrent")),
+            "does not reproduce the earlier 'concurrency'",
+        ),
+        (without("tasks_without_experiment"), "tasks_without_experiment"),
+        (in_execution_of("close", status="exploded"), "'close'.*'exploded'"),
+        # Three of its four planned Attempts completed.
+        (in_execution_of("close", attempts_completed=4), "'close'.*is not what this version records"),
+        (in_execution_of("close", attempts_abandoned=1), "'close'.*is not what this version records"),
+        (
+            changed(lambda scorecard: scorecard["tasks_without_experiment"][0]["limits"].update(max_retries=-1)),
+            "'close'.*max_retries",
+        ),
+        (
+            changed(lambda scorecard: attempt(scorecard, "close/attempt-2/retry-1").pop("retry_of")),
+            "'close/attempt-2/retry-1'.*retry_of",
+        ),
+        (
+            changed(lambda scorecard: attempt(scorecard, "close/attempt-2/retry-1").update(retry_of="close/attempt-9")),
+            "'close/attempt-2/retry-1' retries 'close/attempt-9', which is not in the attempt-level evidence",
+        ),
+        (
+            changed(lambda scorecard: metric(scorecard).update(cut_short={"experiment_ids": ["x"], "task_ids": []})),
+            "'outcome_consistency'.*cut short.*'x'",
+        ),
+        (changed(lambda scorecard: metric(scorecard).pop("cut_short")), "'outcome_consistency'.*cut short"),
+    ],
+)
+def test_an_execution_record_that_does_not_validate_or_is_not_reproduced_fails_the_recalculation(supply, problem):
+    earlier = supply(
+        limited_sweep(
+            {"close": ["success", "error", "failure", taking(45, "success"), taking(45, "success"), "failure"]},
+            attempts={"close": 4},
+            limits=ExecutionLimits(attempt_timeout_seconds=30, max_retries=1),
+        )
+    )
+
+    with pytest.raises(
+        RecalculationFailed, match=f"recalculation failed: the supplied evidence does not validate: .*{problem}"
+    ):
+        recalculate(earlier_scorecard=earlier, outcome_corrections=[corrected("close/attempt-1", success=False)])

@@ -138,8 +138,16 @@ class LifecycleStep:
 
 
 class ExperimentStatus(str, Enum):
-    """How the running of an experiment ended. This is not the state of a metric."""
+    """How the making of the Attempts planned for an experiment ended. This is not the state of a metric.
 
+    The Attempts planned for a Task given without an experiment end in one of the same ways.
+    """
+
+    # Every planned Attempt was made. Whether each one completed is its own execution status.
     COMPLETED = "completed"
     # Attempts that depended on state a customer control did not provide were not made.
     STOPPED = "stopped"
+    # The time limit the customer set for all the Attempts together was reached first.
+    TIMED_OUT = "timed_out"
+    # The sweep was cancelled first.
+    CANCELLED = "cancelled"

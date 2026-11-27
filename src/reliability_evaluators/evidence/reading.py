@@ -42,6 +42,13 @@ def read_attempts(recorded: Any) -> tuple[Attempt, ...]:
         if attempt.attempt_id in seen:
             raise EvidenceError(f"more than one Attempt has the identity {attempt.attempt_id!r}")
         seen.add(attempt.attempt_id)
+    for attempt in attempts:
+        # A retry and the Attempt it retries are two Attempts, and the second is in the evidence too.
+        if attempt.retry_of is not None and attempt.retry_of not in seen:
+            raise EvidenceError(
+                f"Attempt {attempt.attempt_id!r} retries {attempt.retry_of!r}, "
+                "which is not in the attempt-level evidence"
+            )
     return attempts
 
 
@@ -83,6 +90,7 @@ def _attempt(recorded: Any) -> Attempt:
         "task_id",
         "execution_status",
         "execution_error",
+        "retry_of",
         "task_outcome",
         "superseded_task_outcomes",
         "action_evidence",

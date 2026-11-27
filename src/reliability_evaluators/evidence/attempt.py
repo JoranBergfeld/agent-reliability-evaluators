@@ -20,10 +20,18 @@ def _require_text(owner: str, **fields: Any) -> None:
 
 
 class ExecutionStatus(str, Enum):
-    """How the execution of an Attempt ended. This is not the task outcome."""
+    """How the running of an Attempt or an experiment ended. This is not the task outcome.
+
+    Only a completed Attempt has a task outcome. Every other status is an execution that
+    did not complete, and is never a failed Task.
+    """
 
     COMPLETED = "completed"
     FAILED = "failed"
+    TIMED_OUT = "timed_out"
+    CANCELLED = "cancelled"
+    # The execution did not complete and the Attempt was made again. The retry is another Attempt.
+    RETRIED = "retried"
     # A customer control could not prepare the state or apply the condition. The agent was not invoked.
     SETUP_FAILED = "setup_failed"
     # The verify control did not show that the intended condition occurred.
@@ -268,6 +276,8 @@ class Attempt:
     superseded_task_outcomes: tuple[SupersededTaskOutcome, ...] = ()
     # Why the execution did not complete, when it did not.
     execution_error: str | None = None
+    # The identity of the Attempt this one retries. A retry never replaces that Attempt.
+    retry_of: str | None = None
     # The actions the agent took, in order. None means they were not recorded, which is
     # not the same as a recording with no events.
     action_evidence: ActionEvidence | None = None
@@ -299,6 +309,14 @@ class Attempt:
             object.__setattr__(self, "execution_status", ExecutionStatus(self.execution_status))
         except ValueError:
             raise EvidenceError(f"{self.execution_status!r} is not an execution status") from None
+        retry_of = self.retry_of
+        if retry_of is not None and (
+            not isinstance(retry_of, str) or not retry_of.strip() or retry_of == self.attempt_id
+        ):
+            raise EvidenceError(
+                f"a retry identifies the other Attempt it retries: retry_of is {retry_of!r} "
+                f"for Attempt {self.attempt_id!r}"
+            )
         if self.task_outcome is not None and not isinstance(self.task_outcome, TaskOutcome):
             raise EvidenceError(
                 f"a task outcome is a TaskOutcome with its source. Got {self.task_outcome!r}"
@@ -421,6 +439,7 @@ class Attempt:
             "task_id": self.task_id,
             "execution_status": self.execution_status.value,
             "execution_error": self.execution_error,
+            "retry_of": self.retry_of,
             "task_outcome": None if self.task_outcome is None else self.task_outcome.to_dict(),
             "superseded_task_outcomes": [record.to_dict() for record in self.superseded_task_outcomes],
             "action_evidence": None if self.action_evidence is None else self.action_evidence.to_dict(),
