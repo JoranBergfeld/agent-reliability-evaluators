@@ -192,8 +192,15 @@ class FoundryManagedScoring:
         except FoundryRequestError as error:
             raise ManagedScoringFailure(f"the derived evaluator could not be registered in the Foundry project: {error}") from error
 
-    def score(self, evidence: Mapping[str, Sequence[TaskEvidence]]) -> dict[str, ManagedResult | ManagedFailure]:
+    def score(
+        self,
+        evidence: Mapping[str, Sequence[TaskEvidence]],
+        declared: Mapping[str, Sequence[Any]] | None = None,
+    ) -> dict[str, ManagedResult | ManagedFailure]:
         """Score each metric from its grouped Attempt evidence, each in managed runs of its own.
+
+        `declared` gives, for a metric whose Evaluator takes customer declarations, what the
+        customer declared, in the order the canonical `evaluate` takes it after the evidence.
 
         Returns, for every metric, what Foundry returned for it, or the failure that left it
         without a result. A failure is returned and not raised, and a metric whose run fails
@@ -205,17 +212,22 @@ class FoundryManagedScoring:
         """
         runs = {metric_id: _ManagedRun(metric_id) for metric_id in evidence}
         scored: dict[str, ManagedResult | ManagedFailure] = {}
-        steps = (lambda run: self._submit(run, evidence[run.metric_id]), self._ask_for_encoded_result, self._collect)
+        declared = declared or {}
+        steps = (
+            lambda run: self._submit(run, evidence[run.metric_id], declared.get(run.metric_id, ())),
+            self._ask_for_encoded_result,
+            self._collect,
+        )
         for step in steps:
             for metric_id, run in runs.items():
                 if metric_id not in scored and (ended := _attempted(run, step)) is not None:
                     scored[metric_id] = ended
         return {metric_id: scored[metric_id] for metric_id in evidence}
 
-    def _submit(self, run: _ManagedRun, tasks: Sequence[TaskEvidence]) -> None:
+    def _submit(self, run: _ManagedRun, tasks: Sequence[TaskEvidence], declared: Sequence[Any]) -> None:
         """Register the evaluator of one metric if need be, and start the run for its value and the size of its result."""
         run.evaluator = self.register([run.metric_id])[run.metric_id]
-        run.item = run.evaluator.artifact.item(tasks)
+        run.item = run.evaluator.artifact.item(tasks, *declared)
         run.evidence_sha256 = _evidence_digest(run.item[run.evaluator.artifact.evidence_field])
         self._create_eval(run)
         self._start(run, "value and size", [grader.VALUE_PART, grader.SIZE_PART])
@@ -406,14 +418,17 @@ def _evidence_digest(encoded: str) -> str:
     return encoded.partition(":")[0]
 
 
-def submitted_evidence_sha256(metric_id: str, tasks: Iterable[TaskEvidence]) -> str:
+def submitted_evidence_sha256(metric_id: str, tasks: Iterable[TaskEvidence], *declared: Any) -> str:
     """The digest that the grouped Attempt evidence of a metric is submitted to Foundry with.
+
+    It takes what the canonical `evaluate` takes: the evidence, followed by what the customer
+    declared for the Evaluator, which is submitted with the evidence and is part of the digest.
 
     A managed result records it. Evidence that gives the same digest is the evidence the
     managed evaluator was sent. Raises DerivationError for a metric without a Foundry evaluator.
     """
     artifact = derive_artifact(metric_id)
-    return _evidence_digest(artifact.item(tasks)[artifact.evidence_field])
+    return _evidence_digest(artifact.item(tasks, *declared)[artifact.evidence_field])
 
 
 def _artifact(metric_id: str) -> ManagedArtifact:

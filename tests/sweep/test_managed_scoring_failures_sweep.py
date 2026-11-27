@@ -10,8 +10,7 @@ import re
 import pytest
 
 from reliability_evaluators.evidence import TaskOutcome
-from reliability_evaluators.managed_scoring import FoundryManagedScoring, FoundryRequestError, derive_artifact
-from reliability_evaluators.managed_scoring.artifact import MANAGED_ATTEMPT_EVIDENCE
+from reliability_evaluators.managed_scoring import FoundryManagedScoring, FoundryRequestError
 from reliability_evaluators.scorecard import AcceptanceCriterion, render_report
 from reliability_evaluators.sweep import ConfiguredEvaluator, Task, run_sweep
 from tests.fake_foundry import FakeFoundryProject
@@ -163,19 +162,7 @@ def test_a_metric_scored_in_this_process_keeps_its_result_when_the_managed_run_o
     ]
 
 
-@pytest.fixture
-def resource_consistency_has_a_managed_evaluator(monkeypatch):
-    """Declare the Attempt evidence of a second Evaluator, which is what makes it derivable.
-
-    Only outcome consistency is declared in this version. A second Evaluator on the managed
-    path is what shows that one whose run fails takes no other's result with it.
-    """
-    monkeypatch.setitem(MANAGED_ATTEMPT_EVIDENCE, "resource_consistency", ("resource_measurements",))
-    derive_artifact.cache_clear()
-    yield
-    derive_artifact.cache_clear()
-
-
+# A second Evaluator on the managed path is what shows that one whose run fails takes no other's result with it.
 BOTH_MANAGED = [MANAGED, ConfiguredEvaluator(metric_id="resource_consistency", scoring_path="foundry_managed")]
 
 
@@ -188,9 +175,7 @@ def only_the_evidence_of(metric_id, alter):
     return altered
 
 
-def test_a_managed_result_is_kept_when_the_managed_run_of_another_metric_fails(
-    resource_consistency_has_a_managed_evaluator,
-):
+def test_a_managed_result_is_kept_when_the_managed_run_of_another_metric_fails():
     foundry = FakeFoundryProject(alter_item=only_the_evidence_of("outcome_consistency", one_outcome_flipped))
 
     scorecard = sweep(MEASURED, foundry, metrics=BOTH_MANAGED, resources=RESOURCES)
@@ -209,7 +194,7 @@ def test_a_managed_result_is_kept_when_the_managed_run_of_another_metric_fails(
     ]
 
 
-def test_every_metric_is_scored_in_a_managed_run_of_its_own(resource_consistency_has_a_managed_evaluator):
+def test_every_metric_is_scored_in_a_managed_run_of_its_own():
     foundry = FakeFoundryProject()
 
     scorecard = sweep(MEASURED, foundry, metrics=BOTH_MANAGED, resources=RESOURCES)
@@ -427,7 +412,7 @@ class ManagedScoringThatStops:
     def register(self, metric_ids):
         return {}
 
-    def score(self, evidence):
+    def score(self, evidence, declared=None):
         raise RuntimeError("the connection to the project was lost")
 
 
