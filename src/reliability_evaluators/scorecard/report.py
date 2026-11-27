@@ -1,8 +1,9 @@
 """The human-readable report: one self-contained HTML rendering of the machine-readable scorecard.
 
 The report is generic on purpose. It knows that a scorecard lists `metrics` and `attempts`,
-that it says in `status` and `missing` whether it is complete, and that a recalculated one
-lists the `superseded_results` it replaces. It describes the four metric states, the
+that it says in `status` and `missing` whether it is complete, that it reports `token_usage`
+apart from the metrics, and that a recalculated one lists the `superseded_results` it
+replaces. It describes the four metric states, the
 execution failure that leaves a metric without one, and the scorecard statuses. Every other
 field is laid out by its shape, so a field or a state that the scorecard gains is shown
 without a change here. It also knows a customer-process rescore, which it shows as a result
@@ -17,7 +18,7 @@ from collections import Counter
 from html import escape
 from typing import Any
 
-from .assemble import RESCORE, to_json
+from .assemble import RESCORE, TOKEN_USAGE, to_json
 
 _STATES = {
     "available": "Available: a value was validly calculated from the evidence.",
@@ -125,6 +126,11 @@ class _Report:
         if key == "missing" and _is_records(value):
             return (
                 f'<section id="missing">\n<h2 data-key="missing">missing</h2>\n{_MISSING_NOTE}\n'
+                f"{self._render(value, pointer)}\n</section>"
+            )
+        if key == TOKEN_USAGE:
+            return (
+                f'<section id="token-usage">\n<h2>Token usage</h2>\n{_TOKEN_USAGE_NOTE}\n'
                 f"{self._render(value, pointer)}\n</section>"
             )
         return f'<section>\n<h2 data-key="{escape(key)}">{escape(key)}</h2>\n{self._render(value, pointer)}\n</section>'
@@ -289,6 +295,15 @@ _MISSING_NOTE = (
     "do not appear as Attempts. A planned Attempt that was made and did not complete is named here with how its "
     "execution ended, and is not a failed Task. A metric that has no result is named here with the reason. "
     "It has no value, and it is not an unavailable measurement.</p>"
+)
+
+_TOKEN_USAGE_NOTE = (
+    '<p class="note">What was measured of the use of models, in tokens, after the run. It is not a reliability '
+    "metric and takes no part in any metric value or acceptance assessment. A total counts each use once. A count "
+    "that was not reported is missing, with its reason, and is never counted as zero: a total that leaves counts "
+    "out is partial, and a total with no reported count is unavailable. A total of an Evaluator that is labelled "
+    "overlapping includes usage that the total of another Evaluator includes too, so such totals are not "
+    "additive.</p>"
 )
 
 _RECALCULATION_NOTICE = (

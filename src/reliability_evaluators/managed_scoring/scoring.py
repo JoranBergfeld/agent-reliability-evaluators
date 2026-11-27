@@ -90,6 +90,8 @@ class ManagedResult:
     provenance: dict[str, Any]
     # The comparison of that number with the encoded result. None for a result that was not checked.
     fidelity_check: FidelityCheck | None = None
+    # What Foundry reported of the token usage of each managed run that was made for the metric.
+    reported_usage: list[dict[str, Any]] = field(default_factory=list)
 
     @property
     def fidelity(self) -> Fidelity:
@@ -117,6 +119,8 @@ class ManagedFailure:
     provenance: dict[str, Any] = field(
         default_factory=lambda: dict.fromkeys(("evaluator", "eval_id", "run_id", "output_item_id", "evidence_sha256"))
     )
+    # What Foundry reported of the token usage of each managed run that was made. Empty: none is known.
+    reported_usage: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass(frozen=True)
@@ -152,6 +156,27 @@ class _ManagedRun:
     # What came back for the plain value, and the size of the encoded result.
     valued: _Answer | None = None
     size: Any = None
+    # Every run that was made, in order: the run as it was last read, and its output items once they were read.
+    made: list[dict[str, Any]] = field(default_factory=list)
+
+    def reported_usage(self) -> list[dict[str, Any]]:
+        """What Foundry reported of the token usage of each run that was made, as it reported it.
+
+        A run reports usage in two places: on the result of the metric in each of its output
+        items, and in the per-model rows of the run. They are kept apart and are not
+        interpreted here: they can be two views of the same use, and rows were observed to
+        repeat each other's counts (decision ticket #24).
+        """
+        return [
+            {
+                "run_id": made["run"].get("id"),
+                "results_sample_usage": None
+                if made["items"] is None
+                else [_usage_on_the_result(self.metric_id, item) for item in made["items"]],
+                "per_model_usage": made["run"].get("per_model_usage"),
+            }
+            for made in self.made
+        ]
 
     def failed(self, error: str) -> ManagedFailure:
         evaluator = self.evaluator
@@ -164,7 +189,7 @@ class _ManagedRun:
             "output_item_id": self.output_item_id,
             "evidence_sha256": self.evidence_sha256,
         }
-        return ManagedFailure(error=error, provenance=provenance)
+        return ManagedFailure(error=error, provenance=provenance, reported_usage=self.reported_usage())
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -234,7 +259,11 @@ class FoundryManagedScoring:
         """Wait until the second run of one metric has ended, and recover its result."""
         answers = self._answers(run, "encoded result")
         recovered = _recover(run, [answers[str(number)] for number in range(1, len(answers) + 1)])
-        return replace(recovered, provenance={**recovered.provenance, "evidence_sha256": run.evidence_sha256})
+        return replace(
+            recovered,
+            provenance={**recovered.provenance, "evidence_sha256": run.evidence_sha256},
+            reported_usage=run.reported_usage(),
+        )
 
     def _answers(self, run: _ManagedRun, asked_for: str) -> dict[str, _Answer]:
         """Wait for the run that was made last, and give what it returned for each part its rows asked for.
@@ -329,6 +358,7 @@ class FoundryManagedScoring:
                 "data_source": {"type": "jsonl", "source": {"type": "file_content", "content": [{"item": row} for row in rows]}},
             },
         )
+        run.made.append({"run": run.run, "items": None})
         run.deadline = time.monotonic() + self.run_timeout_seconds
 
     def _wait(self, run: _ManagedRun) -> None:
@@ -344,7 +374,7 @@ class FoundryManagedScoring:
                     "Its cancellation was requested"
                 )
             time.sleep(self.poll_interval_seconds)
-            run.run = self.project.request("GET", run_path)
+            run.run = run.made[-1]["run"] = self.project.request("GET", run_path)
         if run.run["status"] != "completed":
             error = run.run.get("error") or {}
             reported = f"{error.get('code')}: {error.get('message')}".rstrip(". ")
@@ -375,6 +405,7 @@ class FoundryManagedScoring:
             after = f"&after={page['last_id']}"
         # An item names the row it is for by the position of the row in what was submitted.
         by_row = {item.get("datasource_item_id"): item for item in items}
+        run.made[-1]["items"] = items
         if len(items) != submitted or set(by_row) != set(range(submitted)):
             raise ManagedScoringFailure(
                 f"the Foundry-managed run {run_id} of {eval_id} returned {len(items)} output items "
@@ -423,6 +454,16 @@ def _artifact(metric_id: str) -> ManagedArtifact:
 
 def _where(eval_id: str, run: Mapping[str, Any], output_item: Mapping[str, Any]) -> str:
     return f"output item {output_item.get('id')!r} of run {run['id']} of {eval_id}"
+
+
+def _usage_on_the_result(metric_id: str, output_item: Any) -> Any:
+    """The usage Foundry reported on the result of the metric in one output item, or None when it reported none."""
+    results = output_item.get("results") if isinstance(output_item, Mapping) else None
+    for result in results if isinstance(results, list) else []:
+        if isinstance(result, Mapping) and result.get("name") == metric_id:
+            sample = result.get("sample")
+            return sample.get("usage") if isinstance(sample, Mapping) else None
+    return None
 
 
 def _returned(metric_id: str, output_item: Mapping[str, Any], where: str) -> Mapping[str, Any]:

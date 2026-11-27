@@ -460,7 +460,7 @@ def test_a_partial_scorecard_after_a_failed_managed_run_is_delivered_with_its_re
     scorecard = sweep(TWO_TASKS, FakeFoundryProject(alter_item=one_outcome_flipped), artifact_dir=tmp_path)
 
     assert scorecard["status"] == "partial"
-    assert sorted(path.name for path in tmp_path.iterdir()) == ["evidence.json", "report.html", "scorecard.json"]
+    assert sorted(path.name for path in tmp_path.iterdir()) == ["evidence.json", "report.html", "scorecard.json", "summary.md"]
 
 
 def test_the_report_shows_a_managed_failure_and_tells_it_apart_from_what_it_is_not():

@@ -54,7 +54,7 @@ def test_the_scorecard_the_report_and_the_evidence_are_written_where_the_caller_
 
     scorecard = sweep(["success", "failure"], artifact_dir=location)
 
-    assert files_in(location) == ["evidence.json", "report.html", "scorecard.json"]
+    assert files_in(location) == ["evidence.json", "report.html", "scorecard.json", "summary.md"]
     delivered = read_json(location / "scorecard.json")
     assert delivered == scorecard
     # One success in two Attempts: p = 1/2 and the value is (2 * 1/2 - 1)^2 = 0.
