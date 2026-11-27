@@ -31,6 +31,9 @@ A coordinated evaluation of planned attempts across tasks and experimental condi
 The success or failure of an attempt, determined against the customer's task-success definition, with its source recorded. It is not inferred from the agent's response alone and is distinct from deciding whether a reliability metric meets an acceptance criterion.
 _Avoid_: Reliability acceptance
 
+**Execution status**:
+How the running of an attempt or experiment ended, such as completed, timed out, cancelled or setup failed. It is separate from the task outcome and from the state of a reliability metric: an execution failure keeps its reason and is not a task failure, an unavailable measurement or not applicable.
+
 **Confidence rating**:
 The evaluated agent's estimate, given after an attempt, of its confidence in the task outcome.
 
@@ -49,5 +52,14 @@ An assessment of how serious a specific constraint violation is.
 **Unavailable measurement**:
 A metric result that cannot be validly calculated from the available evidence. It is reported with a reason and evidence count, not replaced with an invented numeric value.
 
+**Not applicable**:
+The state of a reliability metric whose protocol genuinely does not apply to the declared experiment, reported with a reason. It is distinct from an unavailable measurement and is never used for missing evidence or a failed experiment.
+
+**Not configured**:
+The state of a reliability metric that the customer did not select. It appears only in a reliability scorecard that groups several metrics, and is distinct from an unavailable measurement and from not applicable.
+
 **Unverified result**:
 A received metric value whose fidelity to the evaluator-computed value has not been established. It is distinct from an unavailable measurement.
+
+**Scoring path**:
+Where an evaluator's calculation runs: Foundry-managed, as a custom evaluator in Foundry, or customer-process, in the customer's own process. Each metric result records its scoring path, which is independent of where the attempts are invoked.
