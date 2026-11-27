@@ -29,6 +29,13 @@ class ConditionRole(str, Enum):
     VARIATION = "variation"
 
 
+class VariationKind(str, Enum):
+    """What a variation changes. A robustness metric compares the baseline with variations of its own kind."""
+
+    # A tool of the agent fails.
+    FAULT = "fault"
+
+
 def json_data(value: Any, what: str) -> Any:
     """A copy of `value` as JSON-compatible data, so that it can be kept in a scorecard."""
     try:
@@ -42,17 +49,30 @@ class Condition:
     """An experimental condition: the baseline, or the one variation from it.
 
     `parameters` is what the customer controls need to apply and verify it.
+
+    `kind` is declared for a variation and says what it changes, such as "fault". The
+    baseline has none. A variation without a kind is compared with the baseline by no metric.
     """
 
     condition_id: str
     description: str
     parameters: Mapping[str, Any] = field(default_factory=dict)
+    kind: VariationKind | None = None
 
     def __post_init__(self) -> None:
         for name in ("condition_id", "description"):
             value = getattr(self, name)
             if not isinstance(value, str) or not value.strip():
                 raise EvidenceError(f"a condition is identified and described: {name} is {value!r}")
+        if self.kind is not None:
+            try:
+                object.__setattr__(self, "kind", VariationKind(self.kind))
+            except ValueError:
+                kinds = ", ".join(repr(kind.value) for kind in VariationKind)
+                raise EvidenceError(
+                    f"{self.kind!r} is not a kind of variation. Condition {self.condition_id!r} "
+                    f"declares one of {kinds}, or none"
+                ) from None
         if not isinstance(self.parameters, Mapping):
             raise EvidenceError(f"the parameters of a condition are a mapping, got {self.parameters!r}")
         object.__setattr__(
@@ -60,11 +80,13 @@ class Condition:
         )
 
     def to_dict(self) -> dict[str, Any]:
-        return {
+        recorded = {
             "condition_id": self.condition_id,
             "description": self.description,
             "parameters": self.parameters,
         }
+        # Recorded for a variation that declares one. The baseline has no kind.
+        return recorded if self.kind is None else {**recorded, "kind": self.kind.value}
 
 
 @dataclass(frozen=True, kw_only=True)

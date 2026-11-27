@@ -7,12 +7,16 @@ take the customer's declared `ActionTypeMapping`.
 
 The three predictability Evaluators calculate from the same confidence/outcome pairs,
 which `confidence_pairs.pair_confidence_with_outcome` builds, counts and explains.
+
+A robustness Evaluator compares the Attempts made under the baseline with the Attempts
+made under one kind of variation. `_robustness` holds the ratio they share.
 """
 
 from . import (
     brier_based_score,
     constraint_compliance,
     distributional_trajectory_consistency,
+    fault_robustness,
     outcome_consistency,
     resource_consistency,
     sequential_trajectory_consistency,
@@ -48,6 +52,7 @@ __all__ = [
     "constraint_compliance",
     "counted",
     "distributional_trajectory_consistency",
+    "fault_robustness",
     "outcome_consistency",
     "resource_consistency",
     "sequential_trajectory_consistency",
