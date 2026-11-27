@@ -102,6 +102,11 @@ class ToDo:
         return None if calls is None else [call for call in calls if call.tool_name != "get_item"]
 
 
+def execution(experiment):
+    """How the execution of an experiment ended, and how many of its Attempts were planned and recorded."""
+    return {key: experiment["execution"][key] for key in ("status", "reason", "attempts_planned", "attempts_recorded")}
+
+
 def metric(scorecard, metric_id):
     (entry,) = [entry for entry in scorecard["metrics"] if entry["metric_id"] == metric_id]
     return entry
@@ -346,7 +351,7 @@ def test_an_evaluator_with_attempts_of_its_own_gives_the_same_result_alone_as_in
 
 def test_an_evaluator_whose_attempts_all_fail_does_not_remove_the_metric_of_another_evaluator():
     # The agent endpoint is down while the first Evaluator's two Attempts are made.
-    #   Distributional has no usable Attempt, so it has no value.
+    #   Distributional has no Attempt that completed, so it has no result: an execution failure.
     #   Sequential, from the service-side effects of the next two Attempts: both are one update: 1.
     to_do = ToDo(
         actions={"close": [READ_UPDATE, READ_UPDATE, READ_UPDATE, UPDATE_READ]},
@@ -363,8 +368,9 @@ def test_an_evaluator_whose_attempts_all_fail_does_not_remove_the_metric_of_anot
         ("close/set-2/attempt-2", "completed"),
     ]
     distributional, sequential = metric(scorecard, DISTRIBUTIONAL), metric(scorecard, SEQUENTIAL)
-    assert distributional["state"] == "unavailable"
+    assert distributional["state"] is None
     assert distributional["value"] is None
+    assert distributional["execution_failure"]["task_ids"] == ["close"]
     assert distributional["counts"]["attempts"]["excluded"] == [
         {
             "reason": "execution status is not completed",
@@ -537,7 +543,7 @@ def test_an_experiment_is_run_again_for_the_evaluator_that_needs_something_else(
         (again[1], "add-item/set-2", "service-side effects"),
     ]
     assert [attempt["task_outcome"]["success"] for attempt in scorecard["attempts"]] == [True] * 4
-    assert [(experiment["experiment_id"], experiment["execution"]) for experiment in scorecard["experiments"]] == [
+    assert [(experiment["experiment_id"], execution(experiment)) for experiment in scorecard["experiments"]] == [
         ("add-item", {"status": "completed", "reason": None, "attempts_planned": 2, "attempts_recorded": 2}),
         ("add-item/set-2", {"status": "completed", "reason": None, "attempts_planned": 2, "attempts_recorded": 2}),
     ]
@@ -569,7 +575,7 @@ def test_an_experiment_is_not_run_again_on_state_that_its_first_run_did_not_rest
     ]
     again = scorecard["experiments"][1]
     assert again["experiment_id"] == "add-item/set-2"
-    assert again["execution"] == {
+    assert execution(again) == {
         "status": "stopped",
         "reason": (
             "experiment 'add-item' did not restore the test resource 'todo-list/add': "
@@ -579,9 +585,11 @@ def test_an_experiment_is_not_run_again_on_state_that_its_first_run_did_not_rest
         "attempts_recorded": 0,
     }
     assert metric(scorecard, DISTRIBUTIONAL)["value"] == 1
+    # None of its Attempts was made. That is an execution failure, not an unavailable measurement.
     sequential = metric(scorecard, SEQUENTIAL)
-    assert sequential["state"] == "unavailable"
+    assert sequential["state"] is None
     assert sequential["value"] is None
+    assert sequential["execution_failure"]["experiment_ids"] == ["add-item/set-2"]
     assert sequential["attempts_used"] == {"attempt_ids": [], "shared_with": []}
 
 def test_the_agent_is_asked_for_its_confidence_only_in_the_attempts_of_an_evaluator_that_uses_it():

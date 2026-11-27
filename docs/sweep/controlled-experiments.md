@@ -135,7 +135,7 @@ For one Attempt the sweep does this, in this order:
 2. `apply_condition`: put the intended condition in place. It is invoked for the baseline too.
 3. The agent is invoked and the task-success rule decides the task outcome.
 4. `verify_condition`: report, from evidence, whether the intended condition occurred.
-5. When a selected metric uses confidence, the agent is asked for its confidence rating in a separate request. It is not asked when the Attempt did not complete: the setup failed, the invocation failed, or the condition was not met. See [how the confidence rating is collected](../brier_based_score/readme.md#how-the-confidence-rating-is-collected).
+5. When a selected metric uses confidence, the agent is asked for its confidence rating in a separate request. It is not asked when the Attempt did not complete: the setup failed, the invocation failed, timed out or was cancelled, or the condition was not met. See [how the confidence rating is collected](../brier_based_score/readme.md#how-the-confidence-rating-is-collected).
 6. `clean_up`: restore the test setup.
 
 Each control receives one argument with these attributes:
@@ -168,6 +168,8 @@ The sweep passes `authorized_resources` to the controls and records them. It can
 
 `apply_condition` and `verify_condition` are invoked for every Attempt under both policies.
 
+A retry is an Attempt like any other and follows the same policy: under `fresh` its state is prepared again, and under `continuing` it continues from the state the retried Attempt left. See [what a retry does about state](execution-limits.md#what-a-retry-does-about-state).
+
 Under `continuing`, each Attempt starts from the state the previous Attempt under the same condition left. The variation does not continue from the baseline: it gets its own prepared state, so that the two differ only by the declared variation. Under a prompt variation each prompt variant gets its own prepared state in the same way: `prepare_state` is invoked before the first Attempt under each variant and `clean_up` after its last.
 
 State continues only when you declare `continuing`. Tasks passed to `run_sweep(tasks=...)` without an experiment have no controls: nothing prepares or restores their state, and their Attempts record `"starting_state": null`, meaning that no policy was declared.
@@ -193,7 +195,16 @@ An Attempt keeps the status of the first thing that went wrong. If `clean_up` th
 - **`prepare_state` fails under `continuing`.** The later Attempts of that experiment are not made, because they would continue from state that was never prepared. `clean_up` is invoked. Other experiments continue.
 - **`prepare_state` fails under `fresh`.** Only that Attempt has a failed setup. The next Attempt prepares its own state.
 
-An experiment whose Attempts were not all made has the execution status `stopped`, with the reason and the number of Attempts planned and recorded. Attempts that were not made do not appear as Attempts.
+An experiment whose Attempts were not all made because of a control has the execution status `stopped`, with the reason and the number of Attempts planned and recorded. Attempts that were not made do not appear as Attempts. The scorecard is then partial and names them under `missing`.
+
+### Limits, retries and cancellation
+
+The Task of an experiment carries its [execution limits](execution-limits.md), and they are the limits of the experiment: a time limit for one invocation, a time limit for all its Attempts under both conditions together, every prompt variant included, and a number of retries. A sweep can also be cancelled.
+
+- An invocation that timed out or was cancelled is an execution status of the Attempt, `timed_out` or `cancelled`. `verify_condition` and `clean_up` are still invoked for it, as for an invocation that failed.
+- Only an invocation of the agent that failed or timed out is retried. An Attempt with a failed control is not.
+- When the total time limit is reached or the sweep is cancelled, the later Attempts of the experiment are not made, and the experiment has the execution status `timed_out` or `cancelled`. `clean_up` is still invoked: under `continuing`, after the last Attempt that was made.
+- The Attempts of an experiment run one after another, whatever concurrency the sweep declares.
 
 ## What the scorecard records
 
@@ -232,7 +243,7 @@ Every Attempt records its experiment, its starting-state policy, the intended co
 The Attempt identity is `<experiment_id>/<condition_id>/attempt-<number>`. `kind` is recorded for a variation that declares one. A baseline has none.
 
 Every Attempt also carries `prompt_variant`. It is `null` for an Attempt that was given the Task's own prompt. Under a prompt variation it is the variant the Attempt ran under, with its `variant_id`, its exact `text` and its `source`, and the Attempt identity is `<experiment_id>/<condition_id>/<variant_id>/attempt-<number>`. The record of an experiment with a prompt variation has two more fields: `task_prompt`, the Task's own prompt, and `prompt_variants`, every variant it declared. See [prompt robustness](../prompt_robustness/readme.md#in-the-scorecard).
-
+
 When an Evaluator needs Attempts that are made differently from another's, the experiment is run again for it under the identity `<experiment_id>/set-2`: see [several Evaluators in one sweep](several-evaluators.md).
 
 `experiments` lists what each experiment declared and how its execution ended:
@@ -252,9 +263,22 @@ When an Evaluator needs Attempts that are made differently from another's, the e
   },
   "write_capable": true,
   "authorized_resources": ["todo-list/reliability-test"],
-  "execution": {"status": "completed", "reason": null, "attempts_planned": 10, "attempts_recorded": 10}
+  "attempt_set": 1,
+  "limits": {"attempt_timeout_seconds": null, "total_timeout_seconds": null, "max_retries": 0},
+  "execution": {
+    "status": "completed",
+    "reason": null,
+    "attempts_planned": 10,
+    "attempts_recorded": 10,
+    "attempts_completed": 10,
+    "attempts_not_completed": [],
+    "attempts_not_made": 0,
+    "retries": 0
+  }
 }
 ```
+
+`attempt_set`, `limits` and `execution` are described in [execution limits and partial scorecards](execution-limits.md#one-record-of-what-was-planned-and-what-was-made). A Task given without an experiment has the same three under `tasks_without_experiment`, and is not listed as an experiment.
 
 ## Limits in this version
 
@@ -262,4 +286,4 @@ When an Evaluator needs Attempts that are made differently from another's, the e
 - A Task can be declared in one experiment only, so that Attempts made under different declarations are never mixed in one Task's evidence. To attempt the same work under a second variation, declare a second Task for it. Measuring fault, environment and prompt robustness for the same work therefore takes three experiments, each with a Task of its own that has the same prompt and task-success rule and its own task identity. A metric that is scored on baseline Attempts then counts them as three Tasks.
 - Every prompt variant is attempted as often as the baseline. The number of Attempts cannot be set per variant.
 - A prompt variant is the text that starts an Attempt. Later turns of a conversation are not varied.
-- If a task-success rule returns something that is not a `TaskOutcome`, the sweep stops with an error and does not invoke `clean_up`.
+- If a task-success rule returns something that is neither a `TaskOutcome` nor [`NO_TASK_OUTCOME_YET`](late-and-corrected-outcomes.md#leaving-an-outcome-open-during-the-sweep), the sweep stops with an error and does not invoke `clean_up`.

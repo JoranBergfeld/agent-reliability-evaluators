@@ -127,12 +127,14 @@ def test_no_eligible_task_is_an_unavailable_measurement_with_its_evidence_counts
     assert result.attempt_ids == ()
 
 
-def test_an_attempt_whose_execution_failed_is_not_a_task_failure():
-    # Two successes plus one failed execution: p = 2/2 and the value is 1.
-    # Scoring the failed execution as a task failure would give p = 2/3 and (1/3)^2 = 0.111...
-    failed_execution = Attempt(
-        attempt_id="task/attempt-3", task_id="task", execution_status=ExecutionStatus.FAILED
-    )
+@pytest.mark.parametrize(
+    "status",
+    [ExecutionStatus.FAILED, ExecutionStatus.TIMED_OUT, ExecutionStatus.CANCELLED, ExecutionStatus.RETRIED],
+)
+def test_an_attempt_whose_execution_did_not_complete_is_not_a_task_failure(status):
+    # Two successes plus one execution that did not complete: p = 2/2 and the value is 1.
+    # Scoring that execution as a task failure would give p = 2/3 and (1/3)^2 = 0.111...
+    failed_execution = Attempt(attempt_id="task/attempt-3", task_id="task", execution_status=status)
 
     result = outcome_consistency.evaluate(group_by_task(attempts("task", [1, 1]) + [failed_execution]))
 
@@ -178,6 +180,17 @@ def test_a_task_outcome_without_its_source_is_rejected():
 def test_an_attempt_that_does_not_identify_itself_and_its_task_is_rejected(identity):
     with pytest.raises(EvidenceError, match="identif"):
         Attempt(**identity, execution_status=ExecutionStatus.COMPLETED)
+
+
+@pytest.mark.parametrize("retry_of", ["", "task/attempt-1/retry-1", 1])
+def test_a_retry_that_does_not_identify_the_attempt_it_retries_is_rejected(retry_of):
+    with pytest.raises(EvidenceError, match="retry"):
+        Attempt(
+            attempt_id="task/attempt-1/retry-1",
+            task_id="task",
+            execution_status=ExecutionStatus.COMPLETED,
+            retry_of=retry_of,
+        )
 
 
 def test_two_attempts_with_the_same_identity_are_rejected_rather_than_matched_arbitrarily():

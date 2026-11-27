@@ -11,7 +11,7 @@ from contextlib import suppress
 from pathlib import Path
 from typing import Any, Callable
 
-from .assemble import SCHEMA_VERSION, to_json
+from .assemble import SCHEMA_VERSION, ScorecardStatus, to_json
 from .report import render_report
 
 EVIDENCE_FILE = "evidence.json"
@@ -102,7 +102,7 @@ class ArtifactLocation:
         retained = tuple(self._retained)
         record = {
             "schema_version": SCHEMA_VERSION,
-            "status": "reporting_failed",
+            "status": ScorecardStatus.REPORTING_FAILED.value,
             "failure": what,
             "error": _named(error),
             "retained": list(retained),

@@ -17,6 +17,7 @@ NOT_DECLARED = "the agent target does not declare whether it supports an isolate
 NOT_SUPPORTED = "the agent target does not support an isolated follow-up"
 RULE_NOT_SHAREABLE = "the Task's success rule cannot be shared with the agent"
 ATTEMPT_NOT_COMPLETED = "the Attempt did not complete, so no confidence request was sent"
+SWEEP_CANCELLED = "the sweep was cancelled, so no confidence request was sent"
 NO_RESPONSE = "the agent target returned no confidence response"
 
 

@@ -14,9 +14,18 @@ import json
 import pytest
 
 from reliability_evaluators.agent_target import AgentResponse
-from reliability_evaluators.evidence import TaskOutcome
+from reliability_evaluators.evidence import OutcomeCorrection, TaskOutcome
 from reliability_evaluators.scorecard import render_report, to_json
-from reliability_evaluators.sweep import Condition, Experiment, PromptVariant, Task, run_sweep
+from reliability_evaluators.sweep import (
+    Condition,
+    ExecutionLimits,
+    Experiment,
+    PromptVariant,
+    RecalculationFailed,
+    Task,
+    recalculate,
+    run_sweep,
+)
 from tests.fakes import FakeControls, FakeTodoService, todo_list
 from tests.report_reader import assert_faithful_rendering
 
@@ -38,8 +47,8 @@ class WordingSensitiveAgent:
     """A to-do agent that adds one item to its Task's list when the text it is given says "add".
 
     It gives up when the service refuses the item. Scripted by Attempt identity with
-    "forgets", it does nothing whatever it is given. `prompts` keeps the exact prompt of
-    every invocation, by Attempt identity.
+    "forgets", it does nothing whatever it is given, and with "unreachable", the invocation
+    fails. `prompts` keeps the exact prompt of every invocation, by Attempt identity.
     """
 
     def __init__(self, service, script=None):
@@ -49,6 +58,8 @@ class WordingSensitiveAgent:
 
     def invoke(self, request):
         self.prompts[request.attempt_id] = request.prompt
+        if self._script.get(request.attempt_id) == "unreachable":
+            raise ConnectionError("the agent endpoint returned 503")
         if "add" in request.prompt.lower() and self._script.get(request.attempt_id) != "forgets":
             try:
                 self._service.add(todo_list(request.task_id), "buy milk")
@@ -72,11 +83,14 @@ class Fixture:
         items = self.service.lists.get(todo_list(attempt.task_id), [])
         return TaskOutcome(success=len(items) == 1, source=OUTCOME_SOURCE)
 
-    def experiment(self, task_id="add", *, attempts, **declared):
+    def experiment(self, task_id="add", *, attempts, limits=ExecutionLimits(), **declared):
+        task = Task(
+            task_id=task_id, prompt=PROMPT, success_rule=self.exactly_one_item, attempts=attempts, limits=limits
+        )
         return Experiment(
             **{
                 "experiment_id": f"{task_id}-item",
-                "task": Task(task_id=task_id, prompt=PROMPT, success_rule=self.exactly_one_item, attempts=attempts),
+                "task": task,
                 "agent_configuration": {"agent": "todo-agent", "version": "3"},
                 "starting_state": "fresh",
                 "baseline": ORIGINAL,
@@ -214,11 +228,16 @@ def test_each_attempt_links_to_the_prompt_variant_it_ran_under_and_the_scorecard
         "description": "The agent is given the instruction in another wording.",
         "parameters": {},
     }
+    # One Attempt under the Task's own prompt and one under each of the two variants.
     assert experiment["execution"] == {
         "status": "completed",
         "reason": None,
         "attempts_planned": 3,
         "attempts_recorded": 3,
+        "attempts_completed": 3,
+        "attempts_not_completed": [],
+        "attempts_not_made": 0,
+        "retries": 0,
     }
     # What the scorecard says an Attempt ran under is what the agent target was given for it.
     texts = {None: experiment["task_prompt"], **{variant["variant_id"]: variant["text"] for variant in (please, shouted)}}
@@ -459,3 +478,89 @@ def test_the_human_readable_report_shows_the_exact_text_of_each_prompt_variant()
     assert report.value("/experiments/0/task_prompt") == "Add one item to the list."
     assert report.value("/experiments/0/prompt_variants/1/text") == "  pls ADD 1 thing\n"
     assert report.value("/attempts/2/prompt_variant/text") == "  pls ADD 1 thing\n"
+
+def test_an_experiment_that_stopped_before_its_last_prompt_variant_cut_the_attempts_of_the_metric_short():
+    # One Attempt under the Task's own prompt and one under each of two variants are planned. The
+    # clean-up after the Attempt under "please" fails, so the Attempt under "terse" is not made.
+    # The baseline has 1/1. "please" did not complete, so no Attempt under a variant is valid and the
+    # Evaluator has nothing to compare. The planned Attempts were cut short: that is an execution
+    # failure, and not an unavailable measurement of the agent.
+    failing = {("clean_up", "add-item/reworded/please/attempt-1"): "the list could not be deleted"}
+    fixture = Fixture(controls=lambda service: FakeControls(service, failures=failing))
+
+    scorecard = fixture.sweep(fixture.experiment(attempts=1))
+
+    assert [entry["attempt_id"] for entry in scorecard["attempts"]] == [
+        "add-item/original/attempt-1",
+        "add-item/reworded/please/attempt-1",
+    ]
+    (experiment,) = scorecard["experiments"]
+    assert experiment["execution"]["status"] == "stopped"
+    assert experiment["execution"]["attempts_planned"] == 3
+    assert experiment["execution"]["attempts_not_made"] == 1
+    prompt_robustness = metric(scorecard)
+    assert prompt_robustness["cut_short"] == {"experiment_ids": ["add-item"], "task_ids": []}
+    assert prompt_robustness["state"] is None
+    assert prompt_robustness["value"] is None
+    assert prompt_robustness["execution_failure"]["experiment_ids"] == ["add-item"]
+    assert prompt_robustness["execution_failure"]["reason"].endswith("no valid Attempt under the prompt variation")
+
+REVIEWED = OutcomeCorrection(
+    attempt_id="add-item/reworded/terse/attempt-1",
+    task_outcome=TaskOutcome(success=True, source="manual review of the service audit log"),
+    provenance="J. Jansen on 2026-11-27: the check ran before the service had saved the item",
+)
+
+
+def test_a_task_outcome_corrected_under_a_prompt_variant_changes_prompt_robustness_and_keeps_the_variant():
+    # Earlier: baseline 2/2 = 1. please 2/2 and terse 0/2, together 2/4 = 0.5, and 0.5 / 1 = 0.5.
+    # A review finds that the first Attempt under "terse" succeeded: terse 1/2, together 3/4 = 0.75,
+    # and 0.75 / 1 = 0.75.
+    fixture = Fixture()
+    earlier = json.loads(to_json(fixture.sweep(fixture.experiment(attempts=2))))
+    assert metric(earlier)["value"] == 0.5
+
+    recalculated = recalculate(earlier_scorecard=earlier, outcome_corrections=[REVIEWED])
+
+    prompt_robustness = metric(recalculated)
+    assert prompt_robustness["value"] == 0.75
+    assert prompt_robustness["details"]["per_task"][0]["prompt"]["variants"] == [
+        {"variant_id": "please", "attempts": 2, "successes": 2, "success_frequency": 1.0},
+        {"variant_id": "terse", "attempts": 2, "successes": 1, "success_frequency": 0.5},
+    ]
+    # The correction changes the task outcome and nothing else: the Attempt keeps the text it ran under.
+    corrected = attempt(recalculated, "add-item/reworded/terse/attempt-1")
+    assert corrected["task_outcome"] == {"success": True, "source": "manual review of the service audit log"}
+    assert corrected["prompt_variant"] == {"variant_id": "terse", "text": "One more item.", "source": SUPPORT_TEAM}
+    assert recalculated["experiments"] == earlier["experiments"]
+    assert metric(recalculated["superseded_results"][0])["value"] == 0.5
+
+
+def test_supplied_evidence_whose_prompt_variant_is_not_what_was_recorded_is_refused():
+    fixture = Fixture()
+    earlier = json.loads(to_json(fixture.sweep(fixture.experiment(attempts=1))))
+    attempt(earlier, "add-item/reworded/terse/attempt-1")["prompt_variant"] = {"variant_id": "terse"}
+
+    with pytest.raises(RecalculationFailed, match="a prompt variant is recorded without its text, source"):
+        recalculate(earlier_scorecard=earlier, outcome_corrections=[REVIEWED])
+
+def test_the_retry_of_an_attempt_under_a_prompt_variant_is_given_the_same_text_and_records_the_same_variant():
+    # The invocation of the Attempt under "please" fails and is made again once. The retry succeeds:
+    # baseline 1/1 = 1, please 1/1 = 1, and the value is 1. The Attempt that was retried is left out.
+    fixture = Fixture({"add-item/reworded/please/attempt-1": "unreachable"})
+
+    scorecard = fixture.sweep(
+        fixture.experiment(attempts=1, prompt_variants=[PLEASE], limits=ExecutionLimits(max_retries=1))
+    )
+
+    assert attempt(scorecard, "add-item/reworded/please/attempt-1")["execution_status"] == "retried"
+    retry = attempt(scorecard, "add-item/reworded/please/attempt-1/retry-1")
+    assert retry["retry_of"] == "add-item/reworded/please/attempt-1"
+    assert retry["prompt_variant"] == {
+        "variant_id": "please",
+        "text": "Please add an item to my list.",
+        "source": SUPPORT_TEAM,
+    }
+    assert fixture.agent.prompts["add-item/reworded/please/attempt-1/retry-1"] == "Please add an item to my list."
+    assert metric(scorecard)["value"] == 1
+    assert metric(scorecard)["counts"]["prompt_attempts"]["valid"] == 1

@@ -171,6 +171,8 @@ The metric's own entry carries:
 | --- | --- |
 | `name` | `Strict confidence discrimination` |
 | `state`, `value`, `reason` | `available` with a value, or `unavailable` with a reason and no value |
+| `execution_failure` | `null`, unless the metric has no result because the Attempts that supply its evidence were cut short; see [execution limits and partial scorecards](../sweep/execution-limits.md#metrics-in-a-partial-scorecard) |
+| `cut_short` | The experiments, and the Tasks given without one, whose Attempts for this metric were cut short. Both lists are empty when none were |
 | `definition` | version, what it measures, the calculation, the fidelity conventions, the scale and the interpretation. The fidelity conventions state that the value is not the conventional AUROC. |
 | `scoring_path`, `fidelity` | `customer_process` and `authoritative` for a value scored in your own process |
 | `counts.confidence_outcome_pairs` | `total` is the number of Attempts, `valid` the number of valid confidence/outcome pairs, and `missing` and `excluded` the Attempts that gave no pair, by reason and by Attempt identity |
