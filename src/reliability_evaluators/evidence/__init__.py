@@ -4,14 +4,18 @@ Pure: standard library only, no I/O. The canonical metric definitions depend on 
 """
 
 from .attempt import Attempt, EvidenceError, ExecutionStatus, TaskOutcome
+from .confidence import ConfidenceRating, ConfidenceUnavailable, read_confidence_response
 from .grouping import TaskEvidence, group_by_task, require_unambiguous
 
 __all__ = [
     "Attempt",
+    "ConfidenceRating",
+    "ConfidenceUnavailable",
     "EvidenceError",
     "ExecutionStatus",
     "TaskEvidence",
     "TaskOutcome",
     "group_by_task",
+    "read_confidence_response",
     "require_unambiguous",
 ]
