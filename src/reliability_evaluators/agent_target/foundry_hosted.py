@@ -98,14 +98,16 @@ class FoundryHostedAgentTarget:
     unless a time limit is declared for the Attempt: the target then stops at that limit.
     `clock` gives seconds and never runs backwards. The target times its own request on it.
 
-    The target does not ask the agent for a confidence rating: see `isolated_follow_up`.
+    The target does not ask the agent for a confidence rating. A hosted agent is the customer's
+    code: the project hands it the request, and that code decides whether a tool is called. No
+    request can take that decision away from it, so the follow-up cannot be isolated.
     """
 
     isolated_follow_up = IsolatedFollowUp(
         supported=False,
         reason=(
-            "a follow-up in which a Foundry hosted agent answers in the conversation of the Attempt "
-            "and cannot act has not been verified"
+            "the code of a Foundry hosted agent decides what it does with a request, so a caller cannot "
+            "ensure that the agent does not act while it answers a follow-up"
         ),
     )
 

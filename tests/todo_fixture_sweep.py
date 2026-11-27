@@ -33,12 +33,16 @@ class TodoFixtureSweep:
     `service_evidence` holds what the service had recorded for the state when each Attempt
     ended, by Attempt identity, read by the verify control. Under continuing state that
     includes the calls of the Attempts before it. A test calculates its own expectation from it.
+
+    `service_evidence_at_clean_up` holds what the service had recorded when the clean-up
+    control ran, which is after the agent was asked for its confidence in the Attempt.
     """
 
     def __init__(self, service, state):
         self._service = service
         self.state = state
         self.service_evidence = {}
+        self.service_evidence_at_clean_up = {}
         # How many calls the service had recorded for the state when the Attempt before ended.
         self._calls_before = 0
 
@@ -54,14 +58,19 @@ class TodoFixtureSweep:
         variation=None,
         limits=ExecutionLimits(),
         agent_configuration=None,
+        shareable_success_rule=None,
     ):
-        """The fixture Task: `attempts` Attempts under the baseline and as many under the variation."""
+        """The fixture Task: `attempts` Attempts under the baseline and as many under the variation.
+
+        `shareable_success_rule` is the Task's success rule in words, for an agent that is asked for its confidence.
+        """
         return Experiment(
             experiment_id="todo",
             task=Task(
                 task_id="todo",
                 prompt=task_prompt(self.state),
                 success_rule=self.success_rule,
+                shareable_success_rule=shareable_success_rule,
                 attempts=attempts,
                 limits=limits,
             ),
@@ -96,6 +105,7 @@ class TodoFixtureSweep:
 
     def clean_up(self, context):
         try:
+            self.service_evidence_at_clean_up[context.attempt_id] = self._service.evidence(self.state)
             self._service.remove_attempt(self.state)
         except TodoServiceError as error:
             # A state that was never prepared is not there to remove.

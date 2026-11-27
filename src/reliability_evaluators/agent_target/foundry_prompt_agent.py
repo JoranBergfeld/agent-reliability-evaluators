@@ -18,13 +18,23 @@ from typing import Any, Callable
 
 from ..evidence import ActionEvent, ResourceMeasurement, ResourceType
 from .foundry_hosted import AzureCliCredential, _decoded, _output_items, _output_text
-from .interface import CUSTOMER_CODE, AgentResponse, AttemptRequest, InvocationFailed, IsolatedFollowUp
+from .interface import (
+    CUSTOMER_CODE,
+    AgentResponse,
+    AttemptRequest,
+    ConfidenceRequest,
+    ConfidenceResponse,
+    InvocationFailed,
+    IsolatedFollowUp,
+)
 
 # The version is part of the path of the route. The request carries no api-version.
 API_VERSION = "v1"
 RESPONSES_ROUTE = f"/openai/{API_VERSION}/responses"
 AGENT_TARGET = "foundry_prompt_agent"
 RESPONSES_PROTOCOL = "responses"
+# The tool choice under which the project runs the agent without letting it call a tool.
+TOOL_CHOICE_NONE = "none"
 # The evidence source to declare when `native_tool_calls` records the action evidence.
 NATIVE_TOOL_CALLS = "tool calls in the response of the Foundry prompt agent"
 NO_USAGE = "the response of the prompt agent carried no usage"
@@ -68,16 +78,10 @@ class FoundryPromptAgentTarget:
     Every invocation is one request that refers to no earlier response, so the agent starts
     a new conversation for every Attempt. That resets nothing outside the conversation.
 
-    The target does not ask the agent for a confidence rating: see `isolated_follow_up`.
+    The target asks the agent for its confidence rating in an isolated follow-up: see `elicit_confidence`.
     """
 
-    isolated_follow_up = IsolatedFollowUp(
-        supported=False,
-        reason=(
-            "a follow-up in which a Foundry prompt agent answers in the conversation of the Attempt "
-            "and cannot act has not been verified"
-        ),
-    )
+    isolated_follow_up = IsolatedFollowUp(supported=True)
 
     def __init__(
         self,
@@ -122,26 +126,43 @@ class FoundryPromptAgentTarget:
         started = self._clock()
         answer = _send(self._responses_url, token, limit, body)
         elapsed = self._clock() - started
-        response = answer.json
-        if answer.status != 200:
-            raise InvocationFailed(
-                f"the Foundry project answered HTTP {answer.status}: {_described(_error_of(answer))}",
-                invocation=_invocation(answer, {}, composed),
-            )
-        if not isinstance(response, dict) or _output_items(response) is None:
-            raise InvocationFailed(
-                "the Foundry project answered HTTP 200 with a body that is not a response: "
-                f"{answer.text[:_SHOWN_BODY]}",
-                invocation=_invocation(answer, {}, composed),
-            )
-        invocation = _invocation(answer, response, composed)
-        failure = _failure_of(response)
-        if failure is not None:
-            raise InvocationFailed(failure, invocation=invocation)
+        response, invocation = _completed(answer, lambda response: _invocation(answer, response, composed))
         return AgentResponse(
             output=_output_text(response),
             resource_measurements=_resource_measurements(elapsed, invocation["tool_calls"]),
             invocation=invocation,
+        )
+
+    def elicit_confidence(self, request: ConfidenceRequest) -> ConfidenceResponse:
+        """Put the confidence question to the agent in the conversation of one completed Attempt.
+
+        The request names the Attempt's response as the one it continues, so the agent answers with
+        that conversation before it, and carries the tool choice `none`, under which the project
+        runs the agent without letting it call a tool. The project says in its response which
+        response it continued and which tool choice it applied. An answer the project does not
+        say that about, or one given after a tool call, is not returned: the request then fails.
+        """
+        attempt = request.response.invocation or {}
+        previous = attempt.get("response_id")
+        body = {
+            "input": request.prompt,
+            "previous_response_id": previous,
+            # The version that answered the Attempt answers the question about it.
+            "agent_reference": attempt.get("agent") or self._agent,
+            "tool_choice": TOOL_CHOICE_NONE,
+            "metadata": {
+                "attempt_id": request.attempt.attempt_id,
+                "task_id": request.attempt.task_id,
+                "request": "confidence",
+            },
+        }
+        answer = _send(self._responses_url, self._credential(), self._timeout_seconds, body)
+        response, follow_up = _completed(answer, lambda response: _follow_up(answer, response, request.prompt))
+        not_isolated = _not_isolated(follow_up, previous)
+        if not_isolated is not None:
+            raise InvocationFailed(not_isolated, invocation=follow_up)
+        return ConfidenceResponse(
+            attempt_id=request.attempt.attempt_id, output=_output_text(response), invocation=follow_up
         )
 
 
@@ -222,6 +243,72 @@ def _invocation(answer: _Answer, response: dict[str, Any], composed_input: str |
         "token_usage_missing": None if usage is not None else NO_USAGE if response else NO_RESPONSE,
         "token_usage_source": None if usage is None else USAGE_SOURCE,
         "tool_calls": _tool_calls(response),
+    }
+
+
+def _completed(
+    answer: _Answer, recorded: Callable[[dict[str, Any]], dict[str, Any]]
+) -> tuple[dict[str, Any], dict[str, Any]]:
+    """The completed response an answer carries, and what is recorded of it.
+
+    `recorded` gives what is recorded of the answer for its response object, or for none when
+    the answer has none. An answer that is not a completed response raises InvocationFailed with that.
+    """
+    response = answer.json
+    if answer.status != 200:
+        raise InvocationFailed(
+            f"the Foundry project answered HTTP {answer.status}: {_described(_error_of(answer))}",
+            invocation=recorded({}),
+        )
+    if not isinstance(response, dict) or _output_items(response) is None:
+        raise InvocationFailed(
+            f"the Foundry project answered HTTP 200 with a body that is not a response: {answer.text[:_SHOWN_BODY]}",
+            invocation=recorded({}),
+        )
+    record = recorded(response)
+    failure = _failure_of(response)
+    if failure is not None:
+        raise InvocationFailed(failure, invocation=record)
+    return response, record
+
+
+def _not_isolated(follow_up: dict[str, Any], previous: str | None) -> str | None:
+    """Why the answer to a follow-up is not used, from what the project reports of it, or None when it is.
+
+    `previous` is the response of the Attempt, which the follow-up was to continue.
+    """
+    if not previous or follow_up["previous_response_id"] != previous:
+        return (
+            f"the Foundry project does not report that the follow-up continued the response {previous} of the "
+            "Attempt, so its answer is not used"
+        )
+    if follow_up["tool_calls"]:
+        called = ", ".join(call["name"] for call in follow_up["tool_calls"])
+        return (
+            f"the agent called a tool while it answered the follow-up ({called}). "
+            "The follow-up was not isolated, so its answer is not used"
+        )
+    if follow_up["tool_choice"] != TOOL_CHOICE_NONE:
+        return (
+            f"the Foundry project reports the tool choice {follow_up['tool_choice']!r} for the follow-up and not "
+            f"{TOOL_CHOICE_NONE!r}. The agent could act, so its answer is not used"
+        )
+    return None
+
+
+def _follow_up(answer: _Answer, response: dict[str, Any], question: str) -> dict[str, Any]:
+    """What the platform returned about one follow-up, in the form of an invocation.
+
+    `question` is what the agent was sent. With it are the response the project says the
+    follow-up continued and the tool choice it says it applied.
+    """
+    recorded = _invocation(answer, response, None)
+    del recorded["composed_input"]
+    return {
+        **recorded,
+        "input": question,
+        "previous_response_id": response.get("previous_response_id"),
+        "tool_choice": response.get("tool_choice"),
     }
 
 

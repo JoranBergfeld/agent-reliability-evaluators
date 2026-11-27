@@ -28,6 +28,8 @@ except ReportingFailure as failure:
 
 Choose a directory in the run or artifact context of the platform the sweep runs on, such as a directory your CI publishes as a build artifact. The offering writes these files there and keeps nothing anywhere else. Access to them, their retention and their deletion are governed by that platform ([ADR 0003](../adr/0003-no-evidence-store.md)).
 
+The sweep runs in your own process whichever scoring path a metric uses, so a metric scored by Foundry-managed scoring changes nothing about where the files go. What Foundry holds of such a run, and how to leave a reference to the scorecard there, is in [delivery alongside Foundry](delivery-alongside-foundry.md).
+
 Without `artifact_dir` nothing is written. `render_report(scorecard)` in `reliability_evaluators.scorecard` returns the report as a string for a scorecard you already have, and `render_summary(scorecard)` the summary.
 
 ## What the report shows
@@ -89,6 +91,7 @@ When `artifact_dir` is given, the sweep either delivers all four files or raises
 | --- | --- | --- |
 | The directory cannot be created or used | `ReportingFailure`, before any Attempt is made | Nothing from the offering |
 | The declaration is rejected | `ReportingFailure`, caused by the `ValueError`, before any Attempt is made | `reporting-failure.json` |
+| The Foundry project of Foundry-managed scoring cannot be used | `ReportingFailure`, caused by the `ManagedScoringFailure`, before any Attempt is made | `reporting-failure.json` |
 | The sweep stops after Attempts were made, for example on a task-success rule that returns no task outcome | `ReportingFailure`, caused by the original error | `evidence.json` with the Attempts made until then, those of an experiment included, and `reporting-failure.json` |
 | The scorecard was produced, and one of the files cannot be produced or written | `ReportingFailure`, caused by the original error | The files written before the one that failed, and `reporting-failure.json` |
 
@@ -112,4 +115,5 @@ These are assumptions, not confirmed decisions.
 
 - Token usage has a section and a note of its own in the report, and is laid out by shape inside that section.
 - The declared experiments, the conditions, the customer controls and the confidence evidence have no layout of their own in the report: they are laid out by shape. Only how an execution ended is marked.
-- Delivery has been exercised on a local file system only. Delivery into the artifact context of a Foundry-managed run, and whether a reference to the report can be attached to a Foundry run, are not verified.
+- Delivery has been exercised on a local file system only, which stood in for the artifact directory of a CI job. That includes a Foundry-managed run, a partial one among them: see [delivery alongside Foundry](delivery-alongside-foundry.md#observed-live). No sweep has run in a CI job, and no directory has been published as a build artifact.
+- The offering leaves no reference to the scorecard in Foundry. One can be left on the evaluation of a managed run, by you: see [leaving a reference in Foundry](delivery-alongside-foundry.md#leaving-a-reference-in-foundry).
