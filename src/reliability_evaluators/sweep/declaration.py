@@ -79,3 +79,27 @@ class ActionEvidenceDeclaration:
             raise ValueError(f"action evidence is read by a callable, got {self.record!r}")
         mapping = ActionTypeMapping(evidence_source=self.evidence_source, action_types=self.action_types)
         object.__setattr__(self, "mapping", mapping)
+
+
+@dataclass(frozen=True, kw_only=True)
+class ConfiguredEvaluator:
+    """An Evaluator selected for a sweep by metric identity, with declarations of its own.
+
+    A metric selected by its identity alone uses what the sweep declares for every
+    Evaluator. `action_evidence` is used for this Evaluator instead of the sweep's.
+
+    Evaluators share Attempts only when what they need the Attempts to be made with is the
+    same. Separate Attempts are made for an Evaluator that needs something else.
+    """
+
+    metric_id: str
+    action_evidence: ActionEvidenceDeclaration | None = None
+
+    def __post_init__(self) -> None:
+        if not isinstance(self.metric_id, str) or not self.metric_id.strip():
+            raise ValueError(f"an Evaluator is selected by its metric identity, got {self.metric_id!r}")
+        if self.action_evidence is not None and not isinstance(self.action_evidence, ActionEvidenceDeclaration):
+            raise ValueError(
+                f"the action evidence of {self.metric_id!r} is declared as an ActionEvidenceDeclaration, "
+                f"got {self.action_evidence!r}"
+            )

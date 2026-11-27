@@ -9,7 +9,7 @@ pair is in `tests/evaluators/`.
 import pytest
 
 from reliability_evaluators.evidence import ActionEvent, OperationalConstraint, TaskOutcome, ViolationAssessment
-from reliability_evaluators.sweep import ActionEvidenceDeclaration, Task, run_sweep
+from reliability_evaluators.sweep import ActionEvidenceDeclaration, ConfiguredEvaluator, Task, run_sweep
 from tests.fakes import FakeActingAgentTarget
 
 OUTCOME = "outcome_consistency"
@@ -54,6 +54,10 @@ class ToDo:
         self.native_tool_calls = ActionEvidenceDeclaration(
             evidence_source="native tool calls", record=self._every_call, action_types=ACTION_TYPES
         )
+        # Reading an item changes nothing in the service, so it leaves no effect to record.
+        self.service_side_effects = ActionEvidenceDeclaration(
+            evidence_source="service-side effects", record=self._calls_that_change_an_item, action_types=ACTION_TYPES
+        )
 
     def sweep(self, metrics):
         return run_sweep(
@@ -78,6 +82,10 @@ class ToDo:
     def _every_call(self, attempt, response):
         calls = self.target.service_log.get(attempt.attempt_id)
         return None if calls is None else [ActionEvent(**call) for call in calls]
+
+    def _calls_that_change_an_item(self, attempt, response):
+        calls = self._every_call(attempt, response)
+        return None if calls is None else [call for call in calls if call.tool_name != "get_item"]
 
 
 def metric(scorecard, metric_id):
@@ -150,3 +158,51 @@ def test_evaluators_that_need_the_same_attempts_share_them_and_the_scorecard_sho
             "attempt_ids": SIX_ATTEMPTS,
             "shared_with": [other for other in ALL_FOUR if other != metric_id],
         }
+
+
+def test_an_attempt_an_evaluator_was_given_and_could_not_use_is_still_one_it_used():
+    # The second invocation fails, so no value rests on it. It was still made for these Evaluators.
+    scorecard = ToDo(
+        actions={"close": [READ_UPDATE, READ_UPDATE, READ_UPDATE]}, outcomes={"close": ["success", "error", "success"]}
+    ).sweep([OUTCOME, SEQUENTIAL])
+
+    for metric_id in (OUTCOME, SEQUENTIAL):
+        entry = metric(scorecard, metric_id)
+        assert entry["value"] == 1
+        assert entry["evidence"] == {"attempt_ids": ["close/attempt-1", "close/attempt-3"]}
+        assert entry["attempts_used"]["attempt_ids"] == ["close/attempt-1", "close/attempt-2", "close/attempt-3"]
+
+
+def test_evaluators_that_need_action_evidence_from_different_sources_get_separate_attempts():
+    # The Task is attempted twice for each Evaluator, and the agent acts differently every time.
+    #   Distributional, from the native tool calls of the first two Attempts: read, update
+    #   against update, delete. Divergence 1/2: 0.5.
+    #   Sequential, from the service-side effects of the last two Attempts: reading leaves no
+    #   effect, so both are one update. Distance 0: 1. From the native tool calls it would be 0.
+    to_do = ToDo(actions={"close": [READ_UPDATE, UPDATE_DELETE, READ_UPDATE, UPDATE_READ]}, attempts={"close": 2})
+
+    scorecard = to_do.sweep(
+        [
+            ConfiguredEvaluator(metric_id=DISTRIBUTIONAL, action_evidence=to_do.native_tool_calls),
+            ConfiguredEvaluator(metric_id=SEQUENTIAL, action_evidence=to_do.service_side_effects),
+        ]
+    )
+
+    assert [(attempt["attempt_id"], attempt["action_evidence"]["source"]) for attempt in scorecard["attempts"]] == [
+        ("close/attempt-1", "native tool calls"),
+        ("close/attempt-2", "native tool calls"),
+        ("close/set-2/attempt-1", "service-side effects"),
+        ("close/set-2/attempt-2", "service-side effects"),
+    ]
+    assert [attempt["task_id"] for attempt in scorecard["attempts"]] == ["close"] * 4
+    distributional, sequential = metric(scorecard, DISTRIBUTIONAL), metric(scorecard, SEQUENTIAL)
+    assert distributional["value"] == 0.5
+    assert distributional["attempts_used"] == {
+        "attempt_ids": ["close/attempt-1", "close/attempt-2"],
+        "shared_with": [],
+    }
+    assert sequential["value"] == 1
+    assert sequential["attempts_used"] == {
+        "attempt_ids": ["close/set-2/attempt-1", "close/set-2/attempt-2"],
+        "shared_with": [],
+    }

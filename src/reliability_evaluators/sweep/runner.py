@@ -2,40 +2,50 @@
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from typing import Any, Sequence
 
 from ..agent_target import AgentResponse, AgentTarget, AttemptRequest
-from ..evaluators import EVALUATORS, RELIABILITY_METRICS, Evaluator, Fidelity, ScoringPath
+from ..evaluators import EVALUATORS, RELIABILITY_METRICS, Evaluator, Fidelity, MetricResult, ScoringPath
 from ..evidence import (
     ActionEvidence,
     Attempt,
     EvidenceError,
     ExecutionStatus,
+    TaskEvidence,
     TaskOutcome,
     ViolationAssessment,
     group_by_task,
 )
 from ..scorecard import AcceptanceCriterion, ScoredMetric, build_scorecard, criteria_by_metric
-from .declaration import ActionEvidenceDeclaration, Task
+from .declaration import ActionEvidenceDeclaration, ConfiguredEvaluator, Task
+from .reuse import SharedAttempts, share_attempts
 
 
 def run_sweep(
     *,
     tasks: Sequence[Task],
     agent_target: AgentTarget,
-    metrics: Sequence[str],
+    metrics: Sequence[str | ConfiguredEvaluator],
     action_evidence: ActionEvidenceDeclaration | None = None,
     acceptance_criteria: Sequence[AcceptanceCriterion] = (),
 ) -> dict[str, Any]:
     """Make the declared Attempts, score the selected metrics, and return the scorecard.
 
-    `metrics` names the reliability metrics to score, by metric identity. Attempts run one
-    after another, Task by Task, and scoring happens in this process. The result is the
-    machine-readable reliability scorecard, as JSON-compatible data.
+    `metrics` selects the reliability metrics to score, each by its metric identity or as
+    a ConfiguredEvaluator with declarations of its own. Attempts run one after another,
+    Task by Task, and scoring happens in this process. The result is the machine-readable
+    reliability scorecard, as JSON-compatible data.
+
+    Evaluators are scored from the same Attempts when what they need those Attempts to be
+    made with is the same, so that no Attempt is made twice. Where it differs, the Tasks
+    are attempted again for the Evaluator that needs something else, after the Attempts
+    before it, and Attempts made for different needs are never scored together. The
+    scorecard shows which Attempts each Evaluator used.
 
     `action_evidence` declares where the actions of every Attempt are recorded from and
-    what action type each tool name is. The trajectory metrics need it, and every metric
-    that needs it is scored from the same Attempts.
+    what action type each tool name is. The trajectory metrics need it, and it applies to
+    every Evaluator that is not configured with its own.
 
     `acceptance_criteria` are the customer's own, at most one per metric. Each is reported
     with its metric as met, not met, or not assessed with a reason. Without one, a metric
@@ -46,30 +56,67 @@ def run_sweep(
     violation assessor that does not return sourced violation assessments of the operational
     constraints its Task declares, and an action recording that is not a sequence of ActionEvent.
     """
-    evaluators = [_evaluator(metric_id) for metric_id in metrics]
-    declared = {"action_types": None if action_evidence is None else action_evidence.mapping}
-    for evaluator in evaluators:
-        _require_declarations(evaluator, declared)
+    selected = [_select(metric, action_evidence) for metric in metrics]
     _require_distinct_tasks(tasks)
     # Called for its check: a second criterion for one metric is rejected here, not after the Attempts.
     criteria_by_metric(acceptance_criteria)
-    attempts = [
-        _run_attempt(task, number, agent_target, action_evidence)
-        for task in tasks
-        for number in range(1, task.attempts + 1)
+    # With no Evaluator selected the planned Attempts are still made, once.
+    sharing = share_attempts((evaluator, evaluator.requirements) for evaluator in selected) or [SharedAttempts()]
+    made = [
+        [
+            _run_attempt(
+                task,
+                _attempt_id(task, set_number, number),
+                agent_target,
+                shared.requirements.get("action_types", action_evidence),
+            )
+            for task in tasks
+            for number in range(1, task.attempts + 1)
+        ]
+        for set_number, shared in enumerate(sharing, start=1)
     ]
-    evidence = group_by_task(attempts)
-    attempt_ids = tuple(attempt.attempt_id for attempt in attempts)
     scored = [
         ScoredMetric(
-            result=evaluator.evaluate(evidence, *(declared[name] for name in evaluator.declarations)),
+            result=evaluator.evaluate(group_by_task(attempts)),
             scoring_path=ScoringPath.CUSTOMER_PROCESS,
             fidelity=Fidelity.AUTHORITATIVE,
-            attempts_used=attempt_ids,
+            attempts_used=tuple(attempt.attempt_id for attempt in attempts),
         )
-        for evaluator in evaluators
+        for shared, attempts in zip(sharing, made)
+        for evaluator in shared.members
     ]
-    return build_scorecard(metrics=scored, attempts=attempts, acceptance_criteria=acceptance_criteria)
+    return build_scorecard(
+        metrics=scored,
+        attempts=[attempt for attempts in made for attempt in attempts],
+        acceptance_criteria=acceptance_criteria,
+    )
+
+
+# What an Evaluator is called with for a declaration it names, given what the customer declared for it.
+_EVALUATED_WITH = {"action_types": lambda action_evidence: action_evidence.mapping}
+
+
+@dataclass(frozen=True)
+class _SelectedEvaluator:
+    """An Evaluator selected for the sweep, with what the customer declared for it."""
+
+    evaluator: Evaluator
+    # What the Evaluator's Attempts have to be made with, by the name the Evaluator declares
+    # its need under. Evaluators share Attempts when their requirements match.
+    requirements: dict[str, Any]
+
+    def evaluate(self, evidence: Sequence[TaskEvidence]) -> MetricResult:
+        declared = (_EVALUATED_WITH[name](self.requirements[name]) for name in self.evaluator.declarations)
+        return self.evaluator.evaluate(evidence, *declared)
+
+
+def _select(
+    metric: str | ConfiguredEvaluator, action_evidence: ActionEvidenceDeclaration | None
+) -> _SelectedEvaluator:
+    configured = metric if isinstance(metric, ConfiguredEvaluator) else ConfiguredEvaluator(metric_id=metric)
+    evaluator = _evaluator(configured.metric_id)
+    declared = {"action_types": configured.action_evidence or action_evidence}
+    return _SelectedEvaluator(evaluator, _requirements(evaluator, declared))
 
 
 def _evaluator(metric_id: str) -> Evaluator:
@@ -80,14 +127,22 @@ def _evaluator(metric_id: str) -> Evaluator:
     raise ValueError(f"{metric_id!r} is not a reliability metric")
 
 
-def _require_declarations(evaluator: Evaluator, declared: dict[str, Any]) -> None:
+def _requirements(evaluator: Evaluator, declared: dict[str, Any]) -> dict[str, Any]:
+    """What the customer declared for each thing the Evaluator declares it needs."""
     undeclared = {
         "action_types": "action evidence to be declared: the evidence source and the action types have no default",
     }
     for name in evaluator.declarations:
         if declared[name] is None:
             raise ValueError(f"{evaluator.definition.metric.metric_id!r} needs {undeclared[name]}")
+    return {name: declared[name] for name in evaluator.declarations}
 
+
+def _attempt_id(task: Task, set_number: int, number: int) -> str:
+    """The identity of a planned Attempt. Attempts made again for other Evaluators say so."""
+    if set_number == 1:
+        return f"{task.task_id}/attempt-{number}"
+    return f"{task.task_id}/set-{set_number}/attempt-{number}"
 
 def _require_distinct_tasks(tasks: Sequence[Task]) -> None:
     seen: set[str] = set()
@@ -98,11 +153,9 @@ def _require_distinct_tasks(tasks: Sequence[Task]) -> None:
 
 
 def _run_attempt(
-    task: Task, number: int, agent_target: AgentTarget, action_evidence: ActionEvidenceDeclaration | None
+    task: Task, attempt_id: str, agent_target: AgentTarget, action_evidence: ActionEvidenceDeclaration | None
 ) -> Attempt:
-    request = AttemptRequest(
-        attempt_id=f"{task.task_id}/attempt-{number}", task_id=task.task_id, prompt=task.prompt
-    )
+    request = AttemptRequest(attempt_id=attempt_id, task_id=task.task_id, prompt=task.prompt)
     try:
         response = agent_target.invoke(request)
     except Exception as error:
