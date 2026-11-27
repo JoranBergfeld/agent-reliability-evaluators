@@ -27,7 +27,7 @@ scorecard = run_sweep(
 
 `my_test_service` stands for your own code.
 
-It is the sibling of the [Foundry hosted agent target](../foundry_hosted_agent/readme.md) and takes the same arguments, apart from `agent_version`. What differs between the two agent types is under [a failing tool fails the whole invocation](#a-failing-tool-fails-the-whole-invocation).
+It is the sibling of the [Foundry hosted agent target](../foundry_hosted_agent/readme.md) and takes the same arguments, apart from `agent_version`. What differs between the two agent types is under [a failing tool fails the whole invocation](#a-failing-tool-fails-the-whole-invocation) and [the confidence rating](#the-confidence-rating).
 
 | Argument | Meaning | Default |
 | --- | --- | --- |
@@ -176,16 +176,81 @@ Two consequences:
 - The Attempt is an execution failure, not a task failure. That is what an invocation error is.
 - **[Fault robustness](../fault_robustness/readme.md) is unavailable when the fault makes a tool of a prompt agent return an HTTP error**, because no Attempt under the fault completes. In the live check it was unavailable with the reason `no valid Attempt under the fault variation`. It is not 0. Whether a fault that a tool reports inside a successful HTTP answer reaches the agent, and so can be measured, was not tried.
 
-## No confidence rating
+## The confidence rating
 
-The target declares that it does not support an isolated follow-up. Whether a Foundry prompt agent can be asked a follow-up question in the conversation of a completed Attempt, without being able to act, has not been verified. Until it is, every Attempt made through this target has no confidence rating, with that reason, and calibration, strict confidence discrimination and the Brier-based score are unavailable. The agent is not asked, and a rating in its task response is not used.
+When a selected metric uses confidence, the sweep asks the agent how likely it thinks the task succeeded, in one separate request after each completed Attempt: see [how the confidence rating is collected](../brier_based_score/readme.md#how-the-confidence-rating-is-collected). The target declares that it can ask this in an isolated follow-up, so calibration, strict confidence discrimination and the Brier-based score can be scored for a prompt agent. Give each Task its `shareable_success_rule`. Nothing else is needed.
+
+```text
+POST <project endpoint>/openai/v1/responses
+{"input": "<the confidence question, which holds the Task's success rule in words>",
+ "previous_response_id": "<the response of the Attempt>",
+ "agent_reference": {"type": "agent_reference", "name": "<agent name>", "version": "<the version that answered the Attempt>"},
+ "tool_choice": "none",
+ "metadata": {"attempt_id": "<Attempt identity>", "task_id": "<Task identity>", "request": "confidence"}}
+```
+
+Isolated means that the agent answers in the conversation of that one Attempt, and that it cannot act while it answers.
+
+- **The conversation.** `previous_response_id` names the response of the Attempt. The project then gives the agent what that response was made from: the input the agent was sent, its tool calls with what they returned, and its answer. The question is all that is added. The task outcome is not in the request, and neither is anything of another Attempt.
+- **No action.** `tool_choice` is `none`. The project applies it when it runs the agent, and no tool call of the agent then gets through. It is a setting of the request, not an instruction to the agent. The question also tells the agent not to act, and nothing depends on the agent obeying that.
+
+The request is sent once, to the version of the agent that answered the Attempt. It is a response of its own in your project. The response of the Attempt was the same when it was read again after its follow-ups.
+
+### What the isolation rests on
+
+A caller cannot take a tool away from a prompt agent for one request. A `tools` list sent with the request was accepted and ignored, and the agent called its tool. What a caller can set is the tool choice. So the isolation rests on the Foundry project applying `tool_choice: none`. Three things support that, and they are different kinds of evidence:
+
+- **Documented.** Microsoft describes the setting for Foundry Agent Service as "`none`: The model doesn't call tools" ([Tool best practices for Microsoft Foundry Agent Service](https://learn.microsoft.com/en-us/azure/foundry/agents/concepts/tool-best-practice), read on 2026-11-27).
+- **Observed.** A live agent was told, in such a follow-up, to create an item. Every time, it answered that it was creating the item and the service received no call. Told the same thing in the same conversation without the tool choice, it created the item, every time. The counts are under [the confidence follow-up](#the-confidence-follow-up).
+- **Checked on every follow-up.** The project says in its response which response the follow-up continued, which tool choice it ran under and which tools were called. The target reads all three. It returns the agent's answer only when the follow-up continued the response of the Attempt, ran under `none` and holds no tool call.
+
+The observations show that no call got through when the agent tried to make one. They do not show that none ever can. That rests on what the setting is documented to do. The check on each follow-up cannot undo a call. It makes sure that an answer given after one is never read as a rating.
+
+What was not examined: tool types other than an OpenAPI tool and the code interpreter, a model other than `gpt-4.1-mini`, and a tool that the platform runs without a tool call of the model. See [not verified](#not-verified).
+
+### When there is no rating
+
+In each of these the Attempt keeps its execution status and its task outcome, the agent is not asked again, and the three metrics count the Attempt as missing with the reason. A rating that the agent wrote in its task response is never used. There is no fallback.
+
+| What happened | `confidence.unavailable_reason` starts with |
+| --- | --- |
+| The agent's definition specifies a `tool_choice` of its own. The project refuses the follow-up before the agent runs. Observed live | `the confidence request failed: InvocationFailed: the Foundry project answered HTTP 400: invalid_payload: ToolChoice must match the agent's tool_choice when agent specifies tool_choice.` |
+| The project answered the follow-up with another HTTP error, such as 429 for a rate limit | `the confidence request failed: InvocationFailed: the Foundry project answered HTTP <status>:` and the error's code and message |
+| The response of the follow-up has a status other than `completed`, or carries an error | `the confidence request failed: InvocationFailed: the response <id> of the prompt agent` |
+| No answer within the target's `timeout_seconds` | `the confidence request failed: TimeoutError: the Foundry project did not answer within <limit> seconds` |
+| The response of the follow-up holds a tool call | `the confidence request failed: InvocationFailed: the agent called a tool while it answered the follow-up (<the tools>). The follow-up was not isolated, so its answer is not used` |
+| The project reports another tool choice than `none` for the follow-up | `the confidence request failed: InvocationFailed: the Foundry project reports the tool choice '<it>' for the follow-up and not 'none'. The agent could act, so its answer is not used` |
+| The project does not report that the follow-up continued the response of the Attempt | `the confidence request failed: InvocationFailed: the Foundry project does not report that the follow-up continued the response <id> of the Attempt, so its answer is not used` |
+| The agent answered with anything but one number from 0 to 100 | See [how the answer is read](../brier_based_score/readme.md#how-the-answer-is-read) |
+
+The last three of the `InvocationFailed` rows were never observed live. The default test run covers them against a fake project.
+
+**An agent whose definition specifies a `tool_choice` has no rating on any Attempt**, so the three metrics are unavailable for it. The project runs such an agent only under the tool choice of its definition. In the live observations an agent defined with `tool_choice: required`, asked the confidence question without a tool choice in the request, read an item of the service before it answered. The question told it not to call a tool.
+
+The time limit you declare for an Attempt does not apply to the follow-up. The target waits its own `timeout_seconds` for it.
+
+### What is recorded for the follow-up
+
+What the platform returned for the follow-up is kept on the Attempt as `confidence_invocation`, apart from `invocation`. It is `null` when no follow-up was sent. It has the fields of `invocation` without `composed_input`, and three more:
+
+| Field | Contents |
+| --- | --- |
+| `input` | The question as the agent was sent it, with the success rule |
+| `previous_response_id` | The response the project says the follow-up continued: the `response_id` of the Attempt's `invocation` |
+| `tool_choice` | The tool choice the project says the follow-up ran under. `none` for a follow-up whose answer was used |
+| `response_id`, `request_ids`, `agent`, `model`, `served_model`, `metadata`, `http_status`, `status`, `error` | As for an invocation. `metadata` holds the Attempt identity, the Task identity and `"request": "confidence"` |
+| `token_usage`, `token_usage_missing` | The `usage` of the follow-up's response, or why there is none |
+| `tool_calls` | The tool calls the response exposed. An empty list for a follow-up whose answer was used |
+
+A follow-up that failed keeps the same entry with whatever the platform returned. The token usage of the follow-up is reported with its Attempt and apart from the invocation: see [token usage](../token_usage/readme.md#confidence-follow-ups). It is not part of the Attempt's resource measurements.
 
 ## Limits
 
-- One request per Attempt, not streamed. A streamed response is not read.
+- One request per Attempt, and one more for its confidence follow-up when a selected metric uses confidence. Neither is streamed, and a streamed response is not read.
 - This target invokes the agent from your process only. To invoke it through Foundry cloud evaluation, use the [cloud evaluation target](../foundry_cloud_evaluation/readme.md), which also lists what differs between the two entry points.
 - The target does not look the agent up. It does not check that the agent is a prompt agent, and it reports no agent configuration for you to declare.
-- A conversation is never continued. The target has no way to link an invocation to an earlier response.
+- An Attempt never continues a conversation. Only the confidence follow-up names an earlier response, and that is the response of its own Attempt.
+- The confidence follow-up needs the project to have kept the response of the Attempt. It had, every time, without the target asking for it. A project that does not keep responses was not tried.
 
 ## Observed live
 
@@ -224,6 +289,72 @@ Made on the first fixture.
 - A request with an invalid token was answered with HTTP 401 and the error code `401`, with an `apim-request-id` header and no `x-request-id`.
 - A response has no `conversation` and no `previous_response_id`.
 
+### The confidence follow-up
+
+Observed on 2026-11-27 in Sweden Central, on fixtures of the same kind, from a workstation with Azure CLI 2.93.0 and Python 3.15, signed in as a user. The prompt agent ran `gpt-4.1-mini` (`2025-04-14`). This records what happened. It is not a reliability result for any agent. Synthetic data only.
+
+Whether the agent acted was read from the to-do service: the calls it received and its state, just before each follow-up was sent and just after it ended. A follow-up that asks for a rating shows only that no call occurred. So the agent was also told, in follow-ups, to make a call. That shows whether one gets through.
+
+The interfaces as they worked on that date:
+
+| Purpose | Request |
+| --- | --- |
+| The Attempt and the follow-up | `POST <project endpoint>/openai/v1/responses`, with the version in the path and no `api-version`. The answer's `api-supported-versions` header read `1.0,2025-05-15-preview,2025-11-15-preview` |
+| What a response was given as input | `GET <project endpoint>/openai/v1/responses/{response id}/input_items` |
+| Another agent for a probe | `POST <project endpoint>/agents/{name}/versions?api-version=v1` |
+
+#### The live check of the follow-up
+
+`tests/live/test_confidence_follow_up_live.py` ran three times, each time on a fixture of its own: once on a fixture that was kept for the work, and twice self-contained, where the check provisions its fixture, runs and tears it down. The first two runs were made before token usage reporting was merged into the sweep, on a source that kept what the platform returned for a follow-up inside the confidence evidence. The third was made after that merge, with the follow-up kept as `confidence_invocation`. The cloud evaluation target was merged after the third run. It added the `entry_point` field to what is recorded, which the check does not read. The requests the target sends were the same in all three runs and are the same now. Every run passed, with the same findings:
+
+- **The service recorded nothing during any follow-up.** In each run one sweep made five Attempts, three of the fixture's Task and two of that Task without its last step, and the agent was asked for a rating after each. For all 15 follow-ups, the calls the service had received and its state were the same before and after.
+- **Each follow-up was a response of its own that continued the response of its Attempt.** The project reported the Attempt's response as `previous_response_id`, the tool choice `none`, no tool call, the agent version that had answered the Attempt, and the `metadata` it was sent.
+- **The agent was given the conversation of its Attempt and the question, and nothing else.** The project listed as the input of each follow-up: the input of the Attempt, each tool call of the Attempt with what it returned, the agent's answer, and the question with the success rule, word for word. That was 13 items after an Attempt of five tool calls and 11 after one of four. No item held the task outcome or anything of another Attempt.
+- **Every follow-up was answered with one number.** The three Attempts of the whole Task succeeded, and the agent rated each `100`, in every run. The two Attempts without the last step failed. The agent rated them `20` and `80` in the first run, and `80` both times in the other two.
+- **Calibration, strict confidence discrimination and the Brier-based score were available**, and each equalled the value the check calculates itself, from the ratings and from the task outcomes it reads from the service: 0.8, 1 and 0.864 in the first run, and 0.68, 1 and 0.744 in the other two. They are the values of a synthetic Task and are recorded to show that the calculation ran on live ratings.
+- **Token usage was reported on every follow-up**: 804 to 900 total tokens, of which 2 were output.
+- **Told to act, the agent called nothing.** In each run one more Attempt was followed three times, through the target, by an instruction to create an item in the place of the question. All nine times the project reported the tool choice `none` and no tool call, the agent answered in many messages that it was creating the item, and the service received no call. Then the same instruction was sent once in the same conversation without a tool choice: the project reported `auto`, the agent called its create tool, and the service recorded the new item. That happened in each of the three runs.
+- **A prompt agent whose definition specifies `tool_choice: required` was refused the follow-up.** Its two Attempts in each run completed. Each follow-up was answered with HTTP 400 `invalid_payload`, "ToolChoice must match the agent's tool_choice when agent specifies tool_choice", and the service recorded nothing: the project refused the request before the agent ran. No Attempt had a rating, and the three metrics were unavailable with the reason `no valid confidence/outcome pair`.
+
+#### By hand, not through the target
+
+Made on the first fixture with a throwaway script, as single requests. Each follow-up named the response of an Attempt of the fixture's prompt agent in `previous_response_id`, unless it says otherwise.
+
+| What was sent | What happened |
+| --- | --- |
+| The confidence question, the same agent, `tool_choice: none` | Answered `100`, with no call at the service, in about one and a half seconds. 5 of 5, two of them with the agent version pinned and one with `store: false` |
+| A question about the Attempt: which identifier it was told to use, and which title the tool returned | Answered with both. The title was in no prompt, only in what the tool had returned |
+| The same question without `previous_response_id` | The agent answered that it had been told no identifier |
+| An instruction to create an item, the same agent, `tool_choice: none` | No call at the service and no tool call in the response, in 27 of 27 follow-ups that completed. Each held 6 to 20 messages in which the agent wrote that it was creating the item. 15 more, sent without a pause, were answered HTTP 429 `rate_limit_exceeded` for the model deployment, also without a call |
+| The same instruction, the same agent, no tool choice | The agent created the item, 8 of 8. The project reported the tool choice `auto` |
+| The same instruction, the same agent, `"tools": []` | Accepted with HTTP 200 and ignored: the response listed the agent's own tool, and the agent created the item. Once |
+| The same instruction, `tool_choice: none` and `max_tool_calls: 0` | HTTP 400 `integer_below_min_value` |
+| The same instruction to another prompt agent with the same model and instructions and no tools | Accepted. That agent knew the conversation. It answered as if it had made the call, and called nothing. Once |
+| The same instruction to the model deployment, with no agent and no tools | Accepted. The model knew the conversation, answered as if it had made the call, and called nothing. Once. Sent the confidence question and the agent's instructions, it answered `100` |
+| A follow-up with `tool_choice: none` to an agent defined with `tool_choice: required` | HTTP 400 `invalid_payload`, as in the live check, and no call. 3 of 3 |
+| The confidence question to that agent with no tool choice in the request | The agent read the item `unrelated` and then answered `100`, although the question told it to call no tool. Once. In two more follow-ups without `none`, one of them with `tool_choice: required` in the request, the agent made a call that the service recorded, and the project answered HTTP 400 `tool_user_error` |
+| A `previous_response_id` the project does not know | HTTP 400 `invalid_payload`, "Invalid previous_response_id" |
+
+Two more observations:
+
+- **The code interpreter.** A prompt agent with only the code interpreter was told to run code that prints a product. With `tool_choice: none` the response held no `code_interpreter_call`, 2 of 2, and the product the agent stated was wrong both times. Without the tool choice it held one, and the product was right. There is no service to ask here: this rests on the items of the response.
+- **The response of the Attempt was not changed.** Read again after eight follow-ups to it, its output was the same.
+
+Why the other two ways that worked are not used is recorded in [ADR 0009](../adr/0009-prompt-agent-follow-up-rests-on-tool-choice-none.md).
+
+#### Resources of this verification
+
+Four resource groups were created for this verification, all in the subscription named `Sandbox`:
+
+| Resource group | What it was for |
+| --- | --- |
+| `rg-are-53-d33f3da8` | The fixture that was kept for the work: the requests by hand and the first run of the live check. |
+| `rg-are-53-81a2f2f7` | The fixture of the second run, which the check provisioned and tore down itself. That run took 53 minutes end to end. |
+| `rg-are-53-cdbda532` | Never became a fixture. `az containerapp up` ended with `ERROR: Run failed` while the image of the to-do service was being built, and the provisioning tore the group down. The next provisioning, with nothing changed, succeeded. The cause is not known. |
+| `rg-are-53-a4e60902` | The fixture of the third run, which the check provisioned and tore down itself. That run took 50 minutes end to end. |
+
+Each was deleted with the fixture's `teardown`, and the soft-deleted Foundry accounts were purged. Afterwards a separate `az group exists` returned `false` for each of the four.
+
 ### Earlier forms of the check
 
 The check was run in two earlier forms on earlier fixtures, five times in all, each time passing with 0.36 in the scorecard and 0.36 calculated independently, and with the same findings for completed and faulted Attempts. The first form, run three times, used fresh state with a state of the service per Attempt, named by text put in front of the prompt, and sent one of five baseline Attempts the Task without its last step. The second, run twice, was the check as it is now, before the evidence of an invocation took the form it shares with the hosted agent target.
@@ -248,4 +379,5 @@ Each was deleted with the fixture's `teardown`, the second by the provisioning t
 - Authentication in CI or with `azure-identity`.
 - Tool types other than OpenAPI, a second version of the agent, and which roles are really required.
 - What the platform does with an invocation whose caller stopped waiting, beyond the observations above.
-- More than one Attempt at a time and the confidence follow-up. Foundry cloud evaluation as the entry point has its own target and its own [live observations](../foundry_cloud_evaluation/readme.md#observed-live).
+- More than one Attempt at a time. Foundry cloud evaluation as the entry point has its own target and its own [live observations](../foundry_cloud_evaluation/readme.md#observed-live). Every Attempt and every follow-up here was made from customer code. Nothing here says whether a confidence follow-up can be made when Foundry cloud evaluation makes the Attempts.
+- For the confidence follow-up: an agent with a tool of another type than an OpenAPI tool or the code interpreter, such as an MCP tool, file search or web search. A tool that the platform runs without a tool call of the model, such as memory. A model other than `gpt-4.1-mini`. A response of the follow-up that holds a tool call, a tool choice other than `none` in it, or no `previous_response_id`. A follow-up that is streamed.

@@ -150,7 +150,7 @@ scorecard = run_sweep(
 print(to_json(scorecard))
 ```
 
-`my_agent` and `my_test_service` stand for your own code. The Foundry prompt agent target and the Foundry hosted agent target cannot be used for this yet; see [What is not verified](#what-is-not-verified).
+`my_agent` and `my_test_service` stand for your own code. With the [Foundry prompt agent target](../foundry_prompt_agent/readme.md#the-confidence-rating) you write none of this: it declares the isolated follow-up itself. The Foundry hosted agent target declares it unsupported. See [on Foundry agents](#on-foundry-agents).
 
 ## How the confidence rating is collected
 
@@ -322,9 +322,20 @@ One point is this implementation's reading of the confirmed decision that a rati
 
 2. **An answer with any text besides one number is not a rating.** `Confidence: 90` is unavailable, although a person would read it as 90. The alternative, taking the only number in the answer, would also read `I am 100% sure it failed.` as a rating of 100.
 
-## What is not verified
+## On Foundry agents
 
-The agent target is an interface. Whether a Foundry prompt agent or hosted agent can answer a follow-up in which the agent cannot act has not been tried against a live Foundry project. Until that is verified, a Foundry target has no basis for declaring `IsolatedFollowUp(supported=True)`, and without that declaration the three predictability metrics are unavailable by decision. The [Foundry prompt agent target](../foundry_prompt_agent/readme.md) and the [Foundry hosted agent target](../foundry_hosted_agent/readme.md) therefore declare the follow-up unsupported.
+Whether a Foundry agent can be asked in an isolated follow-up was tried against a live Foundry project on 2026-11-27, with Attempts made from customer code through the prompt agent target and the hosted agent target. An agent target declares the follow-up supported only where a caller can ensure that the agent cannot act. Where it cannot, the three predictability metrics are unavailable by decision, and there is no fallback to a rating in the task response.
+
+| Agent type | Isolated follow-up | Calibration, strict confidence discrimination, Brier-based score |
+| --- | --- | --- |
+| Prompt agent | Supported. The follow-up names the response of the Attempt and carries the tool choice `none`, which the project applies when it runs the agent. See [the confidence rating](../foundry_prompt_agent/readme.md#the-confidence-rating) | Scored from the ratings |
+| Prompt agent whose definition specifies a `tool_choice` | Supported by the target and refused by the project: such an agent runs only under the tool choice of its definition | Unavailable: every Attempt has no rating, with the project's answer as the reason |
+| Hosted agent | Not supported. The agent's own code decides whether it acts, whatever a caller sends. See [no confidence rating](../foundry_hosted_agent/readme.md#no-confidence-rating) | Unavailable: every Attempt has no rating, with the target's reason |
+| Either agent type, invoked through [Foundry cloud evaluation](../foundry_cloud_evaluation/readme.md) | Not supported: not verified | Unavailable: every Attempt has no rating, with the target's reason |
+
+What the isolation of the prompt agent's follow-up rests on, and which of it was observed and which is documented, is [said with the target](../foundry_prompt_agent/readme.md#what-the-isolation-rests-on).
+
+Not verified: Foundry cloud evaluation as the entry point. Every Attempt and every follow-up of the verification was made from customer code. Nothing here says whether a confidence follow-up can be made, or made in isolation, when Foundry cloud evaluation makes the Attempts, so the cloud evaluation target declares it unsupported.
 
 ## Numbers
 
