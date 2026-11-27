@@ -392,7 +392,7 @@ def test_acceptance_is_reported_separately_from_task_outcomes(behaviours, task_s
     assert [attempt["task_outcome"] for attempt in scorecard["attempts"]] == [
         {"success": task_succeeded, "source": SOURCE}
     ] * 3
-    assert set(scorecard) == {"schema_version", "metrics", "attempts"}
+    assert set(scorecard) == {"schema_version", "metrics", "experiments", "attempts"}
     assert all("acceptance" not in attempt for attempt in scorecard["attempts"])
 
 

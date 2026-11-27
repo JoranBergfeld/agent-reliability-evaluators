@@ -161,6 +161,8 @@ The sweep asks only when a selected metric uses confidence. For each Attempt, in
 3. The sweep sends one separate, confidence-only request through the agent target.
 4. The next Attempt starts.
 
+In a [controlled experiment](../sweep/controlled-experiments.md), the request is sent after `verify_condition` and before `clean_up`. An Attempt whose setup failed or whose condition was not met did not complete, so the agent is not asked.
+
 ### What the agent is shown
 
 The `ConfidenceRequest` carries the Attempt the agent just completed, the agent's own response, the Task's `shareable_success_rule`, and the question below. It has no field for the task outcome, a verdict or any other Attempt, and the request is sent before a later Attempt is made.
@@ -257,6 +259,7 @@ The metric's own entry carries:
 | `details.pairs` | every valid pair: Attempt and Task identity, `rating` as written, `confidence`, `task_outcome` with its `source`, and `squared_error` |
 | `details.mean_squared_error` | the mean of the squared errors, which is the raw Brier loss; `null` when there is no valid pair |
 | `evidence.attempt_ids` | the Attempts the value rests on |
+| `attempts_used` | every Attempt this Evaluator was given, whatever became of it, and the other metrics scored from any of the same Attempts: see [several Evaluators in one sweep](../sweep/several-evaluators.md) |
 | `acceptance` | the assessment of your acceptance criterion for this metric, or `null` when you declared none: see [acceptance criteria](../acceptance_criteria/readme.md). A criterion can require a number of valid pairs with `{"minimum_counts": {"confidence_outcome_pairs": 20}}`. |
 
 ## Evidence it needs

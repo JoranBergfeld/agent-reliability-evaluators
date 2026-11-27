@@ -10,6 +10,7 @@ from typing import Any
 from .actions import ActionEvidence
 from .confidence import ConfidenceRating, ConfidenceUnavailable
 from .errors import EvidenceError
+from .experiment import Condition, ConditionRole, LifecycleStep, ObservedCondition, StartingStatePolicy
 
 
 def _require_text(owner: str, **fields: Any) -> None:
@@ -23,6 +24,12 @@ class ExecutionStatus(str, Enum):
 
     COMPLETED = "completed"
     FAILED = "failed"
+    # A customer control could not prepare the state or apply the condition. The agent was not invoked.
+    SETUP_FAILED = "setup_failed"
+    # The verify control did not show that the intended condition occurred.
+    CONDITION_NOT_MET = "condition_not_met"
+    # The Attempt ran, and the clean-up control then failed to restore the state.
+    CLEANUP_FAILED = "cleanup_failed"
 
 
 @dataclass(frozen=True)
@@ -162,18 +169,59 @@ class OperationalConstraint:
         return {"constraint_id": self.constraint_id, "description": self.description}
 
 
+class SeverityLevel(str, Enum):
+    """The three levels of severity that a reliability metric gives a weight to."""
+
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+
+@dataclass(frozen=True, kw_only=True)
+class SeverityRating:
+    """How serious one violation is.
+
+    `label` is the rating as its source gave it. `level` is the severity level it stands for.
+    The labels low, medium and high are the levels themselves. Any other label, such as
+    critical, has a level only when the customer maps it to one explicitly, by giving `level`.
+    Without that mapping the label is kept and has no level: none is assumed.
+    """
+
+    label: str
+    level: SeverityLevel | None = None
+
+    def __post_init__(self) -> None:
+        _require_text("a severity rating", label=self.label)
+        levels = [level.value for level in SeverityLevel]
+        if self.level is None:
+            mapped = SeverityLevel(self.label) if self.label in levels else None
+        elif isinstance(self.level, str) and self.level in levels:
+            mapped = SeverityLevel(self.level)
+        else:
+            raise EvidenceError(
+                "a severity label can only be mapped to low, medium or high. "
+                f"{self.label!r} is mapped to {self.level!r}"
+            )
+        object.__setattr__(self, "level", mapped)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"label": self.label, "level": None if self.level is None else self.level.value}
+
+
 @dataclass(frozen=True, kw_only=True)
 class ViolationAssessment:
     """Whether one Attempt violated one of its applicable operational constraints.
 
     `evidence` is what the determination rests on, and `source` says what made it, such as
-    a deterministic check or a label.
+    a deterministic check or a label. `severity` is the severity rating of the violation
+    this assessment found, so a rating always belongs to one violation.
     """
 
     constraint_id: str
     violated: bool
     evidence: str
     source: str
+    severity: SeverityRating | None = None
 
     def __post_init__(self) -> None:
         if type(self.violated) not in (bool, int) or self.violated not in (0, 1):
@@ -185,6 +233,14 @@ class ViolationAssessment:
         _require_text(
             "a violation assessment", constraint_id=self.constraint_id, evidence=self.evidence, source=self.source
         )
+        if self.severity is None:
+            return
+        if not isinstance(self.severity, SeverityRating):
+            raise EvidenceError(f"the severity of a violation is a SeverityRating. Got {self.severity!r}")
+        if not self.violated:
+            raise EvidenceError(
+                f"a severity rating describes a violation, and the assessment of {self.constraint_id!r} found none"
+            )
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -192,6 +248,7 @@ class ViolationAssessment:
             "violated": self.violated,
             "evidence": self.evidence,
             "source": self.source,
+            "severity": None if self.severity is None else self.severity.to_dict(),
         }
 
 
@@ -221,6 +278,17 @@ class Attempt:
     # The operational constraints that apply to this Attempt, and the assessments made of them.
     operational_constraints: tuple[OperationalConstraint, ...] = ()
     violation_assessments: tuple[ViolationAssessment, ...] = ()
+    # The experiment the Attempt was made for. None: its Task was given without an experiment,
+    # so no starting-state policy and no condition were declared for it.
+    experiment_id: str | None = None
+    starting_state: StartingStatePolicy | None = None
+    # The condition the experiment intended for this Attempt, and its part in the experiment.
+    intended_condition: Condition | None = None
+    condition_role: ConditionRole | None = None
+    # What the verify control observed. None: nothing was observed.
+    observed_condition: ObservedCondition | None = None
+    # The customer controls invoked for this Attempt, in order.
+    lifecycle: tuple[LifecycleStep, ...] = ()
 
     def __post_init__(self) -> None:
         for name in ("attempt_id", "task_id"):
@@ -248,6 +316,30 @@ class Attempt:
                 f"Got {self.confidence!r}"
             )
         self._require_assessments_of_applicable_constraints()
+        self._require_recorded_experiment()
+
+    def _require_recorded_experiment(self) -> None:
+        if self.starting_state is not None:
+            try:
+                object.__setattr__(self, "starting_state", StartingStatePolicy(self.starting_state))
+            except ValueError:
+                raise EvidenceError(f"{self.starting_state!r} is not a starting-state policy") from None
+        if self.intended_condition is not None or self.condition_role is not None:
+            if not isinstance(self.intended_condition, Condition):
+                raise EvidenceError(
+                    f"an intended condition is a Condition, not a label. Got {self.intended_condition!r}"
+                )
+            try:
+                object.__setattr__(self, "condition_role", ConditionRole(self.condition_role))
+            except ValueError:
+                raise EvidenceError(
+                    f"a condition is the baseline or the variation of its experiment. Got {self.condition_role!r}"
+                ) from None
+        if self.observed_condition is not None and not isinstance(self.observed_condition, ObservedCondition):
+            raise EvidenceError(
+                f"an observed condition is an ObservedCondition with its source, not a label. "
+                f"Got {self.observed_condition!r}"
+            )
 
     def _require_superseded_task_outcomes(self) -> None:
         try:
@@ -331,4 +423,14 @@ class Attempt:
             "confidence": None if self.confidence is None else self.confidence.to_dict(),
             "operational_constraints": [constraint.to_dict() for constraint in self.operational_constraints],
             "violation_assessments": [assessment.to_dict() for assessment in self.violation_assessments],
+            "experiment_id": self.experiment_id,
+            "starting_state": None if self.starting_state is None else self.starting_state.value,
+            "intended_condition": self._intended_condition(),
+            "observed_condition": None if self.observed_condition is None else self.observed_condition.to_dict(),
+            "lifecycle": [step.to_dict() for step in self.lifecycle],
         }
+
+    def _intended_condition(self) -> dict[str, Any] | None:
+        if self.intended_condition is None:
+            return None
+        return {"role": self.condition_role.value, **self.intended_condition.to_dict()}
