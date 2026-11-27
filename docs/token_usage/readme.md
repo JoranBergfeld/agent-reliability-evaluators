@@ -44,7 +44,7 @@ Next to the count the report repeats what identifies the request on the platform
 | `evaluation_run` | `eval_id`, `run_id` and `output_item_id` of the cloud evaluation run the Attempt was invoked through. `null` for an Attempt that was invoked from your process |
 | `source` | Where the count comes from, as the agent target states it. `null` when the count is missing or the target states no source |
 
-**A count is what was reported, and `source` says by whom.** Foundry runs a prompt agent and reports the usage of its response itself. A hosted agent's own code produces its response, usage included, and Foundry passes that on: the count is then the agent's own. The report does not check a count against what a model deployment metered ([ADR 0010](../adr/0010-a-count-is-reported-as-it-was-stated-with-its-source.md)). [Observed live](#observed-live), the usage of a prompt agent's response was what the deployment metered, to the token, and the usage of the fixture's hosted agent was about three times what the deployment metered.
+**A count is what was reported, and `source` says by whom.** Foundry runs a prompt agent and reports the usage of its response itself. A hosted agent's own code produces its response, usage included, and Foundry passes that on: the count is then the agent's own. The report does not check a count against what a model deployment metered ([ADR 0011](../adr/0011-a-count-is-reported-as-it-was-stated-with-its-source.md)). [Observed live](#observed-live), the usage of a prompt agent's response was what the deployment metered, to the token, and the usage of the fixture's hosted agent was about three times what the deployment metered.
 
 | What the agent target recorded | Reported as |
 | --- | --- |
@@ -312,7 +312,7 @@ Foundry returns the response of a hosted agent as the agent's own code made it, 
 
 With one model call the two are equal. With more, the numbers fit a count that adds to every model call the tokens of the calls before it in the same response. With two model calls that is exact: a first call of 325 in and 30 out is counted twice. With three and six it is consistent with the numbers and was not proven. What in the agent's code produces this was not looked for, and it was seen with this one agent and these package versions only.
 
-The usage report gives the count as the response stated it, because it is the only count there is, and says in `source` that it is the agent's own. It is not corrected and not replaced ([ADR 0010](../adr/0010-a-count-is-reported-as-it-was-stated-with-its-source.md)). **Do not read the total of a sweep on a hosted agent as tokens the deployment processed without comparing it with your own deployment's metrics.** For the fixture's Task it was 3.1 times what was metered.
+The usage report gives the count as the response stated it, because it is the only count there is, and says in `source` that it is the agent's own. It is not corrected and not replaced ([ADR 0011](../adr/0011-a-count-is-reported-as-it-was-stated-with-its-source.md)). **Do not read the total of a sweep on a hosted agent as tokens the deployment processed without comparing it with your own deployment's metrics.** For the fixture's Task it was 3.1 times what was metered.
 
 A prompt agent is different. Foundry makes the model calls itself, as one model request per invocation whatever the number of tool calls, and the usage of the response was what the deployment metered in every isolated invocation.
 

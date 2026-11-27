@@ -13,8 +13,7 @@ import json
 import pytest
 
 from reliability_evaluators.evidence import OutcomeCorrection, TaskOutcome
-from reliability_evaluators.managed_scoring import FoundryManagedScoring, derive_artifact
-from reliability_evaluators.managed_scoring.artifact import MANAGED_ATTEMPT_EVIDENCE
+from reliability_evaluators.managed_scoring import FoundryManagedScoring
 from reliability_evaluators.scorecard import AcceptanceCriterion, render_report, to_json
 from reliability_evaluators.sweep import (
     ConfiguredEvaluator,
@@ -258,18 +257,6 @@ def test_a_rescore_of_attempts_that_were_cut_short_has_an_execution_failure_as_i
     assert rescore["execution_failure"]["reason"].startswith("the Attempts that supply this metric's evidence were cut short")
 
 
-@pytest.fixture
-def resource_consistency_has_a_managed_evaluator(monkeypatch):
-    """Declare the Attempt evidence of a second Evaluator, which is what makes it derivable.
-
-    Only outcome consistency is declared in this version.
-    """
-    monkeypatch.setitem(MANAGED_ATTEMPT_EVIDENCE, "resource_consistency", ("resource_measurements",))
-    derive_artifact.cache_clear()
-    yield
-    derive_artifact.cache_clear()
-
-
 # close: the successful Attempt takes 1 second and the failed one 3, both with 2 tool calls.
 #        Elapsed time: mean 2, population standard deviation 1, CV 0.5. Tool calls: CV 0.
 #        Mean of the CVs 0.25, Task value exp(-0.25) = 0.7788007830714049.
@@ -283,7 +270,7 @@ RESOURCES = {
 BOTH_MANAGED = [MANAGED, ConfiguredEvaluator(metric_id="resource_consistency", scoring_path="foundry_managed")]
 
 
-def test_only_the_metrics_the_customer_names_are_rescored(resource_consistency_has_a_managed_evaluator):
+def test_only_the_metrics_the_customer_names_are_rescored():
     # Both managed runs fail: every Evaluator is handed altered evidence.
     def altered(item):
         return altered_evidence(item, '"task_id":"close"', '"task_id":"other"')

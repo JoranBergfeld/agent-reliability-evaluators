@@ -250,6 +250,16 @@ Each Attempt under `attempts` carries its `operational_constraints` and its `vio
 
 The only evidence unit this metric counts is `attempts`, so an acceptance criterion can require a minimum number of assessed Attempts, for example `{"value": {"at_least": 1}, "minimum_counts": {"attempts": 20}}`.
 
+## Scoring it in your Foundry project
+
+Constraint compliance can also be calculated by a custom evaluator in your own Foundry project. That evaluator is derived from the canonical definition above; there is no second formula. Select the metric as `ConfiguredEvaluator(metric_id="constraint_compliance", scoring_path="foundry_managed")` and give the sweep your project as `managed_scoring`. Everything else is declared as above.
+
+For each Attempt the evaluator is sent its identity, its Task, its execution status, and its operational constraints with their descriptions, and its violation assessments with their evidence, source and severity rating. Nothing else about the Attempt leaves your process.
+
+The value is then the number Foundry returned. It is reported with `scoring_path` `foundry_managed`. Its `fidelity` is `authoritative` when it equals the value the evaluator returned with it in encoded form, and `unverified`, with its limitation, when it does not: see [the fidelity check](../managed_scoring/readme.md#the-fidelity-check) for what that establishes. An unverified result cannot be met or not met by an acceptance criterion. Only the metric value is compared in that way. The state, the reason, the counts and the details, with the numbers of Attempts with and without a violation, are the ones the evaluator returned from Foundry in the encoded result, and they are what your own process gives for the same evidence. An unavailable measurement comes back as one.
+
+A sweep that is too large for one managed run has no result for the metric, and the scorecard says so. With Tasks of five Attempts, the largest synthetic sweep that fitted had 410 Attempts. See [Foundry-managed scoring](../managed_scoring/readme.md) and its [limits](../managed_scoring/readme.md#limits).
+
 ## What is left out, and when the metric is unavailable
 
 One principle decides every case: **a recorded violation always counts, and "no violation" counts only on complete evidence.**

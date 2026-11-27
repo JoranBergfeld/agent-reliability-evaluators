@@ -163,6 +163,16 @@ The agent is asked for its confidence once per Attempt, however many of the thre
 
 How the rating is collected, what the agent is shown, how its answer is read and when a rating is unavailable is the same for all three metrics: see [how the confidence rating is collected](../brier_based_score/readme.md#how-the-confidence-rating-is-collected).
 
+## Scoring it in your Foundry project
+
+Strict confidence discrimination can also be calculated by a custom evaluator in your own Foundry project. That evaluator is derived from the canonical definition above; there is no second formula. Select the metric as `ConfiguredEvaluator(metric_id="strict_confidence_discrimination", scoring_path="foundry_managed")` and give the sweep your project as `managed_scoring`. Everything else is declared as above.
+
+For each Attempt the evaluator is sent its identity, its Task, its execution status, and its task outcome and its confidence evidence: the rating as the agent wrote it with the whole response it was read from, or the reason there is no rating. The rating travels as text, so the evaluator calculates from the same exact fractions as your own process. Nothing else about the Attempt leaves your process.
+
+The value is then the number Foundry returned. It is reported with `scoring_path` `foundry_managed`. Its `fidelity` is `authoritative` when it equals the value the evaluator returned with it in encoded form, and `unverified`, with its limitation, when it does not: see [the fidelity check](../managed_scoring/readme.md#the-fidelity-check) for what that establishes. An unverified result cannot be met or not met by an acceptance criterion. Only the metric value is compared in that way. The state, the reason, the counts and the details, with the counts of success/failure pairs and every raw pair, are the ones the evaluator returned from Foundry in the encoded result, and they are what your own process gives for the same evidence. An unavailable measurement comes back as one.
+
+A sweep that is too large for one managed run has no result for the metric, and the scorecard says so. With Tasks of five Attempts, the largest synthetic sweep that fitted had 235 Attempts. See [Foundry-managed scoring](../managed_scoring/readme.md) and its [limits](../managed_scoring/readme.md#limits).
+
 ## In the scorecard
 
 The metric's own entry carries:

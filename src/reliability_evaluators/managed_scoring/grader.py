@@ -8,6 +8,8 @@ A string reached the sandbox unchanged when observed, where structured numbers d
 digest makes any other alteration a rejection inside the sandbox instead of a value calculated
 from other evidence. The Attempts in it are written by the Attempt record and read back by the
 Evidence model's strict reader, so there is one way to write an Attempt and one way to read it.
+What the customer declares for an Evaluator, such as the action types, travels in the same
+string, behind the same digest.
 
 A result travels back as numbers, because a number is all a Foundry code evaluator can return.
 The evaluator is called once for every row that is submitted, and each row asks for one part of
@@ -23,12 +25,20 @@ import base64
 import hashlib
 import json
 import zlib
-from typing import Any, Callable, Iterable, Sequence
+from typing import Any, Callable, Iterable, Mapping, Sequence
 
 from ..evaluators.result import CountedReason, EvidenceCount, MetricDefinition, MetricResult, MetricState
-from ..evidence import Attempt, EvidenceError, TaskEvidence, read_attempts
+from ..evidence import (
+    ActionEvent,
+    ActionEvidence,
+    ActionTypeMapping,
+    Attempt,
+    EvidenceError,
+    TaskEvidence,
+    read_attempts,
+)
 
-ENCODING_VERSION = 2
+ENCODING_VERSION = 3
 
 # The field of a submitted item that says which part of the result the row asks for.
 RESULT_PART = "result_part"
@@ -51,17 +61,23 @@ def evidence_field(metric_id: str) -> str:
     return f"{metric_id}_evidence"
 
 
-def encode_evidence(tasks: Iterable[TaskEvidence], attempt_evidence: Sequence[str]) -> str:
+def encode_evidence(
+    tasks: Iterable[TaskEvidence], attempt_evidence: Sequence[str], declared: Mapping[str, Any] | None = None
+) -> str:
     """Encode grouped Attempt evidence for transport to a derived evaluator.
 
     Every Attempt keeps its identity, its Task and its execution status, and of its other
     evidence only the fields named in `attempt_evidence`. It is written as the Attempt
     record writes itself, so the derived evaluator reads it with the Evidence model's own
     reader. That reader validates: nothing is validated here.
+
+    `declared` is what the customer declared for the Evaluator, by the name the Evaluator
+    takes it under, in the order the Evaluator takes them in.
     """
     payload = json.dumps(
         {
             "encoding": ENCODING_VERSION,
+            "declared": {name: _DECLARATIONS[name][0](value) for name, value in (declared or {}).items()},
             "tasks": [
                 {
                     "task_id": task.task_id,
@@ -77,10 +93,14 @@ def encode_evidence(tasks: Iterable[TaskEvidence], attempt_evidence: Sequence[st
     return f"{_digest(payload)}:{base64.b64encode(_deflate(payload.encode('utf-8'))).decode('ascii')}"
 
 
-def decode_evidence(encoded: Any) -> tuple[TaskEvidence, ...]:
-    """Read grouped Attempt evidence back, as the Evidence model's own records.
+def decode_evidence(
+    encoded: Any, declarations: Sequence[str] = ()
+) -> tuple[tuple[TaskEvidence, ...], tuple[Any, ...]]:
+    """Read grouped Attempt evidence back, as the Evidence model's own records, with what was declared.
 
-    Evidence that is not exactly what `encode_evidence` wrote is rejected, never repaired.
+    `declarations` names what the Evaluator takes besides the evidence. What was declared
+    under each name is given in that order. Evidence that is not exactly what
+    `encode_evidence` wrote for those declarations is rejected, never repaired.
     """
     if not isinstance(encoded, str):
         raise EvidenceError(f"transported evidence is text, got {type(encoded).__name__}")
@@ -91,17 +111,25 @@ def decode_evidence(encoded: Any) -> tuple[TaskEvidence, ...]:
         raise EvidenceError("the evidence was altered in transport: it cannot be read") from None
     if not separator or digest != _digest(payload):
         raise EvidenceError("the evidence was altered in transport: it does not match its digest")
-    evidence = _record(json.loads(payload, parse_constant=_not_a_number), "encoding", "tasks")
+    evidence = _record(json.loads(payload, parse_constant=_not_a_number), "encoding", "declared", "tasks")
     if evidence["encoding"] != ENCODING_VERSION:
         raise EvidenceError(f"the evidence is in encoding {evidence['encoding']!r}, not {ENCODING_VERSION}")
     if not isinstance(evidence["tasks"], list):
         raise EvidenceError(f"transported Tasks are a list, got {evidence['tasks']!r}")
+    declared = _record(evidence["declared"], *declarations)
     tasks = [_record(task, "task_id", "attempts") for task in evidence["tasks"]]
-    return tuple(TaskEvidence(task["task_id"], read_attempts(task["attempts"])) for task in tasks)
+    return (
+        tuple(TaskEvidence(task["task_id"], read_attempts(task["attempts"])) for task in tasks),
+        tuple(_DECLARATIONS[name][1](declared[name]) for name in declarations),
+    )
 
 
-def managed_value(definition: MetricDefinition, evaluate: Callable[..., MetricResult], item: Any) -> float | int:
+def managed_value(
+    definition: MetricDefinition, evaluate: Callable[..., MetricResult], item: Any, declarations: Sequence[str] = ()
+) -> float | int:
     """What a derived evaluator returns for one submitted item: the part of the result the item asks for.
+
+    `declarations` names what `evaluate` takes besides the evidence, which travels with it.
 
     The canonical definition validates the evidence and the range of the value. Evidence
     that cannot be read raises, as it does in the customer's own process. A metric that has
@@ -109,7 +137,8 @@ def managed_value(definition: MetricDefinition, evaluate: Callable[..., MetricRe
     """
     encoded = _field(item, evidence_field(definition.metric.metric_id))
     part = _field(item, RESULT_PART)
-    result = evaluate(decode_evidence(encoded))
+    tasks, declared = decode_evidence(encoded, declarations)
+    result = evaluate(tasks, *declared)
     if part == VALUE_PART:
         return float(result.value) if result.state is MetricState.AVAILABLE else no_value_marker(definition)
     stream = encode_result(result, encoded)
@@ -254,7 +283,51 @@ ALWAYS_TRANSPORTED = ("attempt_id", "task_id", "execution_status")
 
 def _transported(attempt: Attempt, attempt_evidence: Sequence[str]) -> Attempt:
     """The Attempt with the evidence that travels and nothing else of what it records."""
-    return Attempt(**{field: getattr(attempt, field) for field in (*ALWAYS_TRANSPORTED, *attempt_evidence)})
+    return Attempt(
+        **{
+            field: _TRANSPORTED_AS.get(field, _as_recorded)(getattr(attempt, field))
+            for field in (*ALWAYS_TRANSPORTED, *attempt_evidence)
+        }
+    )
+
+
+def _as_recorded(evidence: Any) -> Any:
+    return evidence
+
+
+def _tool_names_in_order(recording: Any) -> Any:
+    """Action evidence with the tool name of each action, in order, and its source.
+
+    The arguments, the result and the error of an action do not travel: no Evaluator is
+    calculated from them, and they are the customer's data and can be large.
+    """
+    if not isinstance(recording, ActionEvidence):
+        return recording
+    return ActionEvidence(
+        source=recording.source, events=[ActionEvent(tool_name=event.tool_name) for event in recording.events]
+    )
+
+
+# Evidence of an Attempt that travels with less than the Attempt records of it.
+_TRANSPORTED_AS = {"action_evidence": _tool_names_in_order}
+
+
+def _write_action_types(declared: Any) -> Any:
+    # What is not a declared mapping travels as no declaration, and the canonical definition
+    # refuses to run without one, in the sandbox as in the customer's own process.
+    if not isinstance(declared, ActionTypeMapping):
+        return None
+    return {"evidence_source": declared.evidence_source, "action_types": declared.action_types}
+
+
+def _read_action_types(transported: Any) -> ActionTypeMapping | None:
+    if transported is None:
+        return None
+    return ActionTypeMapping(**_record(transported, "evidence_source", "action_types"))
+
+
+# How a customer declaration is written for transport and read back, by the name an Evaluator takes it under.
+_DECLARATIONS = {"action_types": (_write_action_types, _read_action_types)}
 
 
 def _record(transported: Any, *fields: str) -> dict[str, Any]:

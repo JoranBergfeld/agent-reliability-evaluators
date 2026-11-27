@@ -5,13 +5,13 @@ Foundry project that is scripted to fail. Every assertion is on the machine-read
 scorecard. Expected values are calculated by hand.
 """
 
+import random
 import re
 
 import pytest
 
 from reliability_evaluators.evidence import TaskOutcome
-from reliability_evaluators.managed_scoring import FoundryManagedScoring, FoundryRequestError, derive_artifact
-from reliability_evaluators.managed_scoring.artifact import MANAGED_ATTEMPT_EVIDENCE
+from reliability_evaluators.managed_scoring import FoundryManagedScoring, FoundryRequestError
 from reliability_evaluators.scorecard import AcceptanceCriterion, render_report
 from reliability_evaluators.sweep import ConfiguredEvaluator, Task, run_sweep
 from tests.fake_foundry import FakeFoundryProject
@@ -30,6 +30,12 @@ MANAGED = ConfiguredEvaluator(metric_id="outcome_consistency", scoring_path="fou
 RUN_FAILED = (
     "the Foundry-managed run evalrun_1 of eval_1 ended as failed: UserError: All examples failed due to "
     "invalid user input; please check the individual sample outputs for details"
+)
+# A row is not graded either when its call takes too long, and the failure cannot tell which it was.
+TOOK_TOO_LONG = (
+    "Foundry does not grade a row whose call takes too long: no call of 60 seconds or more was graded when "
+    "observed, and every call of up to 50 seconds was. Every row calculates the whole metric from all the "
+    "evidence that was submitted"
 )
 
 
@@ -99,6 +105,16 @@ def test_the_missing_result_is_named_with_its_execution_error():
     assert outcome_consistency["managed_scoring"]["error"].startswith(RUN_FAILED)
 
 
+def test_a_failed_run_names_what_makes_foundry_grade_no_row_of_it():
+    scorecard = sweep(TWO_TASKS, FakeFoundryProject(alter_item=one_outcome_flipped))
+
+    assert metric(scorecard)["managed_scoring"]["error"] == (
+        f"{RUN_FAILED}. A run in which no row is graded fails as a whole and returns no result. The managed "
+        "evaluator raises on every row when the evidence it received is not the evidence that was submitted. "
+        f"It does not raise for an unavailable measurement. {TOOK_TOO_LONG}"
+    )
+
+
 def test_a_result_that_was_not_recovered_is_not_an_unavailable_measurement_a_zero_or_a_task_failure():
     scorecard = sweep(TWO_TASKS, FakeFoundryProject(alter_item=one_outcome_flipped))
 
@@ -163,19 +179,7 @@ def test_a_metric_scored_in_this_process_keeps_its_result_when_the_managed_run_o
     ]
 
 
-@pytest.fixture
-def resource_consistency_has_a_managed_evaluator(monkeypatch):
-    """Declare the Attempt evidence of a second Evaluator, which is what makes it derivable.
-
-    Only outcome consistency is declared in this version. A second Evaluator on the managed
-    path is what shows that one whose run fails takes no other's result with it.
-    """
-    monkeypatch.setitem(MANAGED_ATTEMPT_EVIDENCE, "resource_consistency", ("resource_measurements",))
-    derive_artifact.cache_clear()
-    yield
-    derive_artifact.cache_clear()
-
-
+# A second Evaluator on the managed path is what shows that one whose run fails takes no other's result with it.
 BOTH_MANAGED = [MANAGED, ConfiguredEvaluator(metric_id="resource_consistency", scoring_path="foundry_managed")]
 
 
@@ -188,9 +192,7 @@ def only_the_evidence_of(metric_id, alter):
     return altered
 
 
-def test_a_managed_result_is_kept_when_the_managed_run_of_another_metric_fails(
-    resource_consistency_has_a_managed_evaluator,
-):
+def test_a_managed_result_is_kept_when_the_managed_run_of_another_metric_fails():
     foundry = FakeFoundryProject(alter_item=only_the_evidence_of("outcome_consistency", one_outcome_flipped))
 
     scorecard = sweep(MEASURED, foundry, metrics=BOTH_MANAGED, resources=RESOURCES)
@@ -209,7 +211,7 @@ def test_a_managed_result_is_kept_when_the_managed_run_of_another_metric_fails(
     ]
 
 
-def test_every_metric_is_scored_in_a_managed_run_of_its_own(resource_consistency_has_a_managed_evaluator):
+def test_every_metric_is_scored_in_a_managed_run_of_its_own():
     foundry = FakeFoundryProject()
 
     scorecard = sweep(MEASURED, foundry, metrics=BOTH_MANAGED, resources=RESOURCES)
@@ -228,6 +230,61 @@ def test_every_metric_is_scored_in_a_managed_run_of_its_own(resource_consistency
     }
     assert list(foundry.evals) == ["eval_1", "eval_2"]
     assert scorecard["status"] == "complete"
+
+
+class NotesTheRunsInProgress:
+    """A project that notes, for each run it is asked to make, which earlier runs it has not yet reported as ended."""
+
+    def __init__(self, project):
+        self._project = project
+        self._in_progress: list[str] = []
+        self.in_progress_when_made: dict[str, list[str]] = {}
+
+    def request(self, method, path, body=None, headers=None):
+        answer = self._project.request(method, path, body, headers)
+        if method == "POST" and path.endswith("/runs"):
+            self.in_progress_when_made[answer["id"]] = list(self._in_progress)
+            self._in_progress.append(answer["id"])
+        elif method == "GET" and "/runs/" in path and "output_items" not in path:
+            if answer["status"] in ("completed", "failed", "canceled") and answer["id"] in self._in_progress:
+                self._in_progress.remove(answer["id"])
+        return answer
+
+
+@pytest.mark.parametrize(
+    ("part", "asked_again_in", "made_before_it"),
+    [
+        # A part of the encoded result: both first runs and both second runs were made before it is asked for again.
+        ("7", "evalrun_5", ["evalrun_1", "evalrun_2", "evalrun_3", "evalrun_4"]),
+        # The plain value: both first runs were made before it is asked for again, and no second run yet.
+        ("value", "evalrun_3", ["evalrun_1", "evalrun_2"]),
+    ],
+)
+def test_a_part_is_asked_for_again_only_when_no_other_run_of_the_sweep_is_in_progress(
+    part, asked_again_in, made_before_it
+):
+    # Foundry was seen not to grade rows while other runs were in progress in the project, and to grade
+    # them when they were asked for again. Here it does not grade one row of outcome consistency, once.
+    remaining = [1]
+
+    def not_graded_once(item):
+        if "outcome_consistency_evidence" in item and item["result_part"] == part and remaining[0]:
+            remaining[0] -= 1
+            return GRADING_ERROR
+        return None
+
+    foundry = FakeFoundryProject(result_error=not_graded_once, polls_until_finished=1)
+    project = NotesTheRunsInProgress(foundry)
+    scoring = FoundryManagedScoring(project=project, poll_interval_seconds=0)
+
+    scorecard = sweep(MEASURED, foundry, metrics=BOTH_MANAGED, resources=RESOURCES, managed_scoring=scoring)
+
+    assert metric(scorecard)["value"] == pytest.approx(0.5, abs=1e-12)
+    assert metric(scorecard, "resource_consistency")["value"] == pytest.approx(RESOURCE_CONSISTENCY, abs=1e-12)
+    assert scorecard["status"] == "complete"
+    assert list(foundry.runs)[: len(made_before_it) + 1] == [*made_before_it, asked_again_in]
+    # Every run made before it had ended by then, the runs of the other metric included.
+    assert project.in_progress_when_made[asked_again_in] == []
 
 
 def test_an_acceptance_criterion_on_a_metric_without_a_managed_result_is_not_assessed():
@@ -264,7 +321,7 @@ GRADING_ERROR = {
             FakeFoundryProject(result_error=GRADING_ERROR),
             "output item '1' of run evalrun_3 of eval_1 has a result for 'outcome_consistency' in status 'error': "
             f"{GRADING_ERROR}. Foundry was asked 3 times for what did not come back, and did not grade 2 of the "
-            "rows of the last run",
+            f"rows of the last run. {TOOK_TOO_LONG}",
         ),
         (
             FakeFoundryProject(alter_score=only("value", lambda score: 1.1)),
@@ -359,9 +416,9 @@ def test_a_result_too_large_to_come_back_in_one_run_is_a_failure_and_no_part_of_
 
     managed_scoring = metric(scorecard)["managed_scoring"]
     assert re.fullmatch(
-        r"the run for the encoded result would submit \d+ characters in \d+ rows, each with the grouped evidence, "
-        r"more than the 1900000 that one managed run was observed to accept\. It was not submitted, and nothing "
-        r"was truncated",
+        r"the run for the encoded result would be a request of \d+ bytes in \d+ rows, each with the grouped "
+        r"evidence\. That is more than the 2000000 bytes this version submits in one managed run: Foundry refused "
+        r"a run of 2096233 bytes when observed\. It was not submitted, and nothing was truncated",
         managed_scoring["error"],
     )
     # The first run returned the size of the result. The run for its parts was never made.
@@ -370,6 +427,69 @@ def test_a_result_too_large_to_come_back_in_one_run_is_a_failure_and_no_part_of_
     assert (metric(scorecard)["state"], metric(scorecard)["value"]) == (None, None)
     assert scorecard["status"] == "partial"
     assert len(scorecard["attempts"]) == 750
+
+
+def test_evidence_too_large_to_be_submitted_at_all_is_a_failure_before_any_run_is_made():
+    # Three thousand Tasks whose identities are 600 characters that have nothing in common, so they do
+    # not deflate away: the two rows of the first run would already be larger than one run accepts.
+    unalike = random.Random(49)
+    script = {"".join(unalike.choices("0123456789abcdef", k=600)): ["success"] for _ in range(3000)}
+    foundry = FakeFoundryProject()
+
+    scorecard = sweep(script, foundry)
+
+    managed_scoring = metric(scorecard)["managed_scoring"]
+    assert re.fullmatch(
+        r"the run for the value and size would be a request of \d+ bytes in 2 rows, each with the grouped "
+        r"evidence\. That is more than the 2000000 bytes this version submits in one managed run: .*",
+        managed_scoring["error"],
+    )
+    assert foundry.runs == {} and foundry.submitted_items == []
+    assert managed_scoring["run_id"] is None
+    assert (metric(scorecard)["state"], metric(scorecard)["value"]) == (None, None)
+    assert scorecard["status"] == "partial"
+    # The evidence is kept, whatever became of its scoring.
+    assert len(scorecard["attempts"]) == 3000
+
+
+class CutsTheEvidenceItStores:
+    """A project whose output items hold only the first characters of each submitted field.
+
+    A live project was seen to cut a field of 1,000,000 characters or more to its first 1,000 in the
+    output items of a run, without a marker, while its evaluator was given every character.
+    """
+
+    def __init__(self, project, characters):
+        self._project = project
+        self._characters = characters
+
+    def request(self, method, path, body=None, headers=None):
+        answer = self._project.request(method, path, body, headers)
+        if method == "GET" and "/output_items" in path:
+            for item in answer["data"]:
+                item["datasource_item"] = {
+                    field: text[: self._characters] for field, text in item["datasource_item"].items()
+                }
+        return answer
+
+
+def test_a_result_is_never_read_from_what_an_output_item_holds_of_the_evidence():
+    # 30 Tasks of five Attempts, each 4/5: (0.6)^2 = 0.36 at every Task, so 0.36.
+    foundry = FakeFoundryProject()
+    scoring = FoundryManagedScoring(project=CutsTheEvidenceItStores(foundry, characters=100), poll_interval_seconds=0)
+
+    scorecard = sweep({f"task-{number}": FOUR_IN_FIVE for number in range(30)}, foundry, managed_scoring=scoring)
+
+    outcome_consistency = metric(scorecard)
+    assert outcome_consistency["value"] == pytest.approx(0.36, abs=1e-12)
+    assert outcome_consistency["counts"]["attempts"] == {"total": 150, "valid": 150, "missing": [], "excluded": []}
+    assert len(outcome_consistency["evidence"]["attempt_ids"]) == 150
+    # The digest that is recorded, and that the encoded result was checked against, is the one of the
+    # evidence the sweep submitted, whole. The evidence is more than the project stored of it.
+    (submitted,) = {item["outcome_consistency_evidence"] for item in foundry.submitted_items}
+    assert len(submitted) > 100
+    assert outcome_consistency["managed_scoring"]["evidence_sha256"] == submitted.partition(":")[0]
+    assert scorecard["status"] == "complete"
 
 
 def test_a_part_that_foundry_never_grades_is_asked_for_three_times_and_then_leaves_no_result():
@@ -386,7 +506,7 @@ def test_a_part_that_foundry_never_grades_is_asked_for_three_times_and_then_leav
     assert outcome_consistency["managed_scoring"]["error"] == (
         "output item '1' of run evalrun_4 of eval_1 has a result for 'outcome_consistency' in status 'error': "
         f"{GRADING_ERROR}. Foundry was asked 3 times for what did not come back, and did not grade 1 of the "
-        "rows of the last run"
+        f"rows of the last run. {TOOK_TOO_LONG}"
     )
     assert [item["result_part"] for item in foundry.submitted_items].count("7") == 3
     assert list(foundry.runs) == ["evalrun_1", "evalrun_2", "evalrun_3", "evalrun_4"]
@@ -427,7 +547,7 @@ class ManagedScoringThatStops:
     def register(self, metric_ids):
         return {}
 
-    def score(self, evidence):
+    def score(self, evidence, declared=None):
         raise RuntimeError("the connection to the project was lost")
 
 

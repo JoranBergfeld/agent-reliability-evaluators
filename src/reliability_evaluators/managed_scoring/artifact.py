@@ -28,8 +28,25 @@ from . import grader
 # The Attempt evidence each Evaluator is calculated from, by the field names of the Attempt
 # record. Declaring an Evaluator here is what makes it derivable. An Attempt always travels
 # with its identity, its Task and its execution status, and with nothing that is not named here.
+_CONFIDENCE_OUTCOME_PAIRS = ("task_outcome", "confidence")
+# What says which condition an Attempt was intended for and which one occurred. The kind of
+# variation is part of the intended condition, and a prompt variant is recorded only under one.
+_COMPARED_CONDITIONS = ("task_outcome", "intended_condition", "condition_role", "observed_condition", "prompt_variant")
+# An assessment is of one of the constraints that apply to its Attempt, so the two travel together.
+_VIOLATION_ASSESSMENTS = ("operational_constraints", "violation_assessments")
 MANAGED_ATTEMPT_EVIDENCE: dict[str, tuple[str, ...]] = {
     "outcome_consistency": ("task_outcome",),
+    "resource_consistency": ("resource_measurements",),
+    "fault_robustness": _COMPARED_CONDITIONS,
+    "environment_robustness": _COMPARED_CONDITIONS,
+    "prompt_robustness": _COMPARED_CONDITIONS,
+    "calibration": _CONFIDENCE_OUTCOME_PAIRS,
+    "strict_confidence_discrimination": _CONFIDENCE_OUTCOME_PAIRS,
+    "brier_based_score": _CONFIDENCE_OUTCOME_PAIRS,
+    "constraint_compliance": _VIOLATION_ASSESSMENTS,
+    "conditional_harm_severity": _VIOLATION_ASSESSMENTS,
+    "distributional_trajectory_consistency": ("action_evidence",),
+    "sequential_trajectory_consistency": ("action_evidence",),
 }
 
 # The sandbox limits a code evaluator has to fit. See docs/managed_scoring/readme.md for
@@ -61,7 +78,7 @@ SANDBOX_MODULES = frozenset(
 SANDBOX_REFUSED_CALLS = frozenset({"compile", "eval", "exec", "globals", "__import__"})
 
 _PACKAGE = __package__.rpartition(".")[0]
-_GRADE = "def grade(sample, item):\n    return managed_value(DEFINITION, evaluate, item)\n"
+_GRADE = "def grade(sample, item):\n    return managed_value(DEFINITION, evaluate, item, {declarations!r})\n"
 
 
 class DerivationError(Exception):
@@ -76,6 +93,8 @@ class ManagedArtifact:
     # The whole evaluator: the canonical definition, what it imports, and `grade`.
     code_text: str
     attempt_evidence: tuple[str, ...]
+    # What the customer declares for the Evaluator, by the names the canonical `evaluate` takes it under.
+    declarations: tuple[str, ...] = ()
 
     @property
     def metric_id(self) -> str:
@@ -94,12 +113,24 @@ class ManagedArtifact:
     def sha256(self) -> str:
         return hashlib.sha256(self.code_text.encode("utf-8")).hexdigest()
 
-    def item(self, tasks: Iterable[TaskEvidence]) -> dict[str, str]:
+    def item(self, tasks: Iterable[TaskEvidence], *declared: Any) -> dict[str, str]:
         """The fields of a submitted item that carry this Evaluator's grouped Attempt evidence.
+
+        It takes what the canonical `evaluate` takes: the evidence, followed by what the
+        customer declared for the Evaluator. The declarations travel with the evidence.
 
         A submitted item also names the part of the result it asks for, in `grader.RESULT_PART`.
         """
-        return {self.evidence_field: grader.encode_evidence(tasks, self.attempt_evidence)}
+        if len(declared) != len(self.declarations):
+            raise ValueError(
+                f"{self.metric_id!r} is calculated from the evidence and from what the customer declares as "
+                f"{list(self.declarations)}, and {len(declared)} declarations were given"
+            )
+        return {
+            self.evidence_field: grader.encode_evidence(
+                tasks, self.attempt_evidence, dict(zip(self.declarations, declared))
+            )
+        }
 
     def registration(self) -> dict[str, Any]:
         """The evaluator version to register: the code, the item it reads and the number it returns.
@@ -179,9 +210,14 @@ def derive_artifact(metric_id: str) -> ManagedArtifact:
         f"# Foundry code evaluator for the reliability metric {metric_id}, derived from its canonical\n"
         f"# definition, version {evaluator.definition.version}. Do not edit it: derive and register a new version.\n\n"
     )
-    code_text = header + modules.joined() + "\n\n\n" + _GRADE
+    code_text = header + modules.joined() + "\n\n\n" + _GRADE.format(declarations=evaluator.declarations)
     _require_sandbox_fit(metric_id, code_text)
-    return ManagedArtifact(definition=evaluator.definition, code_text=code_text, attempt_evidence=attempt_evidence)
+    return ManagedArtifact(
+        definition=evaluator.definition,
+        code_text=code_text,
+        attempt_evidence=attempt_evidence,
+        declarations=evaluator.declarations,
+    )
 
 
 def _require_sandbox_fit(metric_id: str, code_text: str) -> None:

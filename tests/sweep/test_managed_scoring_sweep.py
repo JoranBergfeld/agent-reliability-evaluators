@@ -498,22 +498,11 @@ def test_a_recalculation_that_is_asked_for_foundry_managed_scoring_is_refused_an
 # Declarations that cannot be run are rejected before any Attempt, and never fall back to this process.
 
 
-@pytest.mark.parametrize(
-    ("metrics", "foundry", "problem"),
-    [
-        ([MANAGED], None, "needs `managed_scoring`"),
-        (
-            [ConfiguredEvaluator(metric_id="resource_consistency", scoring_path="foundry_managed")],
-            FakeFoundryProject(),
-            "'resource_consistency' has no Foundry-managed evaluator in this version",
-        ),
-    ],
-)
-def test_a_choice_of_managed_scoring_that_cannot_be_honoured_is_rejected_before_any_attempt(metrics, foundry, problem):
+def test_a_choice_of_managed_scoring_without_a_foundry_project_is_rejected_before_any_attempt():
     target = FakeAgentTarget(TWO_TASKS)
 
-    with pytest.raises(ValueError, match=problem):
-        sweep(TWO_TASKS, foundry, metrics=metrics, target=target)
+    with pytest.raises(ValueError, match="needs `managed_scoring`"):
+        sweep(TWO_TASKS, None, target=target)
 
     assert target.service_state == {}
 
