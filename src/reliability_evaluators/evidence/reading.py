@@ -16,12 +16,14 @@ from .attempt import (
     Attempt,
     OperationalConstraint,
     ResourceMeasurement,
+    SeverityRating,
     SupersededTaskOutcome,
     TaskOutcome,
     ViolationAssessment,
 )
 from .confidence import ConfidenceRating, ConfidenceUnavailable
 from .errors import EvidenceError
+from .experiment import Condition, LifecyclePoint, LifecycleStep, ObservedCondition
 
 
 def read_attempts(recorded: Any) -> tuple[Attempt, ...]:
@@ -79,7 +81,13 @@ def _attempt(recorded: Any) -> Attempt:
         "confidence",
         "operational_constraints",
         "violation_assessments",
+        "experiment_id",
+        "starting_state",
+        "intended_condition",
+        "observed_condition",
+        "lifecycle",
     )
+    intended_condition, condition_role = _intended_condition(fields["intended_condition"])
     return Attempt(
         **{
             **fields,
@@ -103,11 +111,13 @@ def _attempt(recorded: Any) -> Attempt:
                 for record in _each("operational constraints", fields["operational_constraints"])
             ],
             "violation_assessments": [
-                ViolationAssessment(
-                    **_fields("a violation assessment", record, "constraint_id", "violated", "evidence", "source")
-                )
+                _violation_assessment(record)
                 for record in _each("violation assessments", fields["violation_assessments"])
             ],
+            "intended_condition": intended_condition,
+            "condition_role": condition_role,
+            "observed_condition": _observed_condition(fields["observed_condition"]),
+            "lifecycle": tuple(_lifecycle_step(record) for record in _each("lifecycle steps", fields["lifecycle"])),
         }
     )
 
@@ -141,6 +151,41 @@ def _confidence(recorded: Any) -> ConfidenceRating | ConfidenceUnavailable | Non
     if fields["rating"] is None:
         return ConfidenceUnavailable(reason=fields["unavailable_reason"], original_response=fields["original_response"])
     return ConfidenceRating(rating=fields["rating"], original_response=fields["original_response"])
+
+
+def _violation_assessment(recorded: Any) -> ViolationAssessment:
+    fields = _fields("a violation assessment", recorded, "constraint_id", "violated", "evidence", "source", "severity")
+    severity = fields["severity"]
+    if severity is not None:
+        severity = SeverityRating(**_fields("a severity rating", severity, "label", "level"))
+    return ViolationAssessment(**{**fields, "severity": severity})
+
+
+def _intended_condition(recorded: Any) -> tuple[Condition | None, Any]:
+    """The intended condition and the part it plays in its experiment, which are recorded together."""
+    if recorded is None:
+        return None, None
+    fields = _fields("an intended condition", recorded, "role", "condition_id", "description", "parameters")
+    role = fields.pop("role")
+    return Condition(**fields), role
+
+
+def _observed_condition(recorded: Any) -> ObservedCondition | None:
+    if recorded is None:
+        return None
+    return ObservedCondition(**_fields("an observed condition", recorded, "met", "source", "observations"))
+
+
+def _lifecycle_step(recorded: Any) -> LifecycleStep:
+    # Whether the step succeeded is not read: it follows from its error.
+    fields = _fields("a lifecycle step", recorded, "point", "error")
+    if fields["error"] is not None and not isinstance(fields["error"], str):
+        raise EvidenceError(f"the error of a lifecycle step is text or None. Got {fields['error']!r}")
+    try:
+        point = LifecyclePoint(fields["point"])
+    except ValueError:
+        raise EvidenceError(f"{fields['point']!r} is not a point at which a customer control is invoked") from None
+    return LifecycleStep(point=point, error=fields["error"])
 
 
 def _fields(what: str, recorded: Any, *names: str) -> dict[str, Any]:

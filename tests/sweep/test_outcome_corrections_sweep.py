@@ -17,6 +17,7 @@ from reliability_evaluators.evidence import (
     EvidenceError,
     OperationalConstraint,
     OutcomeCorrection,
+    SeverityRating,
     TaskOutcome,
     ViolationAssessment,
 )
@@ -24,12 +25,21 @@ from reliability_evaluators.scorecard import AcceptanceCriterion, to_json
 from reliability_evaluators.sweep import (
     NO_TASK_OUTCOME_YET,
     ActionEvidenceDeclaration,
+    Condition,
+    Experiment,
     RecalculationFailed,
     Task,
     recalculate,
     run_sweep,
 )
-from tests.fakes import FakeActingAgentTarget, FakeAgentTarget
+from tests.fakes import (
+    FakeActingAgentTarget,
+    FakeAgentTarget,
+    FakeControls,
+    FakeTodoAgent,
+    FakeTodoService,
+    todo_list,
+)
 
 SOURCE = "final state of the fake service"
 RULE = "The item is marked done in the to-do service."
@@ -190,6 +200,7 @@ OTHER_METRICS = (
     "sequential_trajectory_consistency",
     "resource_consistency",
     "constraint_compliance",
+    "conditional_harm_severity",
 )
 ACTION_TYPES = {"get_item": "read", "update_item": "update"}
 LEAVE_UNRELATED = OperationalConstraint(
@@ -198,10 +209,11 @@ LEAVE_UNRELATED = OperationalConstraint(
 
 
 def sweep_with_every_kind_of_evidence():
-    """One Task with four Attempts, scored on the six metrics that have an Evaluator.
+    """One Task with four Attempts, scored on seven metrics, with every kind of evidence an Attempt carries.
 
     Returns the scorecard and the action evidence declaration the sweep was given. Task
-    outcomes and confidence ratings are those of `HALF` and `RATINGS`.
+    outcomes and confidence ratings are those of `HALF` and `RATINGS`. The second Attempt
+    violates the operational constraint, and the violation is rated high.
     """
     target = FakeActingAgentTarget(
         {"close": ["success", "success and deletes unrelated", "failure", "failure"]},
@@ -221,6 +233,7 @@ def sweep_with_every_kind_of_evidence():
                 violated=state != "unchanged",
                 evidence=f"the item 'unrelated' is {state} after the Attempt",
                 source="deterministic check on the final state of the fake service",
+                severity=SeverityRating(label="high") if state != "unchanged" else None,
             )
         ]
 
@@ -276,6 +289,8 @@ def test_a_correction_changes_nothing_but_the_task_outcome_it_names_and_the_metr
     ]
     assert [assessment["violated"] for assessment in third["violation_assessments"]] == [False]
     assert third["operational_constraints"] == [LEAVE_UNRELATED.to_dict()]
+    (violation,) = attempt(recalculated, "close/attempt-2")["violation_assessments"]
+    assert violation["severity"] == {"label": "high", "level": "high"}
 
 
 def test_the_corrected_outcome_is_the_one_supplied_whatever_the_confidence_rating_of_the_attempt():
@@ -517,6 +532,22 @@ def instead(supplied_instead):
             "'close/attempt-3'.*correction_provenance",
         ),
         (changed(lambda scorecard: scorecard.update(superseded_results={"status": "superseded"})), "superseded results"),
+        (without("experiments"), "its experiments are not a list"),
+        (
+            with_attempt(lifecycle=[{"point": "teardown", "succeeded": True, "error": None}]),
+            "'close/attempt-3'.*'teardown' is not a point at which a customer control is invoked",
+        ),
+        (
+            with_attempt(lifecycle=[{"point": "clean_up", "succeeded": True, "error": "the service was down"}]),
+            "'close/attempt-3'.*lifecycle",
+        ),
+        (with_attempt(intended_condition={"role": "baseline"}), "'close/attempt-3'.*condition_id"),
+        (with_attempt(starting_state="pristine"), "'close/attempt-3'.*not a starting-state policy"),
+        (with_attempt(observed_condition={"met": "yes", "source": "log", "observations": {}}), "'close/attempt-3'.*met"),
+        (
+            changed(lambda scorecard: scorecard.update(token_usage={"total": 12})),
+            "it holds what this version does not recalculate with: token_usage",
+        ),
     ],
 )
 def test_supplied_evidence_that_does_not_validate_fails_the_recalculation(supply, problem):
@@ -679,3 +710,77 @@ def test_the_supplied_scorecard_is_left_as_it_was_and_the_new_scorecard_is_json_
     recalculated["superseded_results"][0]["metrics"][0]["value"] = 1
     recalculated["attempts"][0]["task_outcome"]["success"] = False
     assert earlier == as_supplied
+
+
+def experiment_sweep():
+    """A fresh-state experiment on a fake to-do service, with three Attempts under each condition.
+
+    The Task succeeds when the list holds exactly one item afterwards. Under the baseline
+    the service accepts the item and every Attempt succeeds. Under the variation it refuses
+    the item and every Attempt fails. Outcome consistency is calculated from the baseline
+    Attempts only.
+    """
+    service = FakeTodoService(["add"])
+
+    def exactly_one_item(attempt, response):
+        return TaskOutcome(success=len(service.lists.get(todo_list("add"), [])) == 1, source=SOURCE)
+
+    experiment = Experiment(
+        experiment_id="add-item",
+        task=Task(task_id="add", prompt="Add one item to the list.", success_rule=exactly_one_item, attempts=3),
+        agent_configuration={"agent": "todo-agent", "version": "3"},
+        starting_state="fresh",
+        baseline=Condition(condition_id="baseline", description="The to-do service accepts every request."),
+        variation=Condition(
+            condition_id="add-fails",
+            description="The to-do service refuses to add an item.",
+            parameters={"add_fails": True},
+        ),
+        controls=FakeControls(service),
+        write_capable=True,
+        authorized_resources=[todo_list("add")],
+    )
+    return supplied(
+        run_sweep(experiments=[experiment], agent_target=FakeTodoAgent(service), metrics=["outcome_consistency"])
+    )
+
+
+def test_a_correction_in_an_experiment_keeps_what_every_attempt_records_about_its_experiment():
+    # Earlier: the three baseline Attempts succeed, p = 3/3, value 1.
+    # The second is corrected to a failure: p = 2/3, (2 * 2/3 - 1)^2 = 1/9.
+    # An Attempt under the variation is corrected too. Outcome consistency is not calculated from it.
+    earlier = experiment_sweep()
+    assert metric(earlier)["value"] == 1
+
+    recalculated = recalculate(
+        earlier_scorecard=earlier,
+        outcome_corrections=[
+            corrected("add-item/baseline/attempt-2", success=False),
+            corrected("add-item/add-fails/attempt-1", success=True),
+        ],
+    )
+
+    outcome_consistency = metric(recalculated)
+    assert outcome_consistency["value"] == pytest.approx(1 / 9, abs=1e-12)
+    assert outcome_consistency["attempts_used"] == metric(earlier)["attempts_used"]
+    assert outcome_consistency["attempts_used"]["attempt_ids"] == [
+        "add-item/baseline/attempt-1",
+        "add-item/baseline/attempt-2",
+        "add-item/baseline/attempt-3",
+    ]
+    assert outcome_consistency["counts"]["attempts"] == {"total": 3, "valid": 3, "missing": [], "excluded": []}
+    assert attempt(recalculated, "add-item/add-fails/attempt-1")["task_outcome"] == {"success": True, "source": REVIEW}
+    assert recalculated["experiments"] == earlier["experiments"]
+    assert recalculated["experiments"][0]["execution"]["attempts_recorded"] == 6
+    about_the_experiment = ("experiment_id", "starting_state", "intended_condition", "observed_condition", "lifecycle")
+    for before, after in zip(earlier["attempts"], recalculated["attempts"], strict=True):
+        assert {key: after[key] for key in about_the_experiment} == {key: before[key] for key in about_the_experiment}
+    corrected_under_the_variation = attempt(recalculated, "add-item/add-fails/attempt-1")
+    assert corrected_under_the_variation["intended_condition"]["role"] == "variation"
+    assert corrected_under_the_variation["observed_condition"]["observations"] == {"faulted_requests": 1}
+    assert [step["point"] for step in corrected_under_the_variation["lifecycle"]] == [
+        "prepare_state",
+        "apply_condition",
+        "verify_condition",
+        "clean_up",
+    ]
