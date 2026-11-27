@@ -8,6 +8,7 @@ scorecard or on the reported failure. Expected values are calculated by hand.
 
 import json
 import math
+from copy import deepcopy
 
 import pytest
 
@@ -515,6 +516,7 @@ def instead(supplied_instead):
             with_attempt(superseded_task_outcomes=[{"task_outcome": None}]),
             "'close/attempt-3'.*correction_provenance",
         ),
+        (changed(lambda scorecard: scorecard.update(superseded_results={"status": "superseded"})), "superseded results"),
     ],
 )
 def test_supplied_evidence_that_does_not_validate_fails_the_recalculation(supply, problem):
@@ -654,3 +656,19 @@ def test_a_recalculation_that_would_drop_an_acceptance_criterion_of_the_earlier_
         match="the earlier scorecard assessed an acceptance criterion for 'outcome_consistency', and none is declared",
     ):
         recalculate(earlier_scorecard=earlier, outcome_corrections=[corrected("close/attempt-3", success=True)])
+
+
+def test_the_supplied_scorecard_is_left_as_it_was_and_the_new_scorecard_is_json_of_its_own():
+    earlier = sweep({"close": HALF}, metrics=["outcome_consistency", "brier_based_score"], ratings=RATINGS)
+    as_supplied = deepcopy(earlier)
+
+    recalculated = recalculate(
+        earlier_scorecard=earlier, outcome_corrections=[corrected("close/attempt-3", success=True)]
+    )
+
+    assert earlier == as_supplied
+    assert json.loads(to_json(recalculated)) == recalculated
+    assert set(recalculated) == {"schema_version", "metrics", "attempts", "superseded_results"}
+    recalculated["superseded_results"][0]["metrics"][0]["value"] = 1
+    recalculated["attempts"][0]["task_outcome"]["success"] = False
+    assert earlier == as_supplied

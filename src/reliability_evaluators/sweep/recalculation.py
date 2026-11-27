@@ -47,7 +47,7 @@ def _recalculate(
     acceptance_criteria: Sequence[AcceptanceCriterion],
 ) -> dict[str, Any]:
     with _validating_the_supplied_evidence():
-        earlier_metrics, earlier_attempts = _read(earlier_scorecard)
+        earlier_metrics, earlier_attempts, already_superseded = _read(earlier_scorecard)
         evaluators = _evaluators_of(earlier_metrics)
     declared = {"action_types": None if action_evidence is None else action_evidence.mapping}
     with _validating_the_supplied_evidence():
@@ -64,7 +64,7 @@ def _recalculate(
         "outcome_corrections": _correction_records(outcome_corrections, earlier_attempts),
         "metrics": deepcopy(earlier_metrics),
     }
-    superseded_results = [*deepcopy(earlier_scorecard.get("superseded_results", [])), superseded]
+    superseded_results = [*deepcopy(already_superseded), superseded]
     scorecard = build_scorecard(
         metrics=_score(evaluators, attempts, declared), attempts=attempts, acceptance_criteria=acceptance_criteria
     )
@@ -79,8 +79,11 @@ def _validating_the_supplied_evidence() -> Iterator[None]:
         raise EvidenceError(f"the supplied evidence does not validate: {error}") from error
 
 
-def _read(earlier_scorecard: Any) -> tuple[list[Any], tuple[Attempt, ...]]:
-    """The metric results and the Attempts of the scorecard the customer supplied."""
+def _read(earlier_scorecard: Any) -> tuple[list[Any], tuple[Attempt, ...], list[Any]]:
+    """What the scorecard the customer supplied holds.
+
+    Its metric results, its Attempts, and the results it had itself superseded, oldest first.
+    """
     if not isinstance(earlier_scorecard, Mapping):
         raise EvidenceError(
             "the earlier scorecard is supplied as the data of its JSON, with the attempt-level evidence in it. "
@@ -98,7 +101,10 @@ def _read(earlier_scorecard: Any) -> tuple[list[Any], tuple[Attempt, ...]]:
             "it has no metric results to supersede. Supply the earlier scorecard, which holds the "
             "attempt-level evidence as well, and not the evidence alone"
         )
-    return earlier_scorecard["metrics"], read_attempts(earlier_scorecard["attempts"])
+    already_superseded = earlier_scorecard.get("superseded_results", [])
+    if not isinstance(already_superseded, list):
+        raise EvidenceError(f"its superseded results are not a list. Got {already_superseded!r}")
+    return earlier_scorecard["metrics"], read_attempts(earlier_scorecard["attempts"]), already_superseded
 
 
 def _evaluators_of(earlier_metrics: Sequence[Any]) -> list[Evaluator]:
