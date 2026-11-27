@@ -97,10 +97,10 @@ def test_a_foundry_managed_run_delivers_the_scorecard_the_report_and_the_evidenc
     delivered = read_json(location / "scorecard.json")
     assert delivered == scorecard
     assert delivered["status"] == "complete"
-    # Outcome consistency is the 0.5 that Foundry returned.
+    # Outcome consistency is the 0.5 that Foundry returned, as the plain score and in the encoded result alike.
     outcome_consistency = metric(delivered)
     assert outcome_consistency["value"] == 0.5
-    assert (outcome_consistency["scoring_path"], outcome_consistency["fidelity"]) == ("foundry_managed", "unverified")
+    assert (outcome_consistency["scoring_path"], outcome_consistency["fidelity"]) == ("foundry_managed", "authoritative")
     assert (outcome_consistency["managed_scoring"]["eval_id"], outcome_consistency["managed_scoring"]["run_id"]) == (
         "eval_1",
         "evalrun_1",
@@ -111,7 +111,7 @@ def test_a_foundry_managed_run_delivers_the_scorecard_the_report_and_the_evidenc
     report = assert_faithful_rendering((location / "report.html").read_text(encoding="utf-8"), delivered)
     managed = position_of(delivered, "outcome_consistency")
     assert report.value(f"/metrics/{managed}/scoring_path") == "foundry_managed"
-    assert report.value(f"/metrics/{managed}/fidelity") == "unverified"
+    assert report.value(f"/metrics/{managed}/fidelity") == "authoritative"
     assert report.value(f"/metrics/{managed}/managed_scoring/run_id") == "evalrun_1"
     assert read_json(location / "evidence.json") == {"schema_version": 1, "attempts": delivered["attempts"]}
 

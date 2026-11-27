@@ -306,15 +306,16 @@ def test_a_foundry_managed_run_delivers_the_same_files_and_foundry_holds_only_wh
         "fields_foundry_holds_of_an_attempt": sorted(key for key, value in held[0].items() if value not in (None, [], {})),
         "read_without_the_customers_token": without_token,
     }}))
-    # The scorecard, in both formats, with what Foundry returned as an unverified result.
+    # The scorecard, in both formats, with what Foundry returned attributed to it. Which fidelity a managed
+    # result has is the subject of another live check: here the two formats have to say the same.
     assert delivered["status"] == "complete"
     assert outcome_consistency["state"] == "available"
-    assert (outcome_consistency["scoring_path"], outcome_consistency["fidelity"]) == ("foundry_managed", "unverified")
+    assert outcome_consistency["scoring_path"] == "foundry_managed"
     position = position_of(delivered, "outcome_consistency")
     assert report.value(f"/metrics/{position}/scoring_path") == "foundry_managed"
-    assert report.value(f"/metrics/{position}/fidelity") == "unverified"
+    assert report.value(f"/metrics/{position}/fidelity") == outcome_consistency["fidelity"]
     assert report.value(f"/metrics/{position}/managed_scoring/run_id") == managed_scoring["run_id"]
-    # The value Foundry returned is the one the delivered evidence gives, calculated here. One comparison, not a fidelity rule.
+    # The value Foundry returned is the one the delivered evidence gives, calculated here.
     used = outcome_consistency["attempts_used"]["attempt_ids"]
     assert outcome_consistency["value"] == pytest.approx(outcome_consistency_of(evidence["attempts"], used), abs=1e-12)
     # The scorecard leads to the runs, and they hold the number and the evidence they were sent.
@@ -457,7 +458,7 @@ def test_an_unavailable_measurement_that_foundry_returned_is_delivered_as_one_in
     tasks = outcome_consistency["counts"]["tasks"]
     assert (tasks["total"], tasks["valid"]) == (2, 0)
     assert [(excluded["count"], excluded["ids"]) for excluded in tasks["excluded"]] == [(2, ["close", "archive"])]
-    assert (outcome_consistency["scoring_path"], outcome_consistency["fidelity"]) == ("foundry_managed", "unverified")
+    assert outcome_consistency["scoring_path"] == "foundry_managed"
     position = position_of(delivered, "outcome_consistency")
     assert report.value(f"/metrics/{position}/state") == "unavailable"
     assert report.value(f"/metrics/{position}/value") == "\N{EM DASH}"
@@ -528,6 +529,6 @@ def test_a_delivery_that_fails_after_a_live_managed_run_is_an_explicit_reporting
     # What the live project returned is not lost with the delivery: the failure carries the scorecard,
     # and the run it names is still in the project.
     assert outcome_consistency["value"] == pytest.approx(0.68, abs=1e-12)
-    assert (outcome_consistency["scoring_path"], outcome_consistency["fidelity"]) == ("foundry_managed", "unverified")
+    assert outcome_consistency["scoring_path"] == "foundry_managed"
     assert run["status"] == "completed"
     assert failure.evidence == failure.scorecard["attempts"]
