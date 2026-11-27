@@ -7,6 +7,11 @@ from typing import Any, Mapping, Protocol
 
 from ..evidence import ResourceMeasurement
 
+# The entry point of an Attempt: where the request that invoked the agent was sent from. A
+# Foundry agent target records it as `entry_point` in the invocation evidence.
+CUSTOMER_CODE = "customer_code"
+FOUNDRY_CLOUD_EVALUATION = "foundry_cloud_evaluation"
+
 
 @dataclass(frozen=True, kw_only=True)
 class AttemptRequest:
@@ -45,7 +50,8 @@ class InvocationFailed(Exception):
     """An invocation that failed, with what the agent target recorded of it.
 
     An agent target may raise any exception from `invoke`. Raising this one keeps
-    `invocation` on the Attempt, in the form `AgentResponse.invocation` has.
+    `invocation` on the Attempt, in the form `AgentResponse.invocation` has. A subclass that
+    is also a `TimeoutError` does so for an invocation that timed out.
     """
 
     def __init__(self, message: str, *, invocation: Mapping[str, Any] | None = None):
