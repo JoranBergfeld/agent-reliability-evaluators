@@ -59,11 +59,13 @@ def run_sweep(
         for number in range(1, task.attempts + 1)
     ]
     evidence = group_by_task(attempts)
+    attempt_ids = tuple(attempt.attempt_id for attempt in attempts)
     scored = [
         ScoredMetric(
             result=evaluator.evaluate(evidence, *(declared[name] for name in evaluator.declarations)),
             scoring_path=ScoringPath.CUSTOMER_PROCESS,
             fidelity=Fidelity.AUTHORITATIVE,
+            attempts_used=attempt_ids,
         )
         for evaluator in evaluators
     ]
