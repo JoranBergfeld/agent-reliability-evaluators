@@ -322,17 +322,26 @@ def test_a_run_that_does_not_end_in_time_is_cancelled_and_gives_no_value():
     assert foundry.runs["evalrun_1"]["status"] == "canceled"
 
 
+CORRECTED = OutcomeCorrection(
+    attempt_id="close/attempt-5",
+    task_outcome=TaskOutcome(success=True, source="label added after the run"),
+    provenance="synthetic correction",
+)
+
+
 def test_a_recalculation_does_not_score_a_foundry_managed_result_in_this_process():
     # A recalculation scores in this process. The customer chose Foundry for this metric, so it is refused.
     scorecard = json.loads(to_json(sweep(TWO_TASKS, FakeFoundryProject())))
-    corrected = OutcomeCorrection(
-        attempt_id="close/attempt-5",
-        task_outcome=TaskOutcome(success=True, source="label added after the run"),
-        provenance="synthetic correction",
-    )
 
     with pytest.raises(RecalculationFailed, match="'outcome_consistency' was scored on the scoring path 'foundry_managed'"):
-        recalculate(earlier_scorecard=scorecard, outcome_corrections=[corrected])
+        recalculate(earlier_scorecard=scorecard, outcome_corrections=[CORRECTED])
+
+
+def test_a_recalculation_that_is_asked_for_foundry_managed_scoring_is_refused_and_not_scored_in_this_process():
+    scorecard = json.loads(to_json(sweep(TWO_TASKS, None, metrics=["outcome_consistency"])))
+
+    with pytest.raises(RecalculationFailed, match="'outcome_consistency' is configured for the scoring path 'foundry_managed'"):
+        recalculate(earlier_scorecard=scorecard, outcome_corrections=[CORRECTED], metrics=[MANAGED])
 
 
 # Declarations that cannot be run are rejected before any Attempt, and never fall back to this process.

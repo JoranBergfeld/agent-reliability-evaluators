@@ -383,6 +383,11 @@ def _selected(
         metric_id = metric.metric_id if isinstance(metric, ConfiguredEvaluator) else metric
         if metric_id in configured:
             raise ValueError(f"{metric_id!r} is selected more than once, and a scorecard reports each metric once")
+        if isinstance(metric, ConfiguredEvaluator) and metric.scoring_path is not ScoringPath.CUSTOMER_PROCESS:
+            raise ValueError(
+                f"{metric_id!r} is configured for the scoring path {metric.scoring_path.value!r}, "
+                "and a recalculation scores in this process"
+            )
         configured[metric_id] = metric
     scored_ids = [scored.metric_id for scored in scored_earlier]
     for metric_id in configured:
