@@ -89,10 +89,17 @@ class ConfidenceRequest:
 
 @dataclass(frozen=True, kw_only=True)
 class ConfidenceResponse:
-    """What the agent answered to a confidence request, and the Attempt the answer belongs to."""
+    """What the agent answered to a confidence request, and the Attempt the answer belongs to.
+
+    `invocation` is what the agent target recorded of the confidence request itself, in the
+    form `AgentResponse.invocation` has: the identifiers the platform returned and the token
+    usage it reported. It is kept on the Attempt, apart from what was recorded of the
+    Attempt's own invocation, so that what the request used is attributed to that Attempt.
+    """
 
     attempt_id: str
     output: str
+    invocation: Mapping[str, Any] | None = None
 
 
 class AgentTarget(Protocol):
@@ -114,6 +121,7 @@ class AgentTarget(Protocol):
         """Put `request.prompt` to the agent in the conversation of the completed Attempt.
 
         The agent must not be able to act. The answer is returned as given, with the
-        identity of the Attempt whose conversation it was given in.
+        identity of the Attempt whose conversation it was given in. A request that fails
+        raises. Raising `InvocationFailed` keeps what was recorded of it on the Attempt.
         """
         ...

@@ -122,7 +122,7 @@ An Attempt whose invocation failed keeps the same entry with whatever the platfo
 
 `tool_calls` are the `function_call` items of the response, each paired with its `function_call_output` by `call_id`. The arguments are decoded from the JSON text the protocol gives them as. The output is kept as the text the tool returned. `tool_calls` is `null` when the response has no list of output items, which is not the same as an empty list.
 
-The token usage is recorded, not reported: a token usage report is a separate piece of work. The usage is also not given to the sweep as a resource measurement, because it has not been established that it covers every model call of an Attempt.
+The token usage is recorded here as the platform reported it, and the scorecard reports it from here: per Attempt, per Evaluator and for the sweep, see [token usage](../token_usage/readme.md). The usage is not given to the sweep as a resource measurement, because it has not been established that it covers every model call of an Attempt.
 
 ### Resource measurements
 

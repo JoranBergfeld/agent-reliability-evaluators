@@ -400,6 +400,7 @@ def test_acceptance_is_reported_separately_from_task_outcomes(behaviours, task_s
         "metrics",
         "experiments",
         "tasks_without_experiment",
+        "token_usage",
         "attempts",
     }
     assert all("acceptance" not in attempt for attempt in scorecard["attempts"])

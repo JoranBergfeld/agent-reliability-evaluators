@@ -2,8 +2,13 @@
 
 A result recovered here is what Foundry returned. It is never calculated in this process.
 When Foundry returns none for a metric, that metric has a failure with its execution error
-and nothing is scored in its place. Every metric is scored in a managed run of its own, so
+and nothing is scored in its place. Every metric is scored in managed runs of its own, so
 one that fails takes no other metric's result with it.
+
+A code evaluator returns one number for each submitted row, so a result is asked for in
+parts, one row a part. A first run returns the plain metric value and the size of the encoded
+result. A second run returns the encoded result, which carries the state of the metric, its
+reason, its counts and its details, and the value as the Evaluator computed it.
 """
 
 from __future__ import annotations
@@ -12,33 +17,45 @@ import time
 from dataclasses import dataclass, field, replace
 from typing import Any, Callable, Iterable, Mapping, Protocol, Sequence
 
-from ..evaluators import MetricResult
+from ..evaluators import MetricResult, MetricState
 from ..evidence import TaskEvidence
+from . import grader
 from .artifact import DerivationError, ManagedArtifact, derive_artifact
 from .foundry import FoundryRequestError
 
 # Registering an evaluator is a preview feature of the project API and has to be opted into.
 EVALUATORS_API = "api-version=v1"
 PREVIEW_FEATURE = {"Foundry-Features": "Evaluations=V1Preview"}
-# One inline row of 1,900,000 characters ran and one of 2,100,000 was rejected when observed
-# (decision ticket #12). Evidence is not split over rows: it is refused above what ran.
-SUBMITTED_ITEM_LIMIT_CHARACTERS = 1_900_000
+# The rows of one run are submitted inline, and the limit is on all of them together: one
+# row of 1,900,000 characters ran and one of 2,100,000 was rejected (decision ticket #12),
+# and three rows of 1,000,000 were rejected where ten of 100,000 ran. Every row carries the
+# evidence, so a run that would be larger than what ran is refused, and nothing is truncated.
+SUBMITTED_RUN_LIMIT_CHARACTERS = 1_900_000
 OUTPUT_ITEM_PAGE = 100
+# Foundry was seen to return one row of a run as an error, where the evaluator had not raised and
+# every other row was graded. A part of a result is therefore asked for up to this many times.
+PART_ATTEMPTS = 3
 
 UNVERIFIED_LIMITATION = (
     "Foundry returned this value. That it equals the value the Evaluator computed there has not been "
     "established, so it is an unverified result: it cannot be met or not met by an acceptance criterion. "
-    "Foundry returns only the number, so the evidence counts, the details and the Attempts the value rests "
-    "on are not reported on this scoring path. The Attempts the Evaluator was given are."
+    "The evidence counts, the details and the Attempts the value rests on are the ones the Evaluator "
+    "returned from Foundry with it, as an encoded result."
+)
+NO_VALUE_LIMITATION = (
+    "Foundry returned this result, and it has no value: the Evaluator found the metric to be {state} for "
+    "the evidence, and returned that state, its reason and its evidence counts as an encoded result. "
+    "No fidelity rule yet establishes that what is received from Foundry is what the Evaluator computed "
+    "there, so the result is reported as unverified."
 )
 PLATFORM_DIAGNOSTICS_MEANING = (
     "Foundry adds a threshold and a pass or fail label to every result. They are platform defaults, "
     "not the customer's acceptance criterion and not an assessment by the Evaluator."
 )
 RAISED_IN_FOUNDRY = (
-    "A managed evaluator that raises fails the whole run and returns no result. It raises when the metric "
-    "is an unavailable measurement for the evidence, which cannot be returned through a managed result in "
-    "this version, and when the evidence it received is not the evidence that was submitted"
+    "A run in which the managed evaluator raises on every row fails as a whole and returns no result. "
+    "The evaluator raises when the evidence it received is not the evidence that was submitted. It does "
+    "not raise for an unavailable measurement"
 )
 
 
@@ -48,6 +65,10 @@ class ManagedScoringFailure(Exception):
     It is raised by `register`. `score` does not raise it: it returns a ManagedFailure for
     the metric, so that what the sweep collected is kept.
     """
+
+
+class _NotGraded(ManagedScoringFailure):
+    """Foundry returned a row with a result in error. The part that row asked for can be asked for again."""
 
 
 class Project(Protocol):
@@ -74,9 +95,15 @@ class RegisteredEvaluator:
 class ManagedResult:
     """One metric as Foundry returned it, with why it is unverified and where it came from."""
 
+    # The result as it is reported. Its value is the number Foundry returned as the score.
     result: MetricResult
     limitation: str
     provenance: dict[str, Any]
+    # The value the Evaluator computed, as the encoded result carried it, or None when the
+    # metric has no value. Nothing compares it with the returned score: no fidelity rule exists yet.
+    computed_value: float | None = None
+    # What Foundry reported of the token usage of each managed run that was made for the metric.
+    reported_usage: list[dict[str, Any]] = field(default_factory=list)
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -89,25 +116,69 @@ class ManagedFailure:
 
     # The execution error, in words.
     error: str
-    # How far the managed run of the metric got, in the fields of a result's provenance.
-    # What was not reached is None.
+    # How far the managed scoring of the metric got, in the fields of a result's provenance.
+    # What was not reached is None. The run is the last one that was made.
     provenance: dict[str, Any] = field(
         default_factory=lambda: dict.fromkeys(("evaluator", "eval_id", "run_id", "output_item_id", "evidence_sha256"))
     )
+    # What Foundry reported of the token usage of each managed run that was made. Empty: none is known.
+    reported_usage: list[dict[str, Any]] = field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class _Answer:
+    """What Foundry returned for one part of a result, and the run and output item it returned it in."""
+
+    run_id: str
+    output_item_id: Any
+    where: str
+    returned: Mapping[str, Any]
+
+    @property
+    def score(self) -> Any:
+        return self.returned["score"]
 
 
 @dataclass
 class _ManagedRun:
-    """The managed run of one metric, as far as it got."""
+    """The managed scoring of one metric, as far as it got."""
 
     metric_id: str
     evaluator: RegisteredEvaluator | None = None
+    # The fields every submitted row carries: the grouped evidence of the metric.
+    item: dict[str, str] = field(default_factory=dict)
     # The digest the submitted evidence travels with. The evaluator checks the evidence against it.
     evidence_sha256: str | None = None
     eval_id: str | None = None
+    # The run that was made last, the parts of the result its rows ask for, and until when it is waited for.
     run: dict[str, Any] | None = None
+    parts: list[str] = field(default_factory=list)
     deadline: float = 0.0
     output_item_id: Any = None
+    # What came back for the plain value, and the size of the encoded result.
+    valued: _Answer | None = None
+    size: Any = None
+    # Every run that was made, in order: the run as it was last read, and its output items once they were read.
+    made: list[dict[str, Any]] = field(default_factory=list)
+
+    def reported_usage(self) -> list[dict[str, Any]]:
+        """What Foundry reported of the token usage of each run that was made, as it reported it.
+
+        A run reports usage in two places: on the result of the metric in each of its output
+        items, and in the per-model rows of the run. They are kept apart and are not
+        interpreted here: they can be two views of the same use, and rows were observed to
+        repeat each other's counts (decision ticket #24).
+        """
+        return [
+            {
+                "run_id": made["run"].get("id"),
+                "results_sample_usage": None
+                if made["items"] is None
+                else [_usage_on_the_result(self.metric_id, item) for item in made["items"]],
+                "per_model_usage": made["run"].get("per_model_usage"),
+            }
+            for made in self.made
+        ]
 
     def failed(self, error: str) -> ManagedFailure:
         evaluator = self.evaluator
@@ -120,7 +191,7 @@ class _ManagedRun:
             "output_item_id": self.output_item_id,
             "evidence_sha256": self.evidence_sha256,
         }
-        return ManagedFailure(error=error, provenance=provenance)
+        return ManagedFailure(error=error, provenance=provenance, reported_usage=self.reported_usage())
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -147,43 +218,83 @@ class FoundryManagedScoring:
             raise ManagedScoringFailure(f"the derived evaluator could not be registered in the Foundry project: {error}") from error
 
     def score(self, evidence: Mapping[str, Sequence[TaskEvidence]]) -> dict[str, ManagedResult | ManagedFailure]:
-        """Score each metric from its grouped Attempt evidence, each in a managed run of its own.
+        """Score each metric from its grouped Attempt evidence, each in managed runs of its own.
 
         Returns, for every metric, what Foundry returned for it, or the failure that left it
         without a result. A failure is returned and not raised, and a metric whose run fails
-        takes no other metric's result with it: an evaluator that raises fails its whole run,
-        so no two metrics share one. The runs are all started before the first is waited for.
+        takes no other metric's result with it: no two metrics share a run.
+
+        A metric takes two runs under one eval. The first returns its plain value and the
+        size of its encoded result, the second the encoded result. Each of the two is started
+        for every metric before the first of them is waited for.
         """
         runs = {metric_id: _ManagedRun(metric_id) for metric_id in evidence}
-        failures = {
-            metric_id: failure
-            for metric_id, tasks in evidence.items()
-            if (failure := _attempted(runs[metric_id], lambda run: self._submit(run, tasks))) is not None
-        }
-        return {
-            metric_id: failures.get(metric_id) or _attempted(run, self._collect) for metric_id, run in runs.items()
-        }
+        scored: dict[str, ManagedResult | ManagedFailure] = {}
+        steps = (lambda run: self._submit(run, evidence[run.metric_id]), self._ask_for_encoded_result, self._collect)
+        for step in steps:
+            for metric_id, run in runs.items():
+                if metric_id not in scored and (ended := _attempted(run, step)) is not None:
+                    scored[metric_id] = ended
+        return {metric_id: scored[metric_id] for metric_id in evidence}
 
     def _submit(self, run: _ManagedRun, tasks: Sequence[TaskEvidence]) -> None:
-        """Register the evaluator of one metric if need be, and start a managed run on its evidence."""
+        """Register the evaluator of one metric if need be, and start the run for its value and the size of its result."""
         run.evaluator = self.register([run.metric_id])[run.metric_id]
-        item = run.evaluator.artifact.item(tasks)
-        run.evidence_sha256 = _evidence_digest(item[run.evaluator.artifact.evidence_field])
-        submitted = sum(len(field) + len(text) for field, text in item.items())
-        if submitted > SUBMITTED_ITEM_LIMIT_CHARACTERS:
-            raise ManagedScoringFailure(
-                f"the grouped evidence is {submitted} characters, more than the {SUBMITTED_ITEM_LIMIT_CHARACTERS} "
-                "that one managed run was observed to accept. It was not submitted, and nothing was truncated"
-            )
-        self._start(run, item)
+        run.item = run.evaluator.artifact.item(tasks)
+        run.evidence_sha256 = _evidence_digest(run.item[run.evaluator.artifact.evidence_field])
+        self._create_eval(run)
+        self._start(run, "value and size", [grader.VALUE_PART, grader.SIZE_PART])
+
+    def _ask_for_encoded_result(self, run: _ManagedRun) -> None:
+        """Wait for the first run of one metric, and start the run for every part of its encoded result."""
+        answers = self._answers(run, "value and size")
+        run.valued, sized = answers[grader.VALUE_PART], answers[grader.SIZE_PART]
+        run.output_item_id = run.valued.output_item_id
+        run.size = sized.score
+        try:
+            parts = grader.result_parts(run.size)
+        except grader.UnreadableResult as error:
+            raise ManagedScoringFailure(f"{sized.where}, for {run.metric_id!r}: {error}") from None
+        self._start(run, "encoded result", [str(number) for number in range(1, parts + 1)])
 
     def _collect(self, run: _ManagedRun) -> ManagedResult:
-        """Wait until the managed run of one metric has ended, and recover its result."""
-        self._wait(run)
-        output_item = self._output_item(run.eval_id, run.run)
-        run.output_item_id = output_item.get("id")
-        recovered = _recover(run.evaluator, run.eval_id, run.run, output_item)
-        return replace(recovered, provenance={**recovered.provenance, "evidence_sha256": run.evidence_sha256})
+        """Wait until the second run of one metric has ended, and recover its result."""
+        answers = self._answers(run, "encoded result")
+        recovered = _recover(run, [answers[str(number)] for number in range(1, len(answers) + 1)])
+        return replace(
+            recovered,
+            provenance={**recovered.provenance, "evidence_sha256": run.evidence_sha256},
+            reported_usage=run.reported_usage(),
+        )
+
+    def _answers(self, run: _ManagedRun, asked_for: str) -> dict[str, _Answer]:
+        """Wait for the run that was made last, and give what it returned for each part its rows asked for.
+
+        A part whose row Foundry did not grade is asked for again in a run of its own rows,
+        up to PART_ATTEMPTS times in all. The evaluator returns the same part for the same
+        evidence, and the digest of the encoded result is checked whichever run a part came from.
+        """
+        answers: dict[str, _Answer] = {}
+        for attempt in range(1, PART_ATTEMPTS + 1):
+            self._wait(run)
+            not_graded: dict[str, _NotGraded] = {}
+            for part, output_item in zip(run.parts, self._output_items(run, len(run.parts))):
+                where = _where(run.eval_id, run.run, output_item)
+                try:
+                    returned = _returned(run.metric_id, output_item, where)
+                except _NotGraded as error:
+                    not_graded[part] = error
+                else:
+                    answers[part] = _Answer(run.run["id"], output_item.get("id"), where, returned)
+            if not not_graded:
+                break
+            if attempt == PART_ATTEMPTS:
+                raise ManagedScoringFailure(
+                    f"{next(iter(not_graded.values()))}. Foundry was asked {PART_ATTEMPTS} times for what did not "
+                    f"come back, and did not grade {len(not_graded)} of the rows of the last run"
+                )
+            self._start(run, asked_for, list(not_graded))
+        return answers
 
     def _register(self, artifact: ManagedArtifact) -> RegisteredEvaluator:
         path = f"/evaluators/{artifact.evaluator_name}/versions?{EVALUATORS_API}"
@@ -198,18 +309,19 @@ class FoundryManagedScoring:
         )
         return RegisteredEvaluator(artifact=artifact, version=str(created["version"]), newly_registered=True)
 
-    def _start(self, run: _ManagedRun, item: Mapping[str, str]) -> None:
-        """Create the eval of one metric and its run."""
+    def _create_eval(self, run: _ManagedRun) -> None:
         evaluator = run.evaluator
-        name = f"Reliability Evaluators: {run.metric_id}"
         created = self.project.request(
             "POST",
             "/openai/v1/evals",
             {
-                "name": name,
+                "name": f"Reliability Evaluators: {run.metric_id}",
                 "data_source_config": {
                     "type": "custom",
-                    "item_schema": {"type": "object", "properties": {field: {"type": "string"} for field in item}},
+                    "item_schema": {
+                        "type": "object",
+                        "properties": {field: {"type": "string"} for field in (*run.item, grader.RESULT_PART)},
+                    },
                     "include_sample_schema": True,
                 },
                 "testing_criteria": [
@@ -225,14 +337,30 @@ class FoundryManagedScoring:
             },
         )
         run.eval_id = created["id"]
+
+    def _start(self, run: _ManagedRun, asked_for: str, parts: Sequence[str]) -> None:
+        """Start a run of the metric's eval with one row for each part of the result that is asked for.
+
+        Every row carries the evidence, because a row is graded on its own.
+        """
+        run.parts = list(parts)
+        rows = [{**run.item, grader.RESULT_PART: part} for part in parts]
+        submitted = sum(len(field) + len(text) for row in rows for field, text in row.items())
+        if submitted > SUBMITTED_RUN_LIMIT_CHARACTERS:
+            raise ManagedScoringFailure(
+                f"the run for the {asked_for} would submit {submitted} characters in {len(rows)} rows, each with "
+                f"the grouped evidence, more than the {SUBMITTED_RUN_LIMIT_CHARACTERS} that one managed run was "
+                "observed to accept. It was not submitted, and nothing was truncated"
+            )
         run.run = self.project.request(
             "POST",
             f"/openai/v1/evals/{run.eval_id}/runs",
             {
-                "name": name,
-                "data_source": {"type": "jsonl", "source": {"type": "file_content", "content": [{"item": dict(item)}]}},
+                "name": f"Reliability Evaluators: {run.metric_id}, {asked_for}",
+                "data_source": {"type": "jsonl", "source": {"type": "file_content", "content": [{"item": row} for row in rows]}},
             },
         )
+        run.made.append({"run": run.run, "items": None})
         run.deadline = time.monotonic() + self.run_timeout_seconds
 
     def _wait(self, run: _ManagedRun) -> None:
@@ -248,7 +376,7 @@ class FoundryManagedScoring:
                     "Its cancellation was requested"
                 )
             time.sleep(self.poll_interval_seconds)
-            run.run = self.project.request("GET", run_path)
+            run.run = run.made[-1]["run"] = self.project.request("GET", run_path)
         if run.run["status"] != "completed":
             error = run.run.get("error") or {}
             reported = f"{error.get('code')}: {error.get('message')}".rstrip(". ")
@@ -264,24 +392,28 @@ class FoundryManagedScoring:
             # The timeout is what the caller is told. A run that could not be cancelled ends by itself.
             pass
 
-    def _output_item(self, eval_id: str, run: Mapping[str, Any]) -> dict[str, Any]:
-        """The one output item of the run: one item was submitted."""
+    def _output_items(self, run: _ManagedRun, submitted: int) -> list[dict[str, Any]]:
+        """The output items of the last run in the order of the rows that were submitted, one for each row."""
+        eval_id, run_id = run.eval_id, run.run["id"]
         items: list[dict[str, Any]] = []
         after = ""
         while True:
             page = self.project.request(
-                "GET", f"/openai/v1/evals/{eval_id}/runs/{run['id']}/output_items?limit={OUTPUT_ITEM_PAGE}{after}"
+                "GET", f"/openai/v1/evals/{eval_id}/runs/{run_id}/output_items?limit={OUTPUT_ITEM_PAGE}{after}"
             )
             items.extend(page.get("data", []))
             if not page.get("has_more"):
                 break
             after = f"&after={page['last_id']}"
-        if len(items) != 1:
+        # An item names the row it is for by the position of the row in what was submitted.
+        by_row = {item.get("datasource_item_id"): item for item in items}
+        run.made[-1]["items"] = items
+        if len(items) != submitted or set(by_row) != set(range(submitted)):
             raise ManagedScoringFailure(
-                f"the Foundry-managed run {run['id']} of {eval_id} returned {len(items)} output items "
-                "for the one item that was submitted"
+                f"the Foundry-managed run {run_id} of {eval_id} returned {len(items)} output items "
+                f"for the {submitted} rows that were submitted, or not one for each row"
             )
-        return items[0]
+        return [by_row[row] for row in range(submitted)]
 
 
 def _attempted(run: _ManagedRun, step: Callable[[_ManagedRun], Any]) -> Any:
@@ -322,12 +454,22 @@ def _artifact(metric_id: str) -> ManagedArtifact:
         raise ManagedScoringFailure(str(error)) from error
 
 
-def _recover(
-    evaluator: RegisteredEvaluator, eval_id: str, run: Mapping[str, Any], output_item: Mapping[str, Any]
-) -> ManagedResult:
-    """Read one metric's result from the output item, or say why there is none."""
-    metric_id = evaluator.artifact.metric_id
-    where = f"output item {output_item.get('id')!r} of run {run['id']} of {eval_id}"
+def _where(eval_id: str, run: Mapping[str, Any], output_item: Mapping[str, Any]) -> str:
+    return f"output item {output_item.get('id')!r} of run {run['id']} of {eval_id}"
+
+
+def _usage_on_the_result(metric_id: str, output_item: Any) -> Any:
+    """The usage Foundry reported on the result of the metric in one output item, or None when it reported none."""
+    results = output_item.get("results") if isinstance(output_item, Mapping) else None
+    for result in results if isinstance(results, list) else []:
+        if isinstance(result, Mapping) and result.get("name") == metric_id:
+            sample = result.get("sample")
+            return sample.get("usage") if isinstance(sample, Mapping) else None
+    return None
+
+
+def _returned(metric_id: str, output_item: Mapping[str, Any], where: str) -> Mapping[str, Any]:
+    """What Foundry returned for the metric on one row: a completed result with a number as its score."""
     # A completed run and a completed item do not show that the evaluator ran: the errors do.
     sample_error = (output_item.get("sample") or {}).get("error")
     if sample_error:
@@ -339,35 +481,77 @@ def _recover(
     if returned.get("status") != "completed":
         # An evaluator that raised on this item leaves its error on the result, not on the item.
         result_error = (returned.get("sample") or {}).get("error")
-        raise ManagedScoringFailure(
+        raise _NotGraded(
             f"{where} has a result for {metric_id!r} in status {returned.get('status')!r}"
             + (f": {result_error}" if result_error else "")
         )
     score = returned.get("score")
     if isinstance(score, bool) or not isinstance(score, (int, float)):
         raise ManagedScoringFailure(f"{where} has {score!r} as the score of {metric_id!r}, which is not a number")
+    return returned
+
+
+def _recover(run: _ManagedRun, encoded: Sequence[_Answer]) -> ManagedResult:
+    """Read the metric's result from the plain value and the parts of the encoded result, or say why there is none."""
+    evaluator, eval_id, metric_id = run.evaluator, run.eval_id, run.metric_id
+    artifact = evaluator.artifact
+    where, returned = run.valued.where, run.valued.returned
     try:
-        # The result contract checks the range of the value: Foundry does not enforce the one it is given.
-        result = MetricResult.available(evaluator.artifact.definition, float(score))
-    except ValueError as error:
+        computed = grader.decode_result(
+            artifact.definition, run.item[artifact.evidence_field], run.size, [part.score for part in encoded]
+        )
+    except grader.UnreadableResult as error:
         raise ManagedScoringFailure(
-            f"{where} has a score for {metric_id!r} that is not a value of the metric: {error}. It is not reported"
+            f"run {run.run['id']} of {eval_id} did not return a result of {metric_id!r} that can be read: {error}. "
+            "Nothing is reported in its place"
         ) from None
     # The run's link to the Foundry portal is left out: it embeds the customer's subscription identifier.
     provenance = {
         "evaluator": {
             "name": evaluator.name,
             "version": evaluator.version,
-            "code_sha256": evaluator.artifact.sha256,
+            "code_sha256": artifact.sha256,
         },
         "eval_id": eval_id,
-        "run_id": run["id"],
-        "output_item_id": output_item.get("id"),
-        "platform_diagnostics": {
-            "meaning": PLATFORM_DIAGNOSTICS_MEANING,
-            "threshold": returned.get("threshold"),
-            "label": returned.get("label"),
-            "passed": returned.get("passed"),
+        "run_id": run.valued.run_id,
+        "output_item_id": run.valued.output_item_id,
+        # The runs that returned its parts: one, and more when Foundry did not grade a row and was asked again.
+        "encoded_result": {
+            "run_ids": list(dict.fromkeys(part.run_id for part in encoded)),
+            "bytes": int(run.size),
+            "parts": len(encoded),
         },
     }
-    return ManagedResult(result=result, limitation=UNVERIFIED_LIMITATION, provenance=provenance)
+    score = returned["score"]
+    if computed.state is not MetricState.AVAILABLE:
+        # The state says the metric has no value. The number in the value part is then the internal
+        # marker for that. It is checked, and it is never reported.
+        if score != grader.no_value_marker(artifact.definition):
+            raise ManagedScoringFailure(
+                f"{where} has {score!r} as the value of {metric_id!r}, where the encoded result says the metric "
+                f"is {computed.state.value} and has no value. The two do not agree, so nothing is reported"
+            )
+        limitation = NO_VALUE_LIMITATION.format(state=_STATES_WITHOUT_A_VALUE[computed.state])
+        return ManagedResult(result=computed, limitation=limitation, provenance=provenance)
+    try:
+        # The result contract checks the range of the value: Foundry does not enforce the one it is given.
+        result = replace(computed, value=float(score))
+    except ValueError as error:
+        raise ManagedScoringFailure(
+            f"{where} has a score for {metric_id!r} that is not a value of the metric: {error}. It is not reported"
+        ) from None
+    provenance["platform_diagnostics"] = {
+        "meaning": PLATFORM_DIAGNOSTICS_MEANING,
+        "threshold": returned.get("threshold"),
+        "label": returned.get("label"),
+        "passed": returned.get("passed"),
+    }
+    return ManagedResult(
+        result=result, limitation=UNVERIFIED_LIMITATION, provenance=provenance, computed_value=computed.value
+    )
+
+
+_STATES_WITHOUT_A_VALUE = {
+    MetricState.UNAVAILABLE: "an unavailable measurement",
+    MetricState.NOT_APPLICABLE: "not applicable",
+}
