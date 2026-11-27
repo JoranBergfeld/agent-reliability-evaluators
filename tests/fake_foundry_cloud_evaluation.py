@@ -18,6 +18,10 @@ docs/foundry_cloud_evaluation/readme.md, "Observed live"):
   The item then has no response identifier, no usage and no latency.
 - A hosted agent whose tool returns an HTTP error answers all the same, and its item carries no error.
 - A cancelled run has no output items.
+- `POST /openai/v1/responses` with `previous_response_id` is a follow-up in the conversation of the
+  response an output item named, for a prompt agent (observed on 2026-11-27 for the full-matrix
+  verification, see docs/coverage_matrix/readme.md). With the tool choice `none` the agent calls no
+  tool. The response of a hosted agent is not one this route knows.
 - The run's `report_url` embeds an encoded subscription identifier.
 
 The agents are scripted and work on a to-do service through the tools of the live fixture's
@@ -81,12 +85,18 @@ class FakeAgent:
 
     `script` gives what the agent does on each invocation, in order: a behaviour in BEHAVIOURS.
     An invocation with nothing scripted completes the Task.
+
+    `confidence` gives what the agent answers to each follow-up, in order. A follow-up with
+    nothing scripted is answered "100". `acts_on_follow_up` makes the agent read the item
+    `unrelated` in every follow-up in which the project lets it call a tool.
     """
 
     kind: str = "prompt"
     protocols: tuple[str, ...] = ("responses",)
     versions: tuple[str, ...] = ("1",)
     script: list[str] = field(default_factory=list)
+    confidence: list[str] = field(default_factory=list)
+    acts_on_follow_up: bool = False
 
     def details(self, name: str) -> dict:
         latest = self.versions[-1]
@@ -126,6 +136,10 @@ class FakeCloudEvaluationProject:
     - `refuses`: the error every request fails with. `refuses_runs`: the error making a run fails with.
     - `criterion_fails`: the criterion's result is labelled as failed, whatever the agent did.
     - `alter_item`: given each output item, returns the item the project returns instead, or None for none.
+    - `follow_up`: how the project treats a follow-up. "as observed" is the live project's behaviour. The
+      others were never observed and show what the target does about them: "ignores tool_choice" runs the
+      follow-up as if no tool choice had been sent, "starts a new conversation" answers without the earlier
+      response, and "refuses" answers HTTP 400.
     """
 
     endpoint = ENDPOINT
@@ -141,6 +155,7 @@ class FakeCloudEvaluationProject:
         refuses_runs: FoundryRequestError | None = None,
         criterion_fails: bool = False,
         alter_item: Callable[[dict], dict | None] | None = None,
+        follow_up: str = "as observed",
     ):
         self._todo_service = todo_service
         self.agents = agents
@@ -150,6 +165,11 @@ class FakeCloudEvaluationProject:
         self._refuses_runs = refuses_runs
         self._criterion_fails = criterion_fails
         self._alter_item = alter_item
+        self._follow_up_as = follow_up
+        # The state of the to-do service each response of a prompt agent worked on, and the agent, by response.
+        self._conversations: dict[str, tuple[str, str]] = {}
+        # Every follow-up request the project was sent, as it was sent.
+        self.follow_ups: list[dict] = []
         self.evals: dict[str, dict] = {}
         self.runs: dict[str, dict] = {}
         self._output_items: dict[str, list[dict]] = {}
@@ -166,6 +186,7 @@ class FakeCloudEvaluationProject:
             ("GET", r"/openai/v1/evals/([^/]+)/runs/([^/]+)", self._poll_run),
             ("POST", r"/openai/v1/evals/([^/]+)/runs/([^/]+)/cancel", self._cancel_run),
             ("GET", r"/openai/v1/evals/([^/]+)/runs/([^/]+)/output_items\?limit=(\d+)(?:&after=(\w+))?", self._items),
+            ("POST", r"/openai/v1/responses", self._follow_up),
         )
         for route_method, pattern, handler in routes:
             matched = re.fullmatch(pattern, path)
@@ -358,6 +379,8 @@ class FakeCloudEvaluationProject:
         answer = {"role": "assistant", "content": [text]}
         system = [{"role": "system", "content": INSTRUCTIONS}] if agent.kind == "prompt" else []
         prefix = "resp" if agent.kind == "prompt" else "caresp"
+        if agent.kind == "prompt":
+            self._conversations[f"resp_fake_{number}"] = (state, name)
         return {
             "datasource_item": {
                 **row,
@@ -393,6 +416,60 @@ class FakeCloudEvaluationProject:
                 "latency_ms": 1000.0 + 1000.0 * calls,
             },
         }
+
+    def _follow_up(self, *, body, **_):
+        """Answer a request in the conversation of an earlier response, as the live project was observed to."""
+        self.follow_ups.append(copy.deepcopy(body))
+        previous = body.get("previous_response_id")
+        refused = self._follow_up_as == "refuses"
+        if refused or previous not in self._conversations:
+            message = (
+                "ToolChoice must match the agent's tool_choice when agent specifies tool_choice."
+                if refused
+                else f"Invalid previous_response_id '{previous}'. The Agents Responses API requires an ID returned "
+                "by a previous Responses operation."
+            )
+            error = {"code": "invalid_payload", "message": message, "type": "invalid_request_error"}
+            raise FoundryRequestError("POST", "/openai/v1/responses", 400, json.dumps({"error": error}))
+        state, name = self._conversations[previous]
+        agent = self.agents[name]
+        self._responses += 1
+        number = self._responses
+        applied = body.get("tool_choice") or "auto"
+        if self._follow_up_as == "ignores tool_choice":
+            applied = "auto"
+        output = []
+        if applied != "none" and agent.acts_on_follow_up:
+            _, returned = self._call_tool(state, "GET", "unrelated", {})
+            call_id = f"call_fake_{number}_1"
+            sent = json.dumps({"attempt_id": state, "todo_id": "unrelated"}, separators=(",", ":"))
+            output.append({"type": "openapi_call", "id": f"fc_fake_{number}_1", "call_id": call_id,
+                           "name": "todos_readTodo", "arguments": sent, "status": "completed"})
+            output.append({"type": "openapi_call_output", "id": f"fco_fake_{number}_1", "call_id": call_id,
+                           "name": "todos_readTodo", "output": json.dumps({"response": json.dumps(returned)}),
+                           "status": "completed"})
+        answer = agent.confidence.pop(0) if agent.confidence else "100"
+        output.append({"type": "message", "id": f"msg_fake_{number}", "role": "assistant", "status": "completed",
+                       "content": [{"type": "output_text", "text": answer, "annotations": []}]})
+        reference = body.get("agent_reference") or {}
+        response = {
+            "id": f"resp_fake_{number}", "object": "response", "status": "completed", "error": None,
+            "incomplete_details": None, "model": MODEL_DEPLOYMENT, "metadata": body.get("metadata", {}),
+            "agent_reference": {"type": "agent_reference", "name": name,
+                                "version": reference.get("version", agent.versions[-1])},
+            "tool_choice": applied,
+            "output": output,
+            "usage": {
+                "input_tokens": 800,
+                "input_tokens_details": {"cached_tokens": 0, "cache_write_tokens": 0},
+                "output_tokens": 2,
+                "output_tokens_details": {"reasoning_tokens": 0},
+                "total_tokens": 802,
+            },
+        }
+        if self._follow_up_as != "starts a new conversation":
+            response["previous_response_id"] = previous
+        return response
 
     def _failed_target(self, name: str, row: dict, message: str) -> dict:
         return {
