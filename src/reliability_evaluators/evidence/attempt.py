@@ -6,9 +6,8 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
-
-class EvidenceError(ValueError):
-    """Evidence that cannot be accepted as given. It is rejected, never repaired."""
+from .actions import ActionEvidence
+from .errors import EvidenceError
 
 
 def _require_text(owner: str, **fields: Any) -> None:
@@ -109,6 +108,9 @@ class Attempt:
     task_outcome: TaskOutcome | None = None
     # Why the execution did not complete, when it did not.
     execution_error: str | None = None
+    # The actions the agent took, in order. None means they were not recorded, which is
+    # not the same as a recording with no events.
+    action_evidence: ActionEvidence | None = None
     # The operational constraints that apply to this Attempt, and the assessments made of them.
     operational_constraints: tuple[OperationalConstraint, ...] = ()
     violation_assessments: tuple[ViolationAssessment, ...] = ()
@@ -125,6 +127,10 @@ class Attempt:
         if self.task_outcome is not None and not isinstance(self.task_outcome, TaskOutcome):
             raise EvidenceError(
                 f"a task outcome is a TaskOutcome with its source. Got {self.task_outcome!r}"
+            )
+        if self.action_evidence is not None and not isinstance(self.action_evidence, ActionEvidence):
+            raise EvidenceError(
+                f"action evidence is an ActionEvidence with its source. Got {self.action_evidence!r}"
             )
         self._require_assessments_of_applicable_constraints()
 
@@ -166,6 +172,7 @@ class Attempt:
             "execution_status": self.execution_status.value,
             "execution_error": self.execution_error,
             "task_outcome": None if self.task_outcome is None else self.task_outcome.to_dict(),
+            "action_evidence": None if self.action_evidence is None else self.action_evidence.to_dict(),
             "operational_constraints": [constraint.to_dict() for constraint in self.operational_constraints],
             "violation_assessments": [assessment.to_dict() for assessment in self.violation_assessments],
         }
