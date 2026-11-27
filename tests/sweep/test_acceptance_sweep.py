@@ -4,10 +4,12 @@ The sweep is driven through its public entry point with a fake agent target. Eve
 assertion is on the machine-readable scorecard. Expected values are calculated by hand.
 """
 
+import json
+
 import pytest
 
 from reliability_evaluators.evidence import TaskOutcome
-from reliability_evaluators.scorecard import AcceptanceCriterion, CustomerAssessment
+from reliability_evaluators.scorecard import AcceptanceCriterion, CustomerAssessment, to_json
 from reliability_evaluators.sweep import Task, run_sweep
 from tests.fakes import FakeAgentTarget
 
@@ -111,6 +113,17 @@ def test_a_criterion_compares_the_metric_value_in_either_direction(comparison, t
             "observed": 0.36,
             "met": status == "met",
         },
+    ]
+
+
+def test_a_criterion_can_bound_the_metric_value_on_both_sides():
+    # 0.36 is at least 0.2 and is not at most 0.3.
+    assessment = acceptance(sweep({"close": FOUR_IN_FIVE}, [on_value(at_least=0.2, at_most=0.3)]))
+
+    assert assessment["status"] == "not_met"
+    assert [(check["comparison"], check["met"]) for check in assessment["checks"]] == [
+        ("at_least", True),
+        ("at_most", False),
     ]
 
 
@@ -228,6 +241,15 @@ def test_an_unsupported_criterion_is_not_assessed_and_never_passes(condition, pr
     assert assessment["checks"] == []
 
 
+def test_an_unsupported_criterion_is_reported_as_unsupported_even_when_the_measurement_is_unavailable():
+    criterion = on_outcome_consistency({"value": {"between": [0.5, 0.9]}})
+
+    assessment = acceptance(sweep({"close": ["success"]}, [criterion]))
+
+    assert assessment["status"] == "not_assessed"
+    assert assessment["reason"].startswith("unsupported criterion: ")
+
+
 RELEASE_BOARD = "release-gate.py at 4f2c1d9, rule 'no Task below the floor'"
 
 
@@ -257,4 +279,149 @@ def test_a_customer_supplied_assessment_is_recorded_with_its_provenance(floor, s
         "assessed_by": "customer",
         "provenance": RELEASE_BOARD,
         "checks": [],
+    }
+
+
+def test_a_customer_supplied_assessment_cannot_pass_or_fail_an_unavailable_measurement():
+    asked = []
+
+    def always_met(metric):
+        asked.append(metric)
+        return CustomerAssessment(met=True, provenance=RELEASE_BOARD)
+
+    criterion = on_outcome_consistency("accepted by the release board", customer_assessment=always_met)
+
+    scorecard = sweep({"close": ["success"], "archive": ["failure"]}, [criterion])
+
+    assert acceptance(scorecard) == not_assessed(
+        "accepted by the release board",
+        "the metric is an unavailable measurement: no Task has at least two Attempts with a task outcome",
+    )
+    assert asked == []
+
+
+def raises(metric):
+    raise KeyError("per_condition")
+
+
+@pytest.mark.parametrize(
+    ("assessor", "problem"),
+    [
+        (lambda metric: True, "returned True"),
+        (lambda metric: None, "returned None"),
+        (lambda metric: CustomerAssessment(met=True, provenance=""), "provenance"),
+        (lambda metric: CustomerAssessment(met=1, provenance=RELEASE_BOARD), "met or not met"),
+        (lambda metric: CustomerAssessment(met="yes", provenance=RELEASE_BOARD), "met or not met"),
+        (raises, "KeyError: 'per_condition'"),
+    ],
+)
+def test_a_customer_supplied_assessment_that_cannot_be_recorded_is_not_assessed(assessor, problem):
+    criterion = on_outcome_consistency("accepted by the release board", customer_assessment=assessor)
+
+    scorecard = sweep(TWO_TASKS, [criterion])
+
+    assessment = acceptance(scorecard)
+    assert assessment["status"] == "not_assessed"
+    assert assessment["reason"].startswith("the customer-supplied assessment ")
+    assert problem in assessment["reason"]
+    assert assessment["assessed_by"] is None
+    assert assessment["provenance"] is None
+    # The measurement is kept.
+    assert scorecard["metrics"][0]["value"] == pytest.approx(0.68, abs=1e-12)
+
+
+@pytest.mark.parametrize(
+    ("criteria", "problem"),
+    [
+        (
+            lambda: [AcceptanceCriterion(metric_id="overall_reliability", condition={"value": {"at_least": 0.8}})],
+            "not a reliability metric",
+        ),
+        (lambda: [on_value(at_least=0.8), on_value(at_most=0.9)], "more than one acceptance criterion"),
+        (lambda: [on_value(at_least=float("nan"))], "JSON"),
+        (lambda: [on_outcome_consistency({"value": {"at_least": {0.8}}})], "JSON"),
+    ],
+)
+def test_acceptance_criteria_the_scorecard_could_not_report_are_rejected_before_any_attempt(criteria, problem):
+    target = FakeAgentTarget({"close": ["success"] * 2})
+    always_succeeds = Task(
+        task_id="close",
+        prompt="Close it.",
+        success_rule=lambda attempt, response: TaskOutcome(success=True, source=SOURCE),
+        attempts=2,
+    )
+
+    with pytest.raises(ValueError, match=problem):
+        run_sweep(
+            tasks=[always_succeeds],
+            agent_target=target,
+            metrics=["outcome_consistency"],
+            acceptance_criteria=criteria(),
+        )
+
+    assert target.service_state == {}
+
+
+def test_a_customer_supplied_assessment_cannot_change_the_measurement():
+    def overwrites(metric):
+        metric["value"] = 1.0
+        metric["counts"]["tasks"]["valid"] = 100
+        return CustomerAssessment(met=True, provenance=RELEASE_BOARD)
+
+    scorecard = sweep(TWO_TASKS, [on_outcome_consistency("accepted as is", customer_assessment=overwrites)])
+
+    assert scorecard["metrics"][0]["value"] == pytest.approx(0.68, abs=1e-12)
+    assert scorecard["metrics"][0]["counts"]["tasks"]["valid"] == 2
+
+
+@pytest.mark.parametrize(
+    ("behaviours", "task_succeeded", "status"),
+    [
+        # Every Attempt fails, which is perfectly consistent: the value is 1 and at least 0.9.
+        (["failure"] * 3, False, "met"),
+        # Every Attempt succeeds, and the value is again 1. A criterion of at most 0.5 is not met.
+        (["success"] * 3, True, "not_met"),
+    ],
+)
+def test_acceptance_is_reported_separately_from_task_outcomes(behaviours, task_succeeded, status):
+    criterion = on_value(at_least=0.9) if status == "met" else on_value(at_most=0.5)
+
+    scorecard = sweep({"close": behaviours}, [criterion])
+
+    assert acceptance(scorecard)["status"] == status
+    assert [attempt["task_outcome"] for attempt in scorecard["attempts"]] == [
+        {"success": task_succeeded, "source": SOURCE}
+    ] * 3
+    assert set(scorecard) == {"schema_version", "metrics", "attempts"}
+    assert all("acceptance" not in attempt for attempt in scorecard["attempts"])
+
+
+def test_a_pipeline_can_decide_its_gate_from_the_json_scorecard_alone():
+    criteria = [
+        on_outcome_consistency({"value": {"at_least": 0.9}, "minimum_counts": {"tasks": 2}}),
+        AcceptanceCriterion(metric_id="calibration", condition={"value": {"at_most": 0.1}}),
+    ]
+
+    document = json.loads(to_json(sweep(TWO_TASKS, criteria)))
+
+    assessed = {entry["metric_id"]: entry["acceptance"] for entry in document["metrics"] if entry["acceptance"]}
+    assert assessed == {
+        "outcome_consistency": {
+            "condition": {"value": {"at_least": 0.9}, "minimum_counts": {"tasks": 2}},
+            "status": "not_met",
+            "reason": None,
+            "assessed_by": "offering",
+            "provenance": None,
+            "checks": [
+                {
+                    "subject": "value",
+                    "comparison": "at_least",
+                    "threshold": 0.9,
+                    "observed": pytest.approx(0.68, abs=1e-12),
+                    "met": False,
+                },
+                {"subject": "counts.tasks.valid", "comparison": "at_least", "threshold": 2, "observed": 2, "met": True},
+            ],
+        },
+        "calibration": not_assessed({"value": {"at_most": 0.1}}, "the metric is not configured"),
     }

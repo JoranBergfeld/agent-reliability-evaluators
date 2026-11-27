@@ -6,13 +6,13 @@ assessment at all. An assessment is met, not met, or not assessed with a reason.
 
 from __future__ import annotations
 
+import json
 import operator
 from copy import deepcopy
 from dataclasses import dataclass
-from math import isfinite
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Iterable, Mapping
 
-from ..evaluators import Fidelity, MetricState
+from ..evaluators import RELIABILITY_METRICS, Fidelity, MetricState
 
 COMPARISONS = {
     "at_least": operator.ge,
@@ -32,6 +32,12 @@ class CustomerAssessment:
     met: bool
     provenance: str
 
+    def __post_init__(self) -> None:
+        if type(self.met) is not bool:
+            raise ValueError(f"a customer assessment is met or not met: True or False. Got {self.met!r}")
+        if not isinstance(self.provenance, str) or not self.provenance.strip():
+            raise ValueError("a customer assessment records its provenance")
+
 
 # Receives a copy of the metric's entry in the scorecard.
 CustomerAssessor = Callable[[dict[str, Any]], CustomerAssessment]
@@ -41,7 +47,7 @@ CustomerAssessor = Callable[[dict[str, Any]], CustomerAssessment]
 class AcceptanceCriterion:
     """A customer-defined condition on one reliability metric.
 
-    `condition` is JSON-compatible data and is repeated in the scorecard as declared. The
+    `condition` is JSON-compatible data and is repeated in the scorecard. The
     offering assesses a condition of this form, with either part or both:
 
         {"value": {"at_least": 0.8}, "minimum_counts": {"tasks": 5}}
@@ -56,28 +62,72 @@ class AcceptanceCriterion:
     condition: Any
     customer_assessment: CustomerAssessor | None = None
 
+    def __post_init__(self) -> None:
+        if not any(metric.metric_id == self.metric_id for metric in RELIABILITY_METRICS):
+            raise ValueError(f"{self.metric_id!r} is not a reliability metric")
+        try:
+            as_json = json.dumps(self.condition, allow_nan=False)
+        except (TypeError, ValueError) as error:
+            raise ValueError(
+                f"the condition of an acceptance criterion is JSON-compatible data, so that the scorecard "
+                f"can repeat it: {error}"
+            ) from None
+        object.__setattr__(self, "condition", json.loads(as_json))
 
-def assess(criterion: AcceptanceCriterion, entry: Mapping[str, Any]) -> dict[str, Any]:
+
+def criteria_by_metric(criteria: Iterable[AcceptanceCriterion]) -> dict[str, AcceptanceCriterion]:
+    """The criterion of each metric that has one. A metric has at most one."""
+    by_metric: dict[str, AcceptanceCriterion] = {}
+    for criterion in criteria:
+        if criterion.metric_id in by_metric:
+            raise ValueError(f"more than one acceptance criterion is declared for {criterion.metric_id!r}")
+        by_metric[criterion.metric_id] = criterion
+    return by_metric
+
+
+def assess(criterion: AcceptanceCriterion, entry: dict[str, Any]) -> dict[str, Any]:
     """Assess one metric's scorecard entry against the customer's criterion for it."""
     condition = criterion.condition
-    try:
-        requirements = None if criterion.customer_assessment else _requirements(condition)
-        no_verdict = _why_no_verdict_is_possible(entry)
+    no_verdict = _why_no_verdict_is_possible(entry)
+    if criterion.customer_assessment is not None:
         if no_verdict:
             return _assessment(condition, "not_assessed", reason=no_verdict)
-        if criterion.customer_assessment:
-            supplied = criterion.customer_assessment(deepcopy(dict(entry)))
-            return _assessment(
-                condition,
-                "met" if supplied.met else "not_met",
-                assessed_by="customer",
-                provenance=supplied.provenance,
-            )
+        return _customer_supplied(criterion, entry)
+    try:
+        # Read first: an unsupported criterion is reported whatever the state of the metric.
+        requirements = _requirements(condition)
+        if no_verdict:
+            return _assessment(condition, "not_assessed", reason=no_verdict)
         checks = _checks(requirements, entry)
     except _Unsupported as unsupported:
         return _assessment(condition, "not_assessed", reason=f"unsupported criterion: {unsupported}")
     met = all(check["met"] for check in checks)
     return _assessment(condition, "met" if met else "not_met", assessed_by="offering", checks=checks)
+
+
+def _customer_supplied(criterion: AcceptanceCriterion, entry: dict[str, Any]) -> dict[str, Any]:
+    """Record what the customer's assessor decided. One that fails decides nothing."""
+    condition = criterion.condition
+    try:
+        supplied = criterion.customer_assessment(deepcopy(entry))
+    except Exception as error:
+        return _assessment(
+            condition,
+            "not_assessed",
+            reason=f"the customer-supplied assessment failed: {type(error).__name__}: {error}",
+        )
+    if not isinstance(supplied, CustomerAssessment):
+        return _assessment(
+            condition,
+            "not_assessed",
+            reason=f"the customer-supplied assessment returned {supplied!r}, not a CustomerAssessment with its provenance",
+        )
+    return _assessment(
+        condition,
+        "met" if supplied.met else "not_met",
+        assessed_by="customer",
+        provenance=supplied.provenance,
+    )
 
 
 def _assessment(
@@ -152,7 +202,7 @@ def _requirements(condition: Any) -> _Requirements:
     for comparison, threshold in value:
         if comparison not in COMPARISONS:
             raise _Unsupported(f"{comparison!r} is not one of {', '.join(COMPARISONS)}")
-        if isinstance(threshold, bool) or not isinstance(threshold, (int, float)) or not isfinite(threshold):
+        if isinstance(threshold, bool) or not isinstance(threshold, (int, float)):
             raise _Unsupported(f"the metric value cannot be compared with {threshold!r}")
     for unit, minimum in minimum_counts:
         if type(minimum) is not int or minimum < 0:

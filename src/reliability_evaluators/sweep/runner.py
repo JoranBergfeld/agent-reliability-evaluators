@@ -7,7 +7,7 @@ from typing import Any, Sequence
 from ..agent_target import AgentTarget, AttemptRequest
 from ..evaluators import EVALUATORS, RELIABILITY_METRICS, Evaluator, Fidelity, ScoringPath
 from ..evidence import Attempt, EvidenceError, ExecutionStatus, TaskOutcome, group_by_task
-from ..scorecard import AcceptanceCriterion, ScoredMetric, build_scorecard
+from ..scorecard import AcceptanceCriterion, ScoredMetric, build_scorecard, criteria_by_metric
 from .declaration import Task
 
 
@@ -24,11 +24,16 @@ def run_sweep(
     after another, Task by Task, and scoring happens in this process. The result is the
     machine-readable reliability scorecard, as JSON-compatible data.
 
+    `acceptance_criteria` are the customer's own, at most one per metric. Each is reported
+    with its metric as met, not met, or not assessed with a reason. Without one, a metric
+    has no acceptance verdict.
+
     A declaration that cannot be run is rejected before any Attempt is made. A task-success
     rule that does not return a sourced, binary TaskOutcome stops the sweep.
     """
     evaluators = [_evaluator(metric_id) for metric_id in metrics]
     _require_distinct_tasks(tasks)
+    criteria_by_metric(acceptance_criteria)
     attempts = [
         _run_attempt(task, number, agent_target) for task in tasks for number in range(1, task.attempts + 1)
     ]

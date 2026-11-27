@@ -8,7 +8,7 @@ from typing import Any, Sequence
 
 from ..evaluators import RELIABILITY_METRICS, Fidelity, MetricResult, MetricState, ReliabilityMetric, ScoringPath
 from ..evidence import Attempt
-from .acceptance import AcceptanceCriterion, assess
+from .acceptance import AcceptanceCriterion, assess, criteria_by_metric
 
 SCHEMA_VERSION = 1
 
@@ -32,9 +32,11 @@ def build_scorecard(
 
     All twelve metrics are listed individually, in catalogue order. A metric that was not
     scored is not configured. Metric entries refer to `attempts` by Attempt identity.
+    A metric's `acceptance` is the assessment of the customer's criterion for it, or None
+    when the customer declared none.
     """
     scored_by_id = {scored.result.definition.metric.metric_id: scored for scored in metrics}
-    criteria = {criterion.metric_id: criterion for criterion in acceptance_criteria}
+    criteria = criteria_by_metric(acceptance_criteria)
     return {
         "schema_version": SCHEMA_VERSION,
         "metrics": [
