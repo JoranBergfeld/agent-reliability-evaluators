@@ -18,7 +18,7 @@ from typing import Any, Callable
 
 from ..evidence import ActionEvent, ResourceMeasurement, ResourceType
 from .foundry_hosted import AzureCliCredential, _decoded, _output_items, _output_text
-from .interface import AgentResponse, AttemptRequest, InvocationFailed, IsolatedFollowUp
+from .interface import CUSTOMER_CODE, AgentResponse, AttemptRequest, InvocationFailed, IsolatedFollowUp
 
 # The version is part of the path of the route. The request carries no api-version.
 API_VERSION = "v1"
@@ -201,6 +201,7 @@ def _invocation(answer: _Answer, response: dict[str, Any], composed_input: str |
     usage = response.get("usage")
     return {
         "agent_target": AGENT_TARGET,
+        "entry_point": CUSTOMER_CODE,
         "protocol": RESPONSES_PROTOCOL,
         "api_version": API_VERSION,
         "composed_input": composed_input,

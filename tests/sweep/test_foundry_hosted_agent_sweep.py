@@ -98,9 +98,12 @@ def test_each_attempt_records_the_identifiers_the_platform_returned_for_its_invo
         "todo/all-tools-work/attempt-1",
         "todo/all-tools-work/attempt-2",
     )
-    identifiers = ("agent_target", "protocol", "api_version", "agent", "response_id", "agent_session_id", "status")
+    identifiers = (
+        "agent_target", "entry_point", "protocol", "api_version", "agent", "response_id", "agent_session_id", "status"
+    )
     assert {key: first["invocation"][key] for key in identifiers} == {
         "agent_target": "foundry_hosted_agent",
+        "entry_point": "customer_code",
         "protocol": "responses",
         "api_version": "v1",
         "agent": {"type": "agent_reference", "name": "todo-hosted", "version": "1"},

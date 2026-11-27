@@ -7,6 +7,11 @@ from typing import Any, Mapping, Protocol
 
 from ..evidence import ResourceMeasurement
 
+# The entry point of an Attempt: where the request that invoked the agent was sent from. A
+# Foundry agent target records it as `entry_point` in the invocation evidence.
+CUSTOMER_CODE = "customer_code"
+FOUNDRY_CLOUD_EVALUATION = "foundry_cloud_evaluation"
+
 
 @dataclass(frozen=True, kw_only=True)
 class AttemptRequest:
