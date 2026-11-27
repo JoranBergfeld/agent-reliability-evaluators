@@ -123,7 +123,8 @@ def execution_of(
     the Attempt first and then its retries. `stop_reason` is why a customer control
     stopped the experiment, if one did.
     """
-    planned = sum(_planned_under(task, experiment, role) for role in ConditionRole) if experiment else task.attempts
+    roles = tuple(ConditionRole) if experiment is not None else (ConditionRole.BASELINE,)
+    planned = sum(_planned_under(task, experiment, role) for role in roles)
     last = tuple(executions[-1] for executions in made)
     not_made = planned - len(last)
     if budget.stopped is not None:
