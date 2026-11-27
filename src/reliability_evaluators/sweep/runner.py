@@ -18,7 +18,9 @@ from ..evidence import (
     ExecutionStatus,
     ResourceMeasurement,
     ResourceType,
+    TaskEvidence,
     TaskOutcome,
+    VariationKind,
     ViolationAssessment,
     group_by_task,
 )
@@ -82,6 +84,7 @@ def run_sweep(
     declared = {"action_types": None if action_evidence is None else action_evidence.mapping}
     for evaluator in evaluators:
         _require_declarations(evaluator, declared)
+        _require_compared_variation(evaluator, experiments)
     _require_distinct_tasks([*tasks, *(experiment.task for experiment in experiments)])
     _require_distinct_identities(tasks, experiments)
     # Called for its check: a second criterion for one metric is rejected here, not after the Attempts.
@@ -100,14 +103,12 @@ def run_sweep(
         ask_confidence,
     )
     attempts.extend(experiment_attempts)
-    # The Evaluators that exist score Attempts under the baseline. Attempts under a variation
-    # are kept in the scorecard and are not mixed in.
-    evidence = group_by_task(
-        attempt for attempt in attempts if attempt.condition_role is not ConditionRole.VARIATION
-    )
     scored = [
         ScoredMetric(
-            result=evaluator.evaluate(evidence, *(declared[name] for name in evaluator.declarations)),
+            result=evaluator.evaluate(
+                _evidence_for(evaluator, attempts, experiments),
+                *(declared[name] for name in evaluator.declarations),
+            ),
             scoring_path=ScoringPath.CUSTOMER_PROCESS,
             fidelity=Fidelity.AUTHORITATIVE,
         )
@@ -116,6 +117,33 @@ def run_sweep(
     return build_scorecard(
         metrics=scored, attempts=attempts, experiments=experiment_records, acceptance_criteria=acceptance_criteria
     )
+
+
+def _evidence_for(
+    evaluator: Evaluator, attempts: Sequence[Attempt], experiments: Sequence[Experiment]
+) -> tuple[TaskEvidence, ...]:
+    """The Attempts an Evaluator is called with, grouped by Task. Conditions are never mixed silently."""
+    kind = evaluator.compares_variation
+    if kind is None:
+        # Scored from Attempts under the baseline. Attempts under a variation are kept in the
+        # scorecard and are not mixed in.
+        return group_by_task(
+            attempt for attempt in attempts if attempt.condition_role is not ConditionRole.VARIATION
+        )
+    # The baseline and the variation Attempts of the experiments that declare this kind of variation.
+    # A Task is in one experiment only, and it is a Task of the comparison even when no Attempt was made.
+    return tuple(
+        TaskEvidence(
+            experiment.task.task_id,
+            tuple(attempt for attempt in attempts if attempt.experiment_id == experiment.experiment_id),
+        )
+        for experiment in experiments
+        if _declares_variation(experiment, kind)
+    )
+
+
+def _declares_variation(experiment: Experiment, kind: VariationKind) -> bool:
+    return experiment.variation is not None and experiment.variation.kind is kind
 
 
 def _evaluator(metric_id: str) -> Evaluator:
@@ -133,6 +161,15 @@ def _require_declarations(evaluator: Evaluator, declared: dict[str, Any]) -> Non
     for name in evaluator.declarations:
         if declared[name] is None:
             raise ValueError(f"{evaluator.definition.metric.metric_id!r} needs {undeclared[name]}")
+
+
+def _require_compared_variation(evaluator: Evaluator, experiments: Sequence[Experiment]) -> None:
+    kind = evaluator.compares_variation
+    if kind is not None and not any(_declares_variation(experiment, kind) for experiment in experiments):
+        raise ValueError(
+            f"{evaluator.definition.metric.metric_id!r} needs an experiment whose variation declares "
+            f"the kind {kind.value!r}: it compares Attempts under that variation with Attempts under the baseline"
+        )
 
 
 def _require_distinct_tasks(tasks: Sequence[Task]) -> None:
