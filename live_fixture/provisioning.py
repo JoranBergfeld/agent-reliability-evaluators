@@ -121,7 +121,8 @@ def connect(resource_group, subscription="Sandbox"):
               "--name", "todo-" + resource_group.rsplit("-", 1)[1])
     env = {item["name"]: item.get("value") for item in app["properties"]["template"]["containers"][0]["env"]}
     fixture = LiveFixture(
-        resource_group=resource_group, subscription=subscription, location=app["location"],
+        resource_group=resource_group, subscription=subscription,
+        location=app["location"].replace(" ", "").lower(),
         project_endpoint=f"https://{account}.services.ai.azure.com/api/projects/{PROJECT}",
         model_deployment=MODEL_DEPLOYMENT, prompt_agent=PROMPT_AGENT, hosted_agent=None,
         hosted_agent_error=None,
