@@ -129,6 +129,8 @@ def without_secrets(record):
     subscription = _az_json("account", "show")["id"]
     written = json.dumps(record, indent=1, ensure_ascii=False)
     written = written.replace(subscription, "<subscription>")
+    # A prompt agent's raw response names the subscription in the ARM path of its tool's connection.
+    written = re.sub(r"/subscriptions/[0-9a-fA-F-]{36}", "/subscriptions/<subscription>", written)
     written = re.sub(r"eyJ[\w-]{10,}\.[\w-]+\.[\w-]+", "<token>", written)
     assert subscription not in written and "Bearer ey" not in written
     return written

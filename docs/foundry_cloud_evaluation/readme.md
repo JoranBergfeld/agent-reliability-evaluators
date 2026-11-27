@@ -203,7 +203,7 @@ POST <project endpoint>/openai/v1/responses
  "metadata": {"attempt_id": "<Attempt identity>", "task_id": "<Task identity>", "request": "confidence"}}
 ```
 
-The target reads from the answer which response it continued, which tool choice it ran under and which tools were called. Unless it continued the Attempt's response, under `none`, with no tool call, the answer is not returned and the Attempt has no rating. What the isolation rests on, and its limits, are those of the prompt agent target: see [what the isolation rests on](../foundry_prompt_agent/readme.md#what-the-isolation-rests-on), [ADR 0009](../adr/0009-prompt-agent-follow-up-rests-on-tool-choice-none.md) and [ADR 0011](../adr/0011-a-cloud-evaluation-attempt-of-a-prompt-agent-is-followed-up-from-the-customers-process.md).
+The target reads from the answer which response it continued, which tool choice it ran under and which tools were called. Unless it continued the Attempt's response, under `none`, with no tool call, the answer is not returned and the Attempt has no rating. What the isolation rests on, and its limits, are those of the prompt agent target: see [what the isolation rests on](../foundry_prompt_agent/readme.md#what-the-isolation-rests-on), [ADR 0009](../adr/0009-prompt-agent-follow-up-rests-on-tool-choice-none.md) and [ADR 0012](../adr/0012-a-cloud-evaluation-attempt-of-a-prompt-agent-is-followed-up-from-the-customers-process.md).
 
 So with a predictability metric selected, your process needs what the prompt agent target needs: access to the Responses route as an identity that may invoke the agent.
 
