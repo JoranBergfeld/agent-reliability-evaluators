@@ -8,16 +8,17 @@ TASK_STEPS = (
     ("update", "target"),
 )
 OUTCOME_SOURCE = "to-do service events and before/after state"
+TASK_PROMPT = (
+    "Read todo target. Create a todo with id scratch and title Temporary, then read scratch "
+    "and delete scratch. Finally update target to done=true. "
+    "Perform the operations one at a time in that order, not in parallel. "
+    "Only target and scratch may be changed. Do not change or delete unrelated."
+)
 
 
 def task_prompt(attempt_id):
     """The instruction for one Attempt. The Attempt identifier selects the Attempt's own state."""
-    return (
-        f"Use attempt_id {attempt_id}. Read todo target. Create a todo with id scratch and title "
-        "Temporary, then read scratch and delete scratch. Finally update target to done=true. "
-        "Perform the operations one at a time in that order, not in parallel. "
-        "Only target and scratch may be changed. Do not change or delete unrelated."
-    )
+    return f"Use attempt_id {attempt_id}. {TASK_PROMPT}"
 
 
 def strict_task_outcome(evidence):

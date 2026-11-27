@@ -1,7 +1,7 @@
-"""Opt-in live check of the fixture against Azure Foundry. Creates billable resources.
+"""Live Foundry verification of the fixture itself. Opt-in, creates billable Azure resources.
 
-Runs only with ARE_LIVE_FOUNDRY=1. Set ARE_LIVE_FIXTURE_GROUP to an already provisioned
-resource group to reuse it; that group is then left in place for you to tear down.
+Run with `uv run pytest -m live tests/fixture -s`. Set ARE_LIVE_FIXTURE_GROUP to an already
+provisioned resource group to reuse it; that group is then left in place for you to tear down.
 """
 
 import json
@@ -13,10 +13,7 @@ import pytest
 from live_fixture import LiveFixtureError, connect, provision, strict_task_outcome, task_prompt, teardown
 from live_fixture.hosted_agent import todo_tools
 
-pytestmark = pytest.mark.skipif(
-    os.environ.get("ARE_LIVE_FOUNDRY") != "1",
-    reason="opt-in live Foundry check: set ARE_LIVE_FOUNDRY=1 (creates billable Azure resources)",
-)
+pytestmark = pytest.mark.live
 
 
 @pytest.fixture(scope="module")

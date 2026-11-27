@@ -34,20 +34,21 @@ Prerequisites: Azure CLI signed in (`az login`) with access to a subscription na
 and `uv`. Run everything from the repository root.
 
 ```powershell
-# Default tests: the service and the success rule on this machine. No Azure access, no charges.
-uv run --no-project --python 3.13 --with pytest pytest live_fixture
+# Default test run: includes the service and the success rule on this machine. No Azure access.
+uv run pytest
 
-# Live check, self-contained: provisions, checks both agents, tears down. Takes about 20 minutes.
-$env:ARE_LIVE_FOUNDRY = "1"
-uv run --no-project --python 3.13 --with pytest pytest live_fixture/tests/test_live_fixture.py -s
+# Live check of the fixture, self-contained: provisions, checks both agents, tears down.
+uv run pytest -m live tests/fixture -s
 
 # Or keep a fixture while you work, and tear it down yourself.
-uv run --no-project --python 3.13 python -m live_fixture provision --ticket 42
+uv run python -m live_fixture provision --ticket 42
 $env:ARE_LIVE_FIXTURE_GROUP = "rg-are-42-<8 hex>"   # the live check then reuses it and leaves it in place
-uv run --no-project --python 3.13 python -m live_fixture teardown rg-are-42-<8 hex>
+uv run pytest -m live tests/fixture -s
+uv run python -m live_fixture teardown rg-are-42-<8 hex>
 ```
 
-The live check is skipped unless `ARE_LIVE_FOUNDRY=1`, so the default run never touches Azure.
+The live check is marked `live`, which the default run excludes, so `uv run pytest` never touches
+Azure. Provisioning took about 11 minutes and teardown considerably longer when observed.
 
 `teardown` deletes the resource group, confirms its absence with a separate `az group exists`
 query and fails if the group is still there. Group deletion only soft-deletes the Foundry account,
@@ -71,7 +72,7 @@ from live_fixture import provision, connect, teardown, task_prompt, strict_task_
 | Switch the failing tool for an Attempt | `fixture.service.set_failing_tool(attempt_id, "update")`; `None` clears it |
 | Read service events and before/after state | `fixture.service.evidence(attempt_id)` |
 | Clean up an Attempt | `fixture.service.remove_attempt(attempt_id)` |
-| The Task and its success rule | `task_prompt(attempt_id)`, `strict_task_outcome(evidence)` |
+| The Task and its success rule | `TASK_PROMPT`, `task_prompt(attempt_id)`, `strict_task_outcome(evidence)` |
 | Tear down | `teardown(fixture.resource_group)` |
 
 `provision` tears the group down again if anything but the hosted agent fails. If only the hosted
@@ -79,14 +80,18 @@ agent cannot be deployed, the fixture is returned with `hosted_agent` set to `No
 in `hosted_agent_error`, so prompt-agent checks can still run.
 
 `local_service()` runs the same service on this machine and yields the same `TodoService`
-interface, for work that needs no Foundry. `live_fixture` imports from the repository root; add
-the root to `sys.path` (or pytest's `pythonpath`) if your tests live elsewhere.
+interface, for work that needs no Foundry. Tests under `tests/` import `live_fixture` directly.
+
+`strict_task_outcome` returns a plain dictionary so the fixture does not depend on the offering's
+source. A sweep's task-success rule wraps it:
+`TaskOutcome(success=outcome["success"], source=outcome["source"])`.
 
 ### Attempts and the service
 
 Each Attempt gets its own state on the service, selected by the Attempt identifier in the path.
-The agents cannot be configured per Attempt, so the identifier is passed in the prompt
-(`task_prompt` does this). Every prepared Attempt starts with two items:
+The agents cannot be configured per Attempt, so the identifier is passed in the prompt:
+`task_prompt(attempt_id)` puts `Use attempt_id <id>.` in front of the fixed `TASK_PROMPT`.
+Every prepared Attempt starts with two items:
 
 ```json
 {"target": {"id": "target", "title": "Synthetic target", "done": false},
