@@ -199,7 +199,7 @@ Where the measurements come from in a sweep:
 | --- | --- | --- |
 | Elapsed time | Measured by the sweep for every invocation that returns. | `seconds`; wall clock from just before the agent target is invoked until it returns. It includes the network and anything the agent target does, and excludes the task-success rule. |
 | Elapsed time, alternative | An agent target that returns its own `elapsed_time` measurement is recorded instead of the sweep's. | As declared by the agent target. |
-| Tool calls | Reported by the agent target in `AgentResponse.resource_measurements`. The sweep cannot see tool calls. | As declared by the agent target. |
+| Tool calls | Reported by the agent target in `AgentResponse.resource_measurements`. The sweep cannot see tool calls. The [Foundry prompt agent target](../agent_target/foundry-prompt-agent.md#what-each-attempt-records) reports the tool calls in the response. | As declared by the agent target. |
 | Token usage | Reported by the agent target, and used only when declared `reliably_sourced=True`. | As declared by the agent target. |
 
 **Token usage is used as a resource only when reliably sourced.** Token usage reported by a platform can be incomplete, for example on error paths. Declare `reliably_sourced=True` only when the number is known to cover every model call of the Attempt. Otherwise token usage is excluded for the Task and disclosed.

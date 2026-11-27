@@ -16,9 +16,10 @@ from reliability_evaluators.evidence import (
     PlatformEvidence,
     TaskOutcome,
 )
-from reliability_evaluators.scorecard import to_json
+from reliability_evaluators.scorecard import render_report, to_json
 from reliability_evaluators.sweep import ExecutionLimits, RecalculationFailed, Task, recalculate, run_sweep
 from tests.fakes import FakeAgentTarget, attempt_evidence, taking
+from tests.report_reader import assert_faithful_rendering
 
 SOURCE = "final state of the fake service"
 PLATFORM = "responses of the fake agent platform"
@@ -175,6 +176,33 @@ def test_platform_evidence_that_would_invent_or_lose_something_is_rejected(recor
 def test_a_response_whose_platform_evidence_is_not_platform_evidence_stops_the_sweep():
     with pytest.raises(EvidenceError, match="PlatformEvidence"):
         sweep({"close": ["success"]}, platform_evidence={"close/attempt-1": {"response_id": "resp_1"}})
+
+
+def test_the_human_readable_report_shows_the_platform_evidence_of_every_attempt():
+    completed = PlatformEvidence(
+        source=PLATFORM,
+        identifiers={"response_id": "resp_1", "agent": {"name": "todo", "version": "3"}},
+        token_usage={"input_tokens": 700, "output_tokens": 90, "total_tokens": 790},
+        tool_calls=[ActionEvent(tool_name="read", arguments='{"todo_id": "target"}', result='{"done": false}')],
+    )
+    rejected = InvocationError(
+        "the platform answered HTTP 400",
+        platform_evidence=PlatformEvidence(
+            source=PLATFORM, identifiers={"request_id": "req_2"}, token_usage_missing="the platform returned an error"
+        ),
+    )
+    scorecard = sweep(
+        {"close": ["success", "error", "success"]},
+        platform_evidence={"close/attempt-1": completed},
+        invocation_errors={"close/attempt-2": rejected},
+    )
+
+    report = assert_faithful_rendering(render_report(scorecard), scorecard)
+
+    shown = dict(report.values)
+    assert shown["/attempts/0/platform_evidence/identifiers/response_id"] == "resp_1"
+    assert shown["/attempts/0/platform_evidence/token_usage/total_tokens"] == "790"
+    assert shown["/attempts/1/platform_evidence/token_usage_missing"] == "the platform returned an error"
 
 
 def test_a_recalculation_keeps_what_the_platform_returned_about_every_attempt():
