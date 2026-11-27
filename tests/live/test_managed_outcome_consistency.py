@@ -84,7 +84,7 @@ def service_attempt(attempt_id):
     return attempt_id.replace("/", "-")
 
 
-def sweep_on_the_fixture(script, scoring, monkeypatch):
+def sweep_on_the_fixture(script, scoring, monkeypatch, **declared):
     with local_service() as service:
         monkeypatch.setenv("TODO_SERVICE_URL", service.url)
         monkeypatch.setenv("TODO_API_KEY", service.api_key)
@@ -98,7 +98,11 @@ def sweep_on_the_fixture(script, scoring, monkeypatch):
             for task_id, behaviours in script.items()
         ]
         return run_sweep(
-            tasks=tasks, agent_target=ScriptedTodoAgent(service, script), metrics=[MANAGED], managed_scoring=scoring
+            tasks=tasks,
+            agent_target=ScriptedTodoAgent(service, script),
+            metrics=[MANAGED],
+            managed_scoring=scoring,
+            **declared,
         )
 
 
@@ -132,8 +136,11 @@ def test_a_sweep_scores_outcome_consistency_in_the_live_project(live, scoring, m
     assert entry["state"] == "available"
     assert entry["value"] == pytest.approx(0.68, abs=1e-12)
     assert entry["scoring_path"] == "foundry_managed"
-    assert entry["fidelity"] == "unverified"
-    assert "has not been established" in entry["limitation"]
+    # The number Foundry returned as the score is the value the evaluator encoded: the fidelity check passed.
+    assert entry["fidelity"] == "authoritative"
+    assert "limitation" not in entry
+    check = entry["managed_scoring"]["fidelity_check"]
+    assert (check["outcome"], check["plain_value"], check["encoded_value"]) == ("passed", entry["value"], entry["value"])
     assert entry["managed_scoring"]["evaluator"]["name"] == EVALUATOR_NAME
     assert entry["managed_scoring"]["evaluator"]["code_sha256"] == derive_artifact("outcome_consistency").sha256
     # Foundry's own default threshold and label, kept as diagnostics. The customer declared no criterion.
@@ -207,8 +214,11 @@ def test_an_unavailable_measurement_comes_back_from_the_live_project_with_its_re
         },
     }
     assert entry["execution_failure"] is None
-    assert (entry["scoring_path"], entry["fidelity"]) == ("foundry_managed", "unverified")
-    assert "it has no value" in entry["limitation"]
+    # Both channels agree that there is no value, so the result is authoritative as it stands.
+    assert (entry["scoring_path"], entry["fidelity"]) == ("foundry_managed", "authoritative")
+    assert "limitation" not in entry
+    check = entry["managed_scoring"]["fidelity_check"]
+    assert (check["outcome"], check["plain_value"], check["encoded_value"]) == ("passed", None, None)
     # The number Foundry was handed in place of a value, and its label for it, are not in the scorecard.
     assert "platform_diagnostics" not in entry["managed_scoring"]
     assert "error" not in entry["managed_scoring"]
