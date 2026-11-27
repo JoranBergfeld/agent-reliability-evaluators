@@ -19,6 +19,7 @@ from tests.managed_artifact import altered_evidence
 from tests.report_reader import assert_faithful_rendering
 
 SOURCE = "final state of the fake service"
+DELIVERED = ["evidence.json", "report.html", "scorecard.json", "summary.md"]
 MANAGED = ConfiguredEvaluator(metric_id="outcome_consistency", scoring_path="foundry_managed")
 
 # close: p = 4/5, (0.6)^2 = 0.36. archive: p = 0/3, value 1. Outcome consistency: (0.36 + 1) / 2 = 0.68.
@@ -92,7 +93,7 @@ def test_a_foundry_managed_run_delivers_the_scorecard_the_report_and_the_evidenc
         target=FakeAgentTarget(MEASURED, RESOURCES),
     )
 
-    assert files_in(location) == ["evidence.json", "report.html", "scorecard.json"]
+    assert files_in(location) == DELIVERED
     delivered = read_json(location / "scorecard.json")
     assert delivered == scorecard
     assert delivered["status"] == "complete"
@@ -118,7 +119,7 @@ def test_a_foundry_managed_run_delivers_the_scorecard_the_report_and_the_evidenc
 def test_a_partial_managed_run_is_delivered_marked_partial_in_the_scorecard_and_in_the_report(tmp_path):
     scorecard = sweep(TWO_TASKS, FakeFoundryProject(alter_item=one_outcome_flipped), tmp_path)
 
-    assert files_in(tmp_path) == ["evidence.json", "report.html", "scorecard.json"]
+    assert files_in(tmp_path) == DELIVERED
     delivered = read_json(tmp_path / "scorecard.json")
     assert delivered == scorecard
     assert delivered["status"] == "partial"
@@ -139,7 +140,7 @@ def test_an_unavailable_measurement_from_foundry_is_delivered_as_one_in_the_scor
     # One Attempt at each Task: no Task has two, so outcome consistency cannot be calculated.
     scorecard = sweep({"close": ["success"], "archive": ["failure"]}, FakeFoundryProject(), tmp_path)
 
-    assert files_in(tmp_path) == ["evidence.json", "report.html", "scorecard.json"]
+    assert files_in(tmp_path) == DELIVERED
     delivered = read_json(tmp_path / "scorecard.json")
     assert delivered == scorecard
     # The run did not fail and nothing is missing: the measurement is unavailable, with its reason and counts.
@@ -175,9 +176,10 @@ def test_a_delivery_failure_after_a_managed_run_is_a_reporting_failure_that_carr
     failure = raised.value
     assert "scorecard.json could not be produced or written" in str(failure)
     assert failure.retained == ("evidence.json",)
-    # No scorecard and no report are left to be read as a delivered result.
+    # No scorecard, no report and no summary are left to be read as a delivered result.
     assert not (location / "scorecard.json").is_file()
     assert not (location / "report.html").exists()
+    assert not (location / "summary.md").exists()
     record = read_json(location / "reporting-failure.json")
     assert (record["status"], record["retained"]) == ("reporting_failed", ["evidence.json"])
     assert [attempt["task_outcome"]["success"] for attempt in read_json(location / "evidence.json")["attempts"]] == (

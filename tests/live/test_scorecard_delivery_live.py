@@ -45,7 +45,7 @@ pytestmark = pytest.mark.live
 SUBSCRIPTION = "Sandbox"
 MANAGED = ConfiguredEvaluator(metric_id="outcome_consistency", scoring_path="foundry_managed")
 EVIDENCE_FIELD = "outcome_consistency_evidence"
-DELIVERED = ["evidence.json", "report.html", "scorecard.json"]
+DELIVERED = ["evidence.json", "report.html", "scorecard.json", "summary.md"]
 # close: p = 4/5, (0.6)^2 = 0.36. archive: p = 0/3, value 1. Outcome consistency: (0.36 + 1) / 2 = 0.68.
 SCRIPT = {"close": ["success"] * 4 + ["failure"], "archive": ["failure"] * 3}
 # Where a customer's CI would publish the directory. Synthetic: nothing is published anywhere.
@@ -162,7 +162,10 @@ def position_of(scorecard, metric_id):
 
 
 def delivered_to(location, scorecard):
-    """Read the three files back and check that they are one delivery: the scorecard, its rendering and its evidence."""
+    """Read the delivered files back and check that they are one delivery: the scorecard, its rendering and its evidence.
+
+    The text of the CI job summary is delivered with them. What it says is not checked here.
+    """
     assert files_in(location) == DELIVERED
     delivered = read_json(location / "scorecard.json")
     assert delivered == json.loads(to_json(scorecard))
@@ -513,9 +516,10 @@ def test_a_delivery_that_fails_after_a_live_managed_run_is_an_explicit_reporting
     }}))
     assert "scorecard.json could not be produced or written" in str(failure)
     assert failure.retained == ("evidence.json",)
-    # No scorecard and no report are left to be read as a delivered result.
+    # No scorecard, no report and no summary are left to be read as a delivered result.
     assert not (location / "scorecard.json").is_file()
     assert not (location / "report.html").exists()
+    assert not (location / "summary.md").exists()
     record = read_json(location / "reporting-failure.json")
     assert (record["status"], record["retained"]) == ("reporting_failed", ["evidence.json"])
     assert [attempt["task_outcome"]["success"] for attempt in read_json(location / "evidence.json")["attempts"]] == (
