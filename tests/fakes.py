@@ -163,7 +163,8 @@ class FakeTodoService:
     """A to-do service whose lists outlive Attempts until a customer control resets them.
 
     Every list starts with an item left over from an earlier run, so nothing is fresh
-    unless a control makes it so. While `failing` is set, adding an item fails.
+    unless a control makes it so. While `failing` is set, adding an item fails. Importing
+    items is a second way to fill a list, and it never fails.
     """
 
     def __init__(self, task_ids):
@@ -176,6 +177,9 @@ class FakeTodoService:
             self.faulted_requests += 1
             raise ConnectionError("503 from the to-do service")
         self.lists.setdefault(list_id, []).append(title)
+
+    def import_items(self, list_id: str, titles: list[str]) -> None:
+        self.lists.setdefault(list_id, []).extend(titles)
 
 
 class FakeTodoAgent:
@@ -196,6 +200,42 @@ class FakeTodoAgent:
             self._service.add(todo_list(request.task_id), "buy milk")
         except ConnectionError:
             pass
+        return AgentResponse(output="Done.")
+
+
+class FakeScriptedTodoAgent(FakeTodoAgent):
+    """A to-do agent whose Attempts can be scripted, by Attempt identity.
+
+    Unscripted, it adds one item and gives up when the service refuses it. Scripted:
+
+    - "works around": when the service refuses the item, it imports the item instead;
+    - "imports": it imports the item and never asks the service to add one, so it never
+      meets a fault in adding;
+    - "forgets": it does nothing.
+
+    Whatever happens, it answers "Done.". `invocations` counts how often it was invoked.
+    """
+
+    def __init__(self, service: FakeTodoService, script=None, unreachable_for=()):
+        super().__init__(service, unreachable_for)
+        self._script = dict(script or {})
+        self.invocations = 0
+
+    def invoke(self, request: AttemptRequest) -> AgentResponse:
+        self.invocations += 1
+        behaviour = self._script.get(request.attempt_id)
+        if behaviour is None:
+            return super().invoke(request)
+        list_id = todo_list(request.task_id)
+        if behaviour == "works around":
+            try:
+                self._service.add(list_id, "buy milk")
+            except ConnectionError:
+                self._service.import_items(list_id, ["buy milk"])
+        elif behaviour == "imports":
+            self._service.import_items(list_id, ["buy milk"])
+        elif behaviour != "forgets":
+            raise ValueError(f"the fake agent has no behaviour {behaviour!r}")
         return AgentResponse(output="Done.")
 
 

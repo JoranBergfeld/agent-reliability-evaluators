@@ -41,10 +41,11 @@ Each Evaluator declares what it needs. The sweep reads two things from that.
 | Outcome consistency | Nothing in particular. Every completed Attempt has a task outcome. |
 | Resource consistency | Nothing in particular. Every Attempt is timed, and the agent target reports the rest. |
 | Constraint compliance, conditional harm severity | Nothing in particular. The violation assessor belongs to the Task, so every Attempt at the Task is assessed the same way. |
+| Fault robustness | Nothing in particular. The fault is applied and verified by the controls of the experiment, for every Evaluator alike. |
 | Distributional and sequential trajectory consistency | Action evidence from one declared evidence source, read by one declared recorder. |
 | Calibration, strict confidence discrimination, Brier-based score | A confidence follow-up after each completed Attempt. |
 
-**Which experimental conditions it is calculated from.** Every Evaluator that exists today is calculated from Attempts under the baseline. An Attempt at a Task given without an experiment had no variation applied to it and is used as a baseline Attempt.
+**Which experimental conditions it is calculated from.** Fault robustness compares two conditions: it is calculated from the Attempts of the experiments whose variation declares the kind `fault`, under the baseline and under the fault. Every other Evaluator that exists today is calculated from Attempts under the baseline. For those, an Attempt at a Task given without an experiment had no variation applied to it and is used as a baseline Attempt.
 
 ## When Attempts are shared
 
@@ -54,7 +55,7 @@ With one `action_evidence` declaration for the whole sweep, as above, nothing di
 
 The action types are not part of what is matched. They are applied when a metric is calculated and do not change what is recorded for an Attempt. Two Evaluators that read the same recording with different action types share Attempts.
 
-Within the Attempts it shares, an Evaluator is given only those made under a condition it is calculated from. Attempts under the variation of an experiment are kept in the scorecard and are given to no Evaluator that is calculated from the baseline.
+Within the Attempts it shares, an Evaluator is given only those made under a condition it is calculated from. Attempts under the variation of an experiment are kept in the scorecard and are given to no Evaluator that is calculated from the baseline. Fault robustness and outcome consistency, selected together, share the baseline Attempts of an experiment that declares a fault, and only fault robustness is given its Attempts under the fault.
 
 ## When separate Attempts are made
 
@@ -130,7 +131,7 @@ Every configured metric says which Attempts its Evaluator used:
 | `attempts_used.shared_with` | The other metrics whose Evaluators used any of the same Attempts, in scorecard order. Empty when no other Evaluator used them. |
 | `evidence.attempt_ids` | The Attempts the value rests on. Never more than `attempts_used.attempt_ids`, and fewer when an Attempt was left out, for the reasons given in `counts`. |
 
-Each Attempt appears once in the scorecard's `attempts`, however many Evaluators used it. Anything that adds up over Attempts, such as cost, should add up over `attempts` for the sweep, and treat a per-metric total as overlapping with the metrics in `shared_with`. An Attempt that no metric lists, such as one under a variation today, still counts for the sweep.
+Each Attempt appears once in the scorecard's `attempts`, however many Evaluators used it. Anything that adds up over Attempts, such as cost, should add up over `attempts` for the sweep, and treat a per-metric total as overlapping with the metrics in `shared_with`. An Attempt that no metric lists, such as one under a variation that no selected metric compares with the baseline, still counts for the sweep.
 
 A metric that is not configured has no `attempts_used`. The human-readable report shows the field with every other field of a metric, and links each Attempt identity to that Attempt's evidence.
 
@@ -146,5 +147,5 @@ A customer callable that breaks its contract still stops the whole sweep: a task
 
 ## What is not there yet
 
-- An Evaluator that is calculated from Attempts under a variation. The three robustness metrics need one. Until then no metric lists the Attempts under a variation.
+- An Evaluator that compares a kind of variation other than a fault with the baseline. Environment robustness and prompt robustness need one.
 - An Evaluator with its own Tasks, experiments or number of Attempts. Every Evaluator is scored from the sweep's Tasks and experiments.

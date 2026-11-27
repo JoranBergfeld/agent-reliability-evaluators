@@ -172,7 +172,8 @@ class Experiment:
     # "fresh" or "continuing". See StartingStatePolicy.
     starting_state: StartingStatePolicy
     baseline: Condition
-    # The one intended difference from the baseline. None: the baseline only.
+    # The one intended difference from the baseline, with the kind that says what it changes.
+    # None: the baseline only.
     variation: Condition | None
     controls: CustomerControls
     # Whether the agent or the controls can change anything outside the conversation.
@@ -202,6 +203,11 @@ class Experiment:
             ) from None
         if not isinstance(self.baseline, Condition):
             raise ValueError(f"{this} declares its baseline as a Condition, got {self.baseline!r}")
+        if self.baseline.kind is not None:
+            raise ValueError(
+                f"the baseline of {this} is not a variation, so it declares no kind, "
+                f"got {self.baseline.kind.value!r}"
+            )
         if self.variation is not None:
             if not isinstance(self.variation, Condition):
                 raise ValueError(f"{this} declares its variation as a Condition or as None, got {self.variation!r}")

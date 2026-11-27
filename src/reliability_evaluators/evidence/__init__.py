@@ -26,6 +26,7 @@ from .experiment import (
     LifecycleStep,
     ObservedCondition,
     StartingStatePolicy,
+    VariationKind,
     json_data,
 )
 from .grouping import TaskEvidence, group_by_task, require_unambiguous
@@ -53,6 +54,7 @@ __all__ = [
     "StartingStatePolicy",
     "TaskEvidence",
     "TaskOutcome",
+    "VariationKind",
     "ViolationAssessment",
     "group_by_task",
     "json_data",

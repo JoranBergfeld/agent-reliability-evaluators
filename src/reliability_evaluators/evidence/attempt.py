@@ -306,6 +306,11 @@ class Attempt:
                 raise EvidenceError(
                     f"a condition is the baseline or the variation of its experiment. Got {self.condition_role!r}"
                 ) from None
+            if self.condition_role is ConditionRole.BASELINE and self.intended_condition.kind is not None:
+                raise EvidenceError(
+                    f"the baseline is not a variation, so it has no kind. Attempt {self.attempt_id!r} records "
+                    f"the kind {self.intended_condition.kind.value!r} for its baseline"
+                )
         if self.observed_condition is not None and not isinstance(self.observed_condition, ObservedCondition):
             raise EvidenceError(
                 f"an observed condition is an ObservedCondition with its source, not a label. "
