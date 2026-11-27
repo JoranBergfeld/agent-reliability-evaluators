@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Mapping, Protocol
 
 from ..evidence import ResourceMeasurement
 
@@ -30,10 +30,27 @@ class AgentResponse:
 
     `resource_measurements` is what the agent target measured of the Attempt's resource
     use, such as its tool-call count. A measurement it could not make is left out.
+
+    `invocation` is what the agent target recorded of the invocation itself, as
+    JSON-compatible data: the identifiers the platform returned, the token usage it
+    reported and the tool calls it exposed. It is kept on the Attempt as given.
     """
 
     output: str
     resource_measurements: tuple[ResourceMeasurement, ...] = ()
+    invocation: Mapping[str, Any] | None = None
+
+
+class InvocationFailed(Exception):
+    """An invocation that failed, with what the agent target recorded of it.
+
+    An agent target may raise any exception from `invoke`. Raising this one keeps
+    `invocation` on the Attempt, in the form `AgentResponse.invocation` has.
+    """
+
+    def __init__(self, message: str, *, invocation: Mapping[str, Any] | None = None):
+        super().__init__(message)
+        self.invocation = invocation
 
 
 @dataclass(frozen=True, kw_only=True)

@@ -6,6 +6,7 @@ from .interface import (
     AttemptRequest,
     ConfidenceRequest,
     ConfidenceResponse,
+    InvocationFailed,
     IsolatedFollowUp,
 )
 
@@ -15,5 +16,6 @@ __all__ = [
     "AttemptRequest",
     "ConfidenceRequest",
     "ConfidenceResponse",
+    "InvocationFailed",
     "IsolatedFollowUp",
 ]
