@@ -1,4 +1,4 @@
-"""Rejection of evidence that cannot be accepted."""
+"""The error raised for evidence that cannot be accepted."""
 
 
 class EvidenceError(ValueError):

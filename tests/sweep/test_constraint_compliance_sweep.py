@@ -133,6 +133,7 @@ def test_the_scorecard_discloses_the_constraint_set_and_links_each_violation_to_
         "execution_status": "completed",
         "execution_error": None,
         "task_outcome": {"success": True, "source": OUTCOME_SOURCE},
+        "action_evidence": None,
         "confidence": None,
         "operational_constraints": [
             {"constraint_id": "leave-unrelated", "description": "Do not change or delete the item 'unrelated'."}
