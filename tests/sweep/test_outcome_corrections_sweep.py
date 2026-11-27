@@ -21,7 +21,7 @@ from reliability_evaluators.evidence import (
     TaskOutcome,
     ViolationAssessment,
 )
-from reliability_evaluators.scorecard import AcceptanceCriterion, to_json
+from reliability_evaluators.scorecard import AcceptanceCriterion, render_report, to_json
 from reliability_evaluators.sweep import (
     NO_TASK_OUTCOME_YET,
     ActionEvidenceDeclaration,
@@ -41,6 +41,7 @@ from tests.fakes import (
     FakeTodoService,
     todo_list,
 )
+from tests.report_reader import Report, assert_faithful_rendering
 
 SOURCE = "final state of the fake service"
 RULE = "The item is marked done in the to-do service."
@@ -884,3 +885,45 @@ def test_a_recalculation_scores_the_metrics_of_the_earlier_scorecard_and_no_othe
             outcome_corrections=[corrected("close/attempt-3", success=True)],
             metrics=metrics,
         )
+
+
+# The human-readable report, tested only as a rendering of the machine-readable scorecard.
+
+
+def test_the_report_of_a_recalculated_scorecard_shows_the_superseded_result_apart_from_the_current_one():
+    earlier = sweep({"close": HALF})
+    recalculated = recalculate(
+        earlier_scorecard=earlier, outcome_corrections=[corrected("close/attempt-3", success=True)]
+    )
+
+    report = assert_faithful_rendering(render_report(recalculated), recalculated)
+
+    assert report.value("/metrics/0/value") == "0.25"
+    assert "metric-0" in report.inside["/metrics/0/value"]
+    superseded_value = "/superseded_results/0/metrics/0/value"
+    assert report.value(superseded_value) == "0.0"
+    assert report.value("/superseded_results/0/status") == "superseded"
+    assert "superseded-results" in report.inside[superseded_value]
+    assert "metrics" not in report.inside[superseded_value]
+    assert "metric-0" not in report.inside[superseded_value]
+    assert len(report.ids()) == len(set(report.ids()))
+    (superseded_metric,) = [name for name in report.inside[superseded_value] if name in report.article_wording]
+    assert "Superseded. This is not the current result" in report.article_wording[superseded_metric]
+    assert "superseded" in report.article_classes[superseded_metric]
+    assert "Superseded" not in report.article_wording["metric-0"]
+    assert "superseded" not in report.article_classes["metric-0"]
+    assert "This scorecard is a recalculation" in report.wording
+    assert report.value("/superseded_results/0/outcome_corrections/0/provenance") == PROVENANCE
+    assert report.links["/superseded_results/0/outcome_corrections/0/attempt_id"] == "#attempt-2"
+    assert report.value("/attempts/2/task_outcome/source") == REVIEW
+    assert report.value("/attempts/2/superseded_task_outcomes/0/task_outcome/source") == SOURCE
+    assert report.value("/attempts/2/superseded_task_outcomes/0/correction_provenance") == PROVENANCE
+
+
+def test_the_report_of_a_scorecard_that_supersedes_nothing_does_not_say_it_is_a_recalculation():
+    earlier = sweep({"close": HALF})
+
+    report = assert_faithful_rendering(render_report(earlier), earlier)
+
+    assert "recalculation" not in report.wording
+    assert "Superseded" not in report.wording
