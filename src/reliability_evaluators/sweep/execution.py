@@ -98,9 +98,14 @@ class Execution:
         roles = self.conditions_for(kind)
         made = [attempt for attempt in self.last if (attempt.condition_role or ConditionRole.BASELINE) in roles]
         return bool(roles) and (
-            len(made) < self.task.attempts * len(roles)
+            len(made) < sum(_planned_under(self.task, self.experiment, role) for role in roles)
             or not any(attempt.execution_status is ExecutionStatus.COMPLETED for attempt in made)
         )
+
+
+def _planned_under(task: Task, experiment: Experiment | None, role: ConditionRole) -> int:
+    """How many Attempts are planned for a Task under a condition. Without an experiment, all under the baseline."""
+    return task.attempts if experiment is None else experiment.attempts_planned(role)
 
 
 def execution_of(
@@ -118,7 +123,8 @@ def execution_of(
     the Attempt first and then its retries. `stop_reason` is why a customer control
     stopped the experiment, if one did.
     """
-    planned = task.attempts * (len(experiment.conditions()) if experiment is not None else 1)
+    roles = tuple(ConditionRole) if experiment is not None else (ConditionRole.BASELINE,)
+    planned = sum(_planned_under(task, experiment, role) for role in roles)
     last = tuple(executions[-1] for executions in made)
     not_made = planned - len(last)
     if budget.stopped is not None:

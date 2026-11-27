@@ -4,7 +4,7 @@
 were supplied or corrected after the run.
 """
 
-from ..evidence import Condition, ObservedCondition, StartingStatePolicy, VariationKind
+from ..evidence import Condition, ObservedCondition, PromptVariant, StartingStatePolicy, VariationKind
 from .declaration import (
     NO_TASK_OUTCOME_YET,
     ActionEvidenceDeclaration,
@@ -32,6 +32,7 @@ __all__ = [
     "ExecutionLimits",
     "Experiment",
     "ObservedCondition",
+    "PromptVariant",
     "RecalculationFailed",
     "StartingStatePolicy",
     "Task",

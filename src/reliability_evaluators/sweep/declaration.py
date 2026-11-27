@@ -15,8 +15,10 @@ from ..evidence import (
     LifecyclePoint,
     ObservedCondition,
     OperationalConstraint,
+    PromptVariant,
     StartingStatePolicy,
     TaskOutcome,
+    VariationKind,
     ViolationAssessment,
     json_data,
 )
@@ -185,6 +187,8 @@ class ControlContext:
     starting_state: StartingStatePolicy
     # The test resources the experiment may change. A control changes nothing else.
     authorized_resources: tuple[str, ...]
+    # The prompt variant whose text the agent is given in this Attempt. None: the Task's own instruction.
+    prompt_variant: PromptVariant | None = None
 
 
 class CustomerControls(Protocol):
@@ -224,7 +228,8 @@ class Experiment:
     """A controlled experiment on one Task, declared before any Attempt is made.
 
     The Task is attempted `task.attempts` times under the baseline and, when a variation
-    is declared, as many times under the variation. Everything else is held fixed.
+    is declared, as many times under the variation. Under a prompt variation it is attempted
+    as many times under each prompt variant. Everything else is held fixed.
 
     Nothing here has a default except the test resources: the starting-state policy in
     particular is always declared, so that state never continues by accident.
@@ -247,6 +252,10 @@ class Experiment:
     write_capable: bool
     # The test resources a write-capable experiment is authorized to change, by name.
     authorized_resources: Sequence[str] = ()
+    # The equivalent wordings of the Task's instruction, which the customer supplies or approves.
+    # Declared with a variation of the kind prompt, and only with one. The sweep generates none:
+    # under the variation the agent is given the exact text of each, and nothing else changes.
+    prompt_variants: Sequence[PromptVariant] = ()
 
     def __post_init__(self) -> None:
         if not isinstance(self.experiment_id, str) or not self.experiment_id.strip():
@@ -286,6 +295,7 @@ class Experiment:
             if not callable(getattr(self.controls, point.value, None)):
                 raise ValueError(f"the controls of {this} have no {point.value} control")
         self._require_authorized_resources(this)
+        self._require_prompt_variants(this)
 
     def _require_authorized_resources(self, this: str) -> None:
         if type(self.write_capable) is not bool:
@@ -305,6 +315,58 @@ class Experiment:
         if resources and not self.write_capable:
             raise ValueError(f"{this} is not write-capable, so it is authorized to change nothing, got {resources!r}")
 
+    def _require_prompt_variants(self, this: str) -> None:
+        variants = self.prompt_variants
+        if isinstance(variants, str) or any(not isinstance(variant, PromptVariant) for variant in variants):
+            raise ValueError(
+                f"{this} declares its prompt variants as a list of PromptVariant, each with its exact text "
+                f"and its source, got {variants!r}"
+            )
+        object.__setattr__(self, "prompt_variants", tuple(variants))
+        if not self.varies_prompt():
+            if variants:
+                raise ValueError(
+                    f"{this} declares prompt variants, and its variation is not of the kind 'prompt'. A reworded "
+                    "instruction is a variation of its own: it is never mixed with the baseline or with another "
+                    "kind of variation"
+                )
+            return
+        if not variants:
+            raise ValueError(
+                f"{this} declares a prompt variation, so it declares the prompt variants that the customer "
+                "supplies or approves. The sweep generates none"
+            )
+        if self.variation.parameters != self.baseline.parameters:
+            raise ValueError(
+                f"the prompt variation of {this} changes the wording of the instruction and nothing else, so its "
+                f"parameters are those of the baseline. The baseline declares {self.baseline.parameters!r} and "
+                f"the variation {self.variation.parameters!r}"
+            )
+        texts = {self.task.prompt: "the Task's own prompt"}
+        identities: set[str] = set()
+        for variant in self.prompt_variants:
+            if variant.variant_id in identities:
+                raise ValueError(f"{this} declares more than one prompt variant as {variant.variant_id!r}")
+            identities.add(variant.variant_id)
+            if variant.text in texts:
+                raise ValueError(
+                    f"the prompt variant {variant.variant_id!r} of {this} has the same text as "
+                    f"{texts[variant.text]}, so it is not another wording"
+                )
+            texts[variant.text] = f"the prompt variant {variant.variant_id!r}"
+
+    def varies_prompt(self) -> bool:
+        """Whether the variation is the wording of the instruction."""
+        return self.variation is not None and self.variation.kind is VariationKind.PROMPT
+
+    def attempts_planned(self, role: ConditionRole) -> int:
+        """How many Attempts are planned under a condition: `task.attempts`, or as many under each prompt variant."""
+        if role is ConditionRole.BASELINE:
+            return self.task.attempts
+        if self.variation is None:
+            return 0
+        return self.task.attempts * (len(self.prompt_variants) if self.varies_prompt() else 1)
+
     def conditions(self) -> tuple[tuple[ConditionRole, Condition], ...]:
         """The conditions Attempts are made under, the baseline first."""
         declared = ((ConditionRole.BASELINE, self.baseline), (ConditionRole.VARIATION, self.variation))
@@ -321,6 +383,15 @@ class Experiment:
             "variation": None if self.variation is None else self.variation.to_dict(),
             "write_capable": self.write_capable,
             "authorized_resources": list(self.authorized_resources),
+            # The exact texts of a prompt variation: the Task's own prompt, and each variant.
+            **(
+                {
+                    "task_prompt": self.task.prompt,
+                    "prompt_variants": [variant.to_dict() for variant in self.prompt_variants],
+                }
+                if self.varies_prompt()
+                else {}
+            ),
         }
 
 
