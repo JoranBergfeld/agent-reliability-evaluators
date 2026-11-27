@@ -12,6 +12,7 @@ from . import (
     conditional_harm_severity,
     constraint_compliance,
     distributional_trajectory_consistency,
+    environment_robustness,
     fault_robustness,
     outcome_consistency,
     resource_consistency,
@@ -58,6 +59,11 @@ EVALUATORS: dict[str, Evaluator] = {
         Evaluator(resource_consistency.DEFINITION, resource_consistency.evaluate),
         Evaluator(
             fault_robustness.DEFINITION, fault_robustness.evaluate, compares_variation=VariationKind.FAULT
+        ),
+        Evaluator(
+            environment_robustness.DEFINITION,
+            environment_robustness.evaluate,
+            compares_variation=VariationKind.ENVIRONMENT,
         ),
         Evaluator(calibration.DEFINITION, calibration.evaluate, needs_confidence=True),
         Evaluator(

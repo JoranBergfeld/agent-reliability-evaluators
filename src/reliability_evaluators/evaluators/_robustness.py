@@ -100,7 +100,9 @@ def evaluate_against_baseline(
             "other_attempts": EvidenceCount(
                 total=len(other),
                 valid=0,
-                excluded=counted(f"not made under the baseline or under a {variation} variation", other),
+                excluded=counted(
+                    f"not made under the baseline or under {_article(variation)} {variation} variation", other
+                ),
             ),
         },
         "details": {
@@ -134,6 +136,10 @@ def evaluate_against_baseline(
     else:
         return MetricResult.available(definition, float(min(ratio, 1)), **evidence)
     return MetricResult.unavailable(definition, reason, **evidence)
+
+
+def _article(noun: str) -> str:
+    return "an" if noun[0] in "aeiou" else "a"
 
 
 def _condition(attempt: Attempt, kind: VariationKind) -> str | None:
