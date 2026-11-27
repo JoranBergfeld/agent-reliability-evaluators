@@ -21,7 +21,7 @@ from reliability_evaluators.evidence import (
     TaskOutcome,
     ViolationAssessment,
 )
-from reliability_evaluators.scorecard import AcceptanceCriterion, render_report, to_json
+from reliability_evaluators.scorecard import AcceptanceCriterion, ArtifactLocation, render_report, to_json
 from reliability_evaluators.sweep import (
     NO_TASK_OUTCOME_YET,
     ActionEvidenceDeclaration,
@@ -54,13 +54,16 @@ def supplied(scorecard):
     return json.loads(to_json(scorecard))
 
 
-def sweep(script, metrics=("outcome_consistency",), ratings=None, not_known_yet=(), seconds=(), criteria=()):
+def sweep(
+    script, metrics=("outcome_consistency",), ratings=None, not_known_yet=(), seconds=(), criteria=(), artifact_dir=None
+):
     """Run a sweep with one Task per script entry and one Attempt per scripted behaviour.
 
     `ratings` gives the fake agent's answer to the confidence request of each Attempt, by
     Attempt identity. `not_known_yet` names the Attempts whose task outcome the
     task-success rule cannot decide during the sweep. `seconds` gives how long each Attempt
-    of every Task takes. `criteria` are the customer's acceptance criteria.
+    of every Task takes. `criteria` are the customer's acceptance criteria. `artifact_dir`
+    is where the sweep delivers its scorecard, report and evidence.
     """
     resources = {task_id: [{"seconds": taken} for taken in seconds] for task_id in script}
     target = FakeAgentTarget(script, resources, confidence=ratings)
@@ -82,7 +85,12 @@ def sweep(script, metrics=("outcome_consistency",), ratings=None, not_known_yet=
     ]
     return supplied(
         run_sweep(
-            tasks=tasks, agent_target=target, metrics=metrics, clock=target.clock, acceptance_criteria=criteria
+            tasks=tasks,
+            agent_target=target,
+            metrics=metrics,
+            clock=target.clock,
+            acceptance_criteria=criteria,
+            artifact_dir=artifact_dir,
         )
     )
 
@@ -927,3 +935,26 @@ def test_the_report_of_a_scorecard_that_supersedes_nothing_does_not_say_it_is_a_
 
     assert "recalculation" not in report.wording
     assert "Superseded" not in report.wording
+
+
+def test_a_recalculated_scorecard_is_delivered_to_a_location_of_its_own_and_the_earlier_run_is_left_as_it_was(tmp_path):
+    # The customer supplies the earlier scorecard from where their platform kept it.
+    sweep({"close": HALF}, artifact_dir=tmp_path / "run")
+    kept = {file.name: file.read_bytes() for file in (tmp_path / "run").iterdir()}
+    assert sorted(kept) == ["evidence.json", "report.html", "scorecard.json"]
+    earlier = json.loads(kept["scorecard.json"])
+
+    recalculated = recalculate(
+        earlier_scorecard=earlier, outcome_corrections=[corrected("close/attempt-3", success=True)]
+    )
+    ArtifactLocation(tmp_path / "recalculated").deliver(recalculated)
+
+    delivered = tmp_path / "recalculated"
+    assert json.loads((delivered / "scorecard.json").read_text(encoding="utf-8")) == recalculated
+    evidence = json.loads((delivered / "evidence.json").read_text(encoding="utf-8"))
+    assert evidence["attempts"] == recalculated["attempts"]
+    assert attempt(evidence, "close/attempt-3")["superseded_task_outcomes"] == [
+        {"task_outcome": {"success": False, "source": SOURCE}, "correction_provenance": PROVENANCE}
+    ]
+    assert_faithful_rendering((delivered / "report.html").read_text(encoding="utf-8"), recalculated)
+    assert {file.name: file.read_bytes() for file in (tmp_path / "run").iterdir()} == kept
