@@ -34,7 +34,9 @@ CRITERION = {
 }
 OUTPUT_ITEM_PAGE = 100
 ENDED = ("completed", "failed", "canceled")
-NO_RUN = "no cloud evaluation run was made, so no usage was reported"
+# How much of an answer that is not what was asked for is quoted in an error.
+_SHOWN_ANSWER = 2000
+NO_RUN = "no cloud evaluation run is known to have been made, so no usage was reported"
 RESULT_NOT_READ = "the result of the cloud evaluation run was not read, so no usage is known"
 NO_OUTPUT_ITEM = "the cloud evaluation run returned no output item, so no usage was reported"
 NO_USAGE = "the output item of the cloud evaluation run carried no usage"
@@ -160,15 +162,22 @@ class FoundryCloudEvaluationTarget:
         deadline = self._clock() + limit
         recorded.agent_kind = self._supported_kind(recorded)
         with _asking(recorded, "the eval for the cloud evaluation runs could not be made in the Foundry project"):
-            recorded.eval_id = self._eval()
+            recorded.eval_id = self._eval(recorded)
         runs = f"/openai/{API_VERSION}/evals/{recorded.eval_id}/runs"
         with _asking(recorded, "the cloud evaluation run could not be made in the Foundry project"):
-            recorded.run = self._project.request(
+            made = self._project.request(
                 "POST", runs, self._run_of(request, request.prompt if composed is None else composed)
             )
-        run_path = f"{runs}/{recorded.run.get('id')}"
+        if not isinstance(made, dict) or not made.get("id"):
+            raise InvocationFailed(
+                "the Foundry project answered the making of the cloud evaluation run with something that is no "
+                f"run: {json.dumps(made)[:_SHOWN_ANSWER]}",
+                invocation=recorded.invocation(),
+            )
+        recorded.run = made
+        run_path = f"{runs}/{made['id']}"
         self._wait(recorded, run_path, deadline, limit)
-        with _asking(recorded, f"the output items of the cloud evaluation run {recorded.run.get('id')} could not be read"):
+        with _asking(recorded, f"the output items of the cloud evaluation run {made['id']} could not be read"):
             items = self._output_items(run_path)
         recorded.result_read = True
         # Paired by the identity of the Attempt, never by the order of the rows.
@@ -235,7 +244,7 @@ class FoundryCloudEvaluationTarget:
             )
         return kind
 
-    def _eval(self) -> str:
+    def _eval(self, recorded: _Recorded) -> str:
         """The eval every run of this target is made in. It is created once."""
         with self._lock:
             if self._eval_id is None:
@@ -257,6 +266,12 @@ class FoundryCloudEvaluationTarget:
                         "testing_criteria": [CRITERION],
                     },
                 )
+                if not isinstance(created, dict) or not created.get("id"):
+                    raise InvocationFailed(
+                        "the Foundry project answered the making of the eval for the cloud evaluation runs with "
+                        f"something that is no eval: {json.dumps(created)[:_SHOWN_ANSWER]}",
+                        invocation=recorded.invocation(),
+                    )
                 self._eval_id = created["id"]
         return self._eval_id
 
@@ -293,7 +308,9 @@ class FoundryCloudEvaluationTarget:
             if remaining <= 0:
                 status = recorded.run.get("status")
                 try:
-                    recorded.run = self._project.request("POST", f"{run_path}/cancel") or recorded.run
+                    cancelled = self._project.request("POST", f"{run_path}/cancel")
+                    if isinstance(cancelled, dict):
+                        recorded.run = cancelled
                 except FoundryRequestError:
                     # The timeout is what the caller is told. A run that could not be cancelled ends by itself.
                     pass
@@ -304,15 +321,19 @@ class FoundryCloudEvaluationTarget:
                 )
             self._sleep(min(self._poll_interval_seconds, remaining))
             with _asking(recorded, f"the cloud evaluation run {run_id} could not be read"):
-                recorded.run = self._project.request("GET", run_path)
+                answered = self._project.request("GET", run_path)
+            # An answer that is no run says nothing about the run, so the run is asked for again.
+            if isinstance(answered, dict):
+                recorded.run = answered
 
     def _output_items(self, run_path: str) -> list[dict[str, Any]]:
         items: list[dict[str, Any]] = []
         after = ""
         while True:
             page = self._project.request("GET", f"{run_path}/output_items?limit={OUTPUT_ITEM_PAGE}{after}")
-            items.extend(item for item in page.get("data", []) if isinstance(item, dict))
-            if not page.get("has_more"):
+            page = page if isinstance(page, dict) else {}
+            items.extend(item for item in page.get("data") or [] if isinstance(item, dict))
+            if not page.get("has_more") or not page.get("last_id"):
                 return items
             after = f"&after={page['last_id']}"
 
@@ -456,11 +477,12 @@ def _resource_measurements(invocation: dict[str, Any]) -> tuple[ResourceMeasurem
     measured = []
     latency_ms = invocation["latency_ms"]
     if type(latency_ms) in (int, float) and isfinite(latency_ms) and latency_ms >= 0:
+        # In the platform's own unit, so that the number is the one it reported.
         measured.append(
             ResourceMeasurement(
                 resource_type=ResourceType.ELAPSED_TIME,
-                value=latency_ms / 1000,
-                unit="seconds",
+                value=latency_ms,
+                unit="milliseconds",
                 boundary=ELAPSED_TIME_BOUNDARY,
             )
         )

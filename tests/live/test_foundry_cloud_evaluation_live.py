@@ -251,8 +251,8 @@ def test_each_completed_attempt_keeps_the_identifiers_the_usage_and_the_ordered_
         assert {call["type"] for call in invocation["tool_calls"]} == {CALL_TYPE[kind]}
         measured = {m["resource_type"]: m["value"] for m in attempt["resource_measurements"]}
         assert measured["tool_calls"] == len(received)
-        # The elapsed time is the latency Foundry reported for the target.
-        assert measured["elapsed_time"] == pytest.approx(invocation["latency_ms"] / 1000) and measured["elapsed_time"] > 0
+        # The elapsed time is the latency Foundry reported for the target, in its own unit.
+        assert measured["elapsed_time"] == invocation["latency_ms"] > 0
     assert len(set(response_ids)) == ATTEMPTS
 
 

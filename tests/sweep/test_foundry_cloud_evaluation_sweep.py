@@ -282,7 +282,8 @@ def test_the_target_reports_the_latency_foundry_measured_and_the_tool_call_count
     todo_service,
 ):
     # Tool calls: 4 and 5. Mean 4.5, population standard deviation 0.5, CV 1/9.
-    # Elapsed time: the fake project reports a latency of 5000 and 6000 ms. Mean 5.5 s, deviation 0.5, CV 1/11.
+    # Elapsed time: the fake project reports a latency of 5000 and 6000 ms, which is recorded as it was
+    # reported. Mean 5500, population standard deviation 500, CV 1/11.
     # Task value exp(-(1/9 + 1/11) / 2) = exp(-10/99) = 0.9039239022952824.
     scorecard = sweep(todo_service, ["skips the update", "completes"], metrics=["resource_consistency"])
 
@@ -290,8 +291,8 @@ def test_the_target_reports_the_latency_foundry_measured_and_the_tool_call_count
         [
             {
                 "resource_type": "elapsed_time",
-                "value": seconds,
-                "unit": "seconds",
+                "value": milliseconds,
+                "unit": "milliseconds",
                 "boundary": ELAPSED_TIME_BOUNDARY,
                 "reliably_sourced": True,
             },
@@ -303,7 +304,7 @@ def test_the_target_reports_the_latency_foundry_measured_and_the_tool_call_count
                 "reliably_sourced": True,
             },
         ]
-        for seconds, count in ((5.0, 4), (6.0, 5))
+        for milliseconds, count in ((5000.0, 4), (6000.0, 5))
     ]
     resource_consistency = metric(scorecard, "resource_consistency")
     assert resource_consistency["state"] == "available"
@@ -474,7 +475,7 @@ def test_a_pinned_agent_version_is_the_one_the_run_invokes(todo_service):
     assert latest["attempts"][0]["invocation"]["agent"] == {"id": "todo-prompt:2", "name": "todo-prompt", "version": "2"}
     assert pinned["attempts"][0]["invocation"]["agent"] == {"id": "todo-prompt:1", "name": "todo-prompt", "version": "1"}
 
-NO_RUN = "no cloud evaluation run was made, so no usage was reported"
+NO_RUN = "no cloud evaluation run is known to have been made, so no usage was reported"
 RESULT_NOT_READ = "the result of the cloud evaluation run was not read, so no usage is known"
 NO_COUNTS = {"total": 0, "passed": 0, "failed": 0}
 
@@ -576,6 +577,37 @@ def test_a_project_that_does_not_answer_is_an_execution_failure_that_still_recor
         "invocation": not_invoked(agent_kind=None, token_usage_missing=NO_RUN),
     }
 
+
+class AnswersWithoutARun:
+    """A project that answers the making of a run with something that is no run."""
+
+    def __init__(self, project):
+        self._project = project
+
+    def request(self, method, path, body=None, headers=None):
+        answered = self._project.request(method, path, body, headers)
+        return {"object": "list", "data": []} if (method, path[-5:]) == ("POST", "/runs") else answered
+
+
+def test_an_answer_to_the_making_of_a_run_that_is_no_run_is_an_execution_failure(todo_service):
+    project = AnswersWithoutARun(FakeCloudEvaluationProject(todo_service, {"todo-prompt": FakeAgent()}))
+    target = FoundryCloudEvaluationTarget(project=project, agent_name="todo-prompt", poll_interval_seconds=0)
+    experiment = TodoFixtureSweep(todo_service, state=STATE).experiment(attempts=1)
+
+    scorecard = run_sweep(experiments=[experiment], agent_target=target, metrics=["outcome_consistency"])
+
+    assert attempt_evidence(scorecard["attempts"][0], "invocation") == {
+        "attempt_id": "todo/baseline/attempt-1",
+        "task_id": "todo",
+        "execution_status": "failed",
+        "execution_error": (
+            "InvocationFailed: the Foundry project answered the making of the cloud evaluation run with "
+            'something that is no run: {"object": "list", "data": []}'
+        ),
+        "task_outcome": None,
+        # Whether a run was made is not known, so nothing is recorded as its run.
+        "invocation": not_invoked(eval_id="eval_fake_1", token_usage_missing=NO_RUN),
+    }
 
 def no_item(item):
     return None
