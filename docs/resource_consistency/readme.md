@@ -172,8 +172,11 @@ The metric's entry in the scorecard carries:
 | `details.per_task` | for each eligible Task: the number of Attempts, each resource type used with its unit, measurement boundary, mean and CV, each resource type excluded with its reason and the Attempts concerned, and the Task value |
 | `details.excluded_tasks` | for each excluded Task: its reason and, where resource types were examined, why each was excluded |
 | `evidence.attempt_ids` | the Attempts the value rests on, which are listed under `attempts` in the same scorecard |
+| `acceptance` | the assessment of your acceptance criterion for this metric, or `null` when you declared none: see [acceptance criteria](../acceptance_criteria/readme.md) |
 
 Each Attempt under `attempts` carries its `resource_measurements`, each with `resource_type`, `value`, `unit`, `boundary` and `reliably_sourced`.
+
+The evidence units this metric counts are `tasks` and `attempts`, so an acceptance criterion can require a minimum number of eligible Tasks and of Attempts used, for example `{"value": {"at_least": 0.8}, "minimum_counts": {"tasks": 3, "attempts": 15}}`. A criterion on this metric accepts stable resource use, not low resource use.
 
 ## Evidence it needs
 
