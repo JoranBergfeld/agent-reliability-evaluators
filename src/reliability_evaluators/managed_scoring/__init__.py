@@ -8,7 +8,7 @@
 
 from .artifact import DerivationError, ManagedArtifact, derive_artifact, has_managed_evaluator
 from .foundry import FoundryProject, FoundryRequestError, azure_cli_token
-from .scoring import FoundryManagedScoring, ManagedResult, ManagedScoringFailure, RegisteredEvaluator
+from .scoring import FoundryManagedScoring, ManagedFailure, ManagedResult, ManagedScoringFailure, RegisteredEvaluator
 
 __all__ = [
     "DerivationError",
@@ -16,6 +16,7 @@ __all__ = [
     "FoundryProject",
     "FoundryRequestError",
     "ManagedArtifact",
+    "ManagedFailure",
     "ManagedResult",
     "ManagedScoringFailure",
     "RegisteredEvaluator",

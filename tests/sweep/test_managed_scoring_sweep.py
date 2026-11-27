@@ -127,8 +127,18 @@ def test_the_scorecard_says_which_evaluator_and_which_run_the_value_came_from():
     assert managed_scoring["evaluator"]["code_sha256"] == sha256(registered["definition"]["code_text"])
     assert (managed_scoring["eval_id"], managed_scoring["run_id"]) == ("eval_1", "evalrun_1")
     assert managed_scoring["output_item_id"] == "1"
+    # The digest the evidence travelled with: the SHA-256 of the evidence as it was submitted.
+    digest, _, evidence = foundry.submitted_items[0]["outcome_consistency_evidence"].partition(":")
+    assert managed_scoring["evidence_sha256"] == digest == sha256(evidence)
     # The run's portal link embeds the subscription identifier, so the scorecard does not repeat it.
-    assert set(managed_scoring) == {"evaluator", "eval_id", "run_id", "output_item_id", "platform_diagnostics"}
+    assert set(managed_scoring) == {
+        "evaluator",
+        "eval_id",
+        "run_id",
+        "output_item_id",
+        "platform_diagnostics",
+        "evidence_sha256",
+    }
 
 
 def test_the_platform_threshold_and_label_are_diagnostics_and_not_an_acceptance_verdict():
@@ -264,62 +274,27 @@ def test_a_project_that_refuses_the_customers_identity_stops_the_sweep_before_an
     assert target.service_state == {}
 
 
-# Failures. Managed scoring that returns no value is never replaced by scoring in this process.
+# A managed run that gives no value: tests/sweep/test_managed_scoring_failures_sweep.py.
 
 
-def test_an_unavailable_measurement_fails_managed_scoring_and_is_not_scored_in_this_process():
+def test_an_unavailable_measurement_gives_no_managed_result_and_is_not_scored_in_this_process():
     # No Task has two Attempts, so outcome consistency is unavailable and the managed evaluator raises.
-    with pytest.raises(ManagedScoringFailure, match="evalrun_1 of eval_1 ended as failed: UserError") as failure:
-        sweep({"close": ["success"], "archive": ["failure"]}, FakeFoundryProject())
+    scorecard = sweep({"close": ["success"], "archive": ["failure"]}, FakeFoundryProject())
 
-    assert "unavailable measurement" in str(failure.value)
-
-
-def test_evidence_that_is_altered_on_the_way_to_foundry_gives_no_value():
-    def one_outcome_flipped(item):
-        (field, text), = item.items()
-        return {field: text.replace('"success":true', '"success":false', 1)}
-
-    with pytest.raises(ManagedScoringFailure, match="ended as failed"):
-        sweep(TWO_TASKS, FakeFoundryProject(alter_item=one_outcome_flipped))
-
-
-@pytest.mark.parametrize("returned", [1.1, -0.1])
-def test_a_returned_score_outside_the_scale_of_the_metric_is_not_reported(returned):
-    # Foundry does not enforce the range an evaluator declares, so the result contract does.
-    with pytest.raises(ManagedScoringFailure, match="not a value of the metric.*outside the scale"):
-        sweep(TWO_TASKS, FakeFoundryProject(alter_score=lambda score: returned))
-
-
-def test_a_completed_run_whose_item_carries_an_error_gives_no_value():
-    foundry = FakeFoundryProject(sample_error={"code": "FAILED_EXECUTION", "message": "the evaluator did not run"})
-
-    with pytest.raises(ManagedScoringFailure, match="carries an error.*FAILED_EXECUTION"):
-        sweep(TWO_TASKS, foundry)
+    outcome_consistency = metric(scorecard)
+    # Nothing came back that says the measurement is unavailable, so the scorecard does not say it either.
+    assert (outcome_consistency["state"], outcome_consistency["value"]) == (None, None)
+    assert outcome_consistency["scoring_path"] == "foundry_managed"
+    error = outcome_consistency["managed_scoring"]["error"]
+    assert "evalrun_1 of eval_1 ended as failed: UserError" in error
+    assert "unavailable measurement" in error
+    assert scorecard["status"] == "partial"
 
 
 def test_a_run_that_takes_a_while_is_waited_for():
     outcome_consistency = metric(sweep(TWO_TASKS, FakeFoundryProject(polls_until_finished=3)))
 
     assert outcome_consistency["value"] == pytest.approx(0.68, abs=1e-12)
-
-
-def test_a_run_that_does_not_end_in_time_is_cancelled_and_gives_no_value():
-    foundry = FakeFoundryProject(never_finishes=True)
-    scoring = FoundryManagedScoring(project=foundry, poll_interval_seconds=0, run_timeout_seconds=0)
-    task = Task(
-        task_id="close",
-        prompt="Close it.",
-        success_rule=lambda attempt, response: TaskOutcome(success=True, source=SOURCE),
-        attempts=2,
-    )
-
-    with pytest.raises(ManagedScoringFailure, match="had not ended after 0 seconds"):
-        run_sweep(
-            tasks=[task], agent_target=FakeAgentTarget({"close": ["success"] * 2}), metrics=[MANAGED], managed_scoring=scoring
-        )
-
-    assert foundry.runs["evalrun_1"]["status"] == "canceled"
 
 
 CORRECTED = OutcomeCorrection(

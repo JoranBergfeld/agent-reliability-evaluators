@@ -33,6 +33,12 @@ _EXECUTION_FAILURE = (
     "short. Nothing was measured, and no Task failed because of it."
 )
 
+# The same, when it is the scoring that failed and not the Attempts: Foundry-managed scoring records its error.
+_MANAGED_SCORING_FAILURE = (
+    "Managed scoring failure: Foundry-managed scoring gave no result for this metric. Nothing was measured, "
+    "and no Task failed because of it. The metric was not scored in the customer's own process instead."
+)
+
 _STATUSES = {
     "complete": "Complete: every planned Attempt completed and every selected metric has a result.",
     "partial": "Partial: something that was planned is not in this scorecard. What is missing, and why, "
@@ -151,7 +157,9 @@ class _Report:
             described = isinstance(recorded, str) and recorded in _STATES
             if recorded is None and _is_filled(entry.get("execution_failure"), dict):
                 css += " execution-failure"
-                description = _EXECUTION_FAILURE
+                managed = entry.get("managed_scoring")
+                failed_in_scoring = isinstance(managed, dict) and _is_filled(managed.get("error"), str)
+                description = _MANAGED_SCORING_FAILURE if failed_in_scoring else _EXECUTION_FAILURE
             else:
                 css += f" state-{recorded}" if described else " state-other"
                 description = _STATES[recorded] if described else _UNDESCRIBED_STATE
@@ -261,7 +269,8 @@ _METRICS_NOTE = (
 _MISSING_NOTE = (
     '<p class="note">What was planned and is not in this scorecard, and why. Planned Attempts that were not made '
     "do not appear as Attempts. A planned Attempt that was made and did not complete is named here with how its "
-    "execution ended, and is not a failed Task.</p>"
+    "execution ended, and is not a failed Task. A metric that has no result is named here with the reason. "
+    "It has no value, and it is not an unavailable measurement.</p>"
 )
 
 _RECALCULATION_NOTICE = (
