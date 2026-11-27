@@ -1,7 +1,7 @@
 """Derivation of the Foundry evaluator artifacts from the canonical metric definitions.
 
-A Foundry code evaluator is one Python source that defines `grade(sample, item) -> float`
-and cannot import the offering. The artifact is therefore the source of the canonical
+A Foundry code evaluator is one Python source that defines `grade(sample, item)`, which returns
+a number, and cannot import the offering. The artifact is therefore the source of the canonical
 definition and of every module it imports from the offering, joined into one source in
 import order. Nothing is rewritten: the statements are the ones the customer-process path
 executes, less the imports between those modules, which one source does not need.
@@ -41,6 +41,7 @@ SANDBOX_PYTHON = (3, 12)
 SANDBOX_MODULES = frozenset(
     {
         "__future__",
+        "base64",
         "bisect",
         "collections",
         "dataclasses",
@@ -52,6 +53,7 @@ SANDBOX_MODULES = frozenset(
         "math",
         "re",
         "typing",
+        "zlib",
     }
 )
 # Calls the sandbox refused when observed, before running anything. It goes by the name
@@ -93,11 +95,17 @@ class ManagedArtifact:
         return hashlib.sha256(self.code_text.encode("utf-8")).hexdigest()
 
     def item(self, tasks: Iterable[TaskEvidence]) -> dict[str, str]:
-        """The fields of a submitted item that carry this Evaluator's grouped Attempt evidence."""
+        """The fields of a submitted item that carry this Evaluator's grouped Attempt evidence.
+
+        A submitted item also names the part of the result it asks for, in `grader.RESULT_PART`.
+        """
         return {self.evidence_field: grader.encode_evidence(tasks, self.attempt_evidence)}
 
     def registration(self) -> dict[str, Any]:
         """The evaluator version to register: the code, the item it reads and the number it returns.
+
+        The declared range is the scale of the metric. Only the value part of a result is in
+        it: the other parts are numbers of the encoding, and Foundry does not enforce the range.
 
         Foundry requires a desirable direction. The canonical definition states none, because
         higher is not assumed to be better, so none is claimed here either.
@@ -123,8 +131,11 @@ class ManagedArtifact:
                     "properties": {
                         "item": {
                             "type": "object",
-                            "properties": {self.evidence_field: {"type": "string"}},
-                            "required": [self.evidence_field],
+                            "properties": {
+                                self.evidence_field: {"type": "string"},
+                                grader.RESULT_PART: {"type": "string"},
+                            },
+                            "required": [self.evidence_field, grader.RESULT_PART],
                         }
                     },
                 },

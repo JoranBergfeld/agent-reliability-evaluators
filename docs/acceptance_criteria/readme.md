@@ -82,7 +82,7 @@ Only a metric that is available, with an authoritative value, can be met or not 
 | The metric is not applicable | `the metric is not applicable: ` followed by its reason |
 | The metric is not configured | `the metric is not configured` |
 | The metric has no result because its Attempts were cut short | `the metric has no result because of an execution failure: ` followed by the failure's reason; see [execution limits and partial scorecards](../sweep/execution-limits.md#metrics-in-a-partial-scorecard) |
-| The metric has no result because [Foundry-managed scoring gave none](../managed_scoring/readme.md#when-managed-scoring-gives-no-value) | `the metric has no result because of an execution failure: Foundry-managed scoring gave no result for this metric, ...` followed by the execution error |
+| The metric has no result because [Foundry-managed scoring gave none](../managed_scoring/readme.md#when-managed-scoring-gives-no-result) | `the metric has no result because of an execution failure: Foundry-managed scoring gave no result for this metric, ...` followed by the execution error |
 | The value is an unverified result | `the value is an unverified result: its fidelity to the evaluator-computed value has not been established` |
 | The condition is not one the offering assesses | `unsupported criterion: ` followed by what was not understood |
 | Your own assessment failed or returned no verdict with provenance | `the customer-supplied assessment ` followed by what went wrong |

@@ -3,10 +3,13 @@
 The vectors are the ones of `test_outcome_consistency.py`, with the same hand-calculated
 expectations. Each runs against the canonical definition and against the derived artifact,
 so the two scoring paths cannot give different values without a test failing here.
+
+The derived evaluator returns one number for each item it is given. The item names the part of
+the result it asks for: the plain value, or a part of the encoded result, which carries the
+state, the reason and the counts. `tests/managed_artifact.py` puts the parts together by hand.
 """
 
 import ast
-import hashlib
 import json
 
 import pytest
@@ -73,11 +76,36 @@ AVAILABLE = {
     "an Attempt without a task outcome is left out": (group_by_task(attempts("task", [1, 0]) + [NO_OUTCOME]), 0),
 }
 
+NOTHING_COUNTED = {"total": 0, "valid": 0, "missing": [], "excluded": []}
+
+# Each: grouped evidence, the reason, and the evidence counts, written out by hand.
 UNAVAILABLE = {
-    "no Tasks": ((), "no Tasks in the evidence"),
+    "no Tasks": ((), "no Tasks in the evidence", {"tasks": NOTHING_COUNTED, "attempts": NOTHING_COUNTED}),
     "no eligible Task": (
         by_task({"once": [1], "also once": [0]}),
         "no Task has at least two Attempts with a task outcome",
+        {
+            "tasks": {
+                "total": 2,
+                "valid": 0,
+                "missing": [],
+                "excluded": [
+                    {"reason": "fewer than two Attempts with a task outcome", "count": 2, "ids": ["once", "also once"]}
+                ],
+            },
+            "attempts": {
+                "total": 2,
+                "valid": 0,
+                "missing": [],
+                "excluded": [
+                    {
+                        "reason": "its Task has fewer than two Attempts with a task outcome",
+                        "count": 2,
+                        "ids": ["once/attempt-1", "also once/attempt-1"],
+                    }
+                ],
+            },
+        },
     ),
 }
 
@@ -98,7 +126,11 @@ def canonical_value(tasks):
 
 
 def derived_value(tasks):
-    return managed_artifact.grade(derive_artifact("outcome_consistency"), tasks)
+    return managed_artifact.grade(derive_artifact("outcome_consistency"), tasks, "value")
+
+
+def derived_result(tasks):
+    return managed_artifact.returned_result(derive_artifact("outcome_consistency"), tasks)
 
 
 @pytest.mark.parametrize("value_of", [canonical_value, derived_value])
@@ -119,15 +151,80 @@ def test_both_paths_compute_the_same_double(vector):
     assert derived_value(tasks) == canonical_value(tasks)
 
 
+@pytest.mark.parametrize("vector", AVAILABLE)
+def test_the_encoded_result_carries_the_value_as_the_evaluator_computed_it(vector):
+    tasks, expected = AVAILABLE[vector]
+
+    result = derived_result(tasks)
+
+    assert result["state"] == "available"
+    assert result["reason"] is None
+    assert result["value"] == pytest.approx(expected, abs=1e-12)
+    # The same double, not one near it: the encoding writes a number so that it reads back exactly.
+    assert result["value"] == canonical_value(tasks)
+    assert type(result["value"]) is float
+
+
+def test_the_encoded_result_carries_the_counts_and_details_of_a_value():
+    # "repeated" is scored: p = 4/5, (8 - 5)^2 / 25 = 0.36. "once" has one Attempt and is excluded.
+    result = derived_result(by_task({"repeated": [1, 1, 1, 1, 0], "once": [1]}))
+
+    assert result == {
+        "metric_id": "outcome_consistency",
+        "state": "available",
+        "value": 0.36,
+        "reason": None,
+        "counts": {
+            "tasks": {
+                "total": 2,
+                "valid": 1,
+                "missing": [],
+                "excluded": [{"reason": "fewer than two Attempts with a task outcome", "count": 1, "ids": ["once"]}],
+            },
+            "attempts": {
+                "total": 6,
+                "valid": 5,
+                "missing": [],
+                "excluded": [
+                    {
+                        "reason": "its Task has fewer than two Attempts with a task outcome",
+                        "count": 1,
+                        "ids": ["once/attempt-1"],
+                    }
+                ],
+            },
+        },
+        "details": {"per_task": [{"task_id": "repeated", "attempts": 5, "successes": 4, "value": 0.36}]},
+        "evidence": {"attempt_ids": [f"repeated/attempt-{number}" for number in range(1, 6)]},
+    }
+
+
 @pytest.mark.parametrize("vector", UNAVAILABLE)
-def test_an_unavailable_measurement_is_never_returned_as_a_number(vector):
-    tasks, reason = UNAVAILABLE[vector]
+def test_an_unavailable_measurement_is_returned_with_its_reason_and_counts_and_nothing_raises(vector):
+    tasks, reason, counts = UNAVAILABLE[vector]
+
+    result = derived_result(tasks)
 
     assert outcome_consistency.evaluate(tasks).reason == reason
-    # The artifact has no way yet to return the state, so it fails with the reason and returns nothing.
-    with pytest.raises(Exception, match=reason) as failure:
-        derived_value(tasks)
-    assert type(failure.value).__name__ == "UnavailableThroughManagedScoring"
+    assert (result["state"], result["value"], result["reason"]) == ("unavailable", None, reason)
+    assert result["counts"] == counts
+    assert result["evidence"] == {"attempt_ids": []}
+
+
+@pytest.mark.parametrize("vector", UNAVAILABLE)
+def test_the_value_part_of_an_unavailable_measurement_is_a_number_below_the_scale(vector):
+    tasks, _, _ = UNAVAILABLE[vector]
+
+    # The scale is 0 to 1. An evaluator has to return a number, and this one cannot be a value of the metric.
+    assert derived_value(tasks) == -1
+
+
+def test_a_part_past_the_end_of_the_encoded_result_is_zero():
+    artifact = derive_artifact("outcome_consistency")
+    tasks = by_task({"task": [1, 1, 1, 1, 0]})
+    parts = -(-managed_artifact.grade(artifact, tasks, "size") // 6)
+
+    assert managed_artifact.grade(artifact, tasks, str(parts + 1)) == 0
 
 
 @pytest.mark.parametrize("vector", REJECTED)
@@ -145,9 +242,11 @@ def item_of(tasks):
 
 
 def altered(item, old, new):
-    (field, text), = item.items()
-    assert old in text
-    return {field: text.replace(old, new)}
+    """The item with its evidence changed after it was encoded, behind the digest it was encoded with."""
+    (field, evidence), = item.items()
+    payload = managed_artifact.unpacked(evidence)
+    assert old in payload
+    return {field: managed_artifact.packed(payload.replace(old, new), digest=evidence.partition(":")[0])}
 
 
 @pytest.mark.parametrize(
@@ -164,18 +263,35 @@ def test_the_derived_artifact_validates_what_it_is_given(item, problem):
     grader = managed_artifact.load_grader(derive_artifact("outcome_consistency").code_text)
 
     with pytest.raises(Exception, match=problem) as rejection:
-        grader({}, item)
+        grader({}, {**item, "result_part": "value"})
+    assert type(rejection.value).__name__ == "EvidenceError"
+
+
+@pytest.mark.parametrize(
+    ("asked_for", "problem"),
+    [
+        ({}, "result_part"),
+        ({"result_part": "0"}, "not a part of a result"),
+        ({"result_part": "01"}, "not a part of a result"),
+        ({"result_part": "reason"}, "not a part of a result"),
+        ({"result_part": 1}, "not a part of a result"),
+    ],
+)
+def test_the_derived_artifact_rejects_an_item_that_asks_for_no_part_of_the_result(asked_for, problem):
+    grader = managed_artifact.load_grader(derive_artifact("outcome_consistency").code_text)
+
+    with pytest.raises(Exception, match=problem) as rejection:
+        grader({}, {**item_of(by_task({"task": [1, 1]})), **asked_for})
     assert type(rejection.value).__name__ == "EvidenceError"
 
 
 def transported(evidence):
-    """Evidence as it travels, written here by hand and not by the offering's encoder."""
-    payload = json.dumps(evidence)
-    return {"outcome_consistency_evidence": hashlib.sha256(payload.encode("utf-8")).hexdigest() + ":" + payload}
+    """An item asking for the plain value, with evidence written here by hand and not by the offering's encoder."""
+    return {"outcome_consistency_evidence": managed_artifact.packed(json.dumps(evidence)), "result_part": "value"}
 
 
 def one_task(*attempts_of_task):
-    return {"encoding": 1, "tasks": [{"task_id": "task", "attempts": list(attempts_of_task)}]}
+    return {"encoding": 2, "tasks": [{"task_id": "task", "attempts": list(attempts_of_task)}]}
 
 
 def attempt(number, **changed):
@@ -199,7 +315,7 @@ def test_the_derived_artifact_reads_evidence_that_arrives_intact():
         (one_task(attempt(1), attempt(2, execution_status="finished")), "not an execution status"),
         (one_task(attempt(1), attempt(2, unknown_evidence={"rating": "90"})), "unknown_evidence"),
         (one_task(attempt(1), {"attempt_id": "task/attempt-2", "task_id": "task"}), "recorded without"),
-        ({**one_task(attempt(1), attempt(2)), "encoding": 2}, "encoding"),
+        ({**one_task(attempt(1), attempt(2)), "encoding": 1}, "encoding"),
     ],
 )
 def test_the_derived_artifact_rejects_intact_evidence_that_the_evidence_model_does_not_accept(evidence, problem):
@@ -211,7 +327,9 @@ def test_the_derived_artifact_rejects_intact_evidence_that_the_evidence_model_do
 
 
 # What the Foundry code-evaluator sandbox accepted and refused when observed. See docs/managed_scoring/readme.md.
-SANDBOX_MODULES = {"__future__", "dataclasses", "enum", "fractions", "hashlib", "json", "math", "re", "typing"}
+SANDBOX_MODULES = {
+    "__future__", "base64", "dataclasses", "enum", "fractions", "hashlib", "json", "math", "re", "typing", "zlib",
+}
 # A call by one of these names is refused before the code runs, as a function and as a method: re.compile too.
 REFUSED_CALLS = {"compile", "eval", "exec", "globals", "__import__"}
 SANDBOX_PYTHON = (3, 12)

@@ -241,7 +241,7 @@ def test_a_live_prompt_agent_rates_each_attempt_in_a_follow_up_during_which_the_
     }
     expected = independent_predictability(list(pairs.values()))
     conversations = {
-        attempt_id: input_items(live, attempt["confidence"]["invocation"]["response_id"])
+        attempt_id: input_items(live, attempt["confidence_invocation"]["response_id"])
         for attempt_id, attempt in attempts.items()
         if attempt_id in pairs
     }
@@ -262,8 +262,8 @@ def test_a_live_prompt_agent_rates_each_attempt_in_a_follow_up_during_which_the_
                     "confidence": {key: attempt["confidence"][key] for key in ("rating", "original_response", "unavailable_reason")},
                     "attempt_response": attempt["invocation"]["response_id"],
                     "attempt_tool_calls": len(attempt["invocation"]["tool_calls"]),
-                    "follow_up": attempt["confidence"]["invocation"] and {
-                        key: attempt["confidence"]["invocation"][key]
+                    "follow_up": attempt["confidence_invocation"] and {
+                        key: attempt["confidence_invocation"][key]
                         for key in (
                             "response_id", "previous_response_id", "tool_choice", "tool_calls", "agent", "status",
                             "http_status", "token_usage", "request_ids", "served_model", "metadata",
@@ -286,7 +286,7 @@ def test_a_live_prompt_agent_rates_each_attempt_in_a_follow_up_during_which_the_
     # The agent was asked once for every Attempt, and every question was answered with a rating.
     assert set(watching.around_follow_up) == set(attempts) == set(pairs)
     for attempt_id, attempt in attempts.items():
-        invocation, follow_up = attempt["invocation"], attempt["confidence"]["invocation"]
+        invocation, follow_up = attempt["invocation"], attempt["confidence_invocation"]
         # No tool call and no state change during the follow-up: the service recorded the same before and after.
         before, after = watching.around_follow_up[attempt_id]
         assert before["events"] and after == before
@@ -414,7 +414,7 @@ def test_a_live_prompt_agent_whose_definition_specifies_a_tool_choice_is_refused
                 "attempt_id": attempt["attempt_id"],
                 "execution_status": attempt["execution_status"],
                 "confidence": {key: attempt["confidence"][key] for key in ("rating", "unavailable_reason")},
-                "follow_up_http_status": (attempt["confidence"]["invocation"] or {}).get("http_status"),
+                "follow_up_http_status": (attempt["confidence_invocation"] or {}).get("http_status"),
                 "service_calls_before_and_after_follow_up": [
                     len(evidence["events"]) for evidence in watching.around_follow_up.get(attempt["attempt_id"], ())
                 ],
@@ -434,7 +434,8 @@ def test_a_live_prompt_agent_whose_definition_specifies_a_tool_choice_is_refused
             "the confidence request failed: InvocationFailed: the Foundry project answered HTTP 400: invalid_payload: "
             "ToolChoice must match the agent's tool_choice when agent specifies tool_choice."
         )
-        assert confidence["invocation"]["http_status"] == 400 and confidence["invocation"]["response_id"] is None
+        refused = attempt["confidence_invocation"]
+        assert refused["http_status"] == 400 and refused["response_id"] is None
         # The project refused the request before the agent ran: the service recorded nothing.
         before, after = watching.around_follow_up[attempt["attempt_id"]]
         assert before["events"] and after == before
@@ -504,8 +505,8 @@ def test_a_live_hosted_agent_is_not_asked_and_a_rating_in_its_task_response_is_n
                 "decides what it does with a request, so a caller cannot ensure that the agent does not act while "
                 "it answers a follow-up"
             ),
-            "invocation": None,
         }
+        assert attempt["confidence_invocation"] is None
         # The agent did put a rating in its task response, so there was one that could have been used.
         assert "CONFIDENCE=" in watching.answers[attempt["attempt_id"]]
     assert watching.around_follow_up == {}

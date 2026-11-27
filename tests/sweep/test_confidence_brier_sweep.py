@@ -89,7 +89,6 @@ def test_every_raw_pair_is_in_the_scorecard_with_the_rating_as_written_and_the_s
         "normalized": 0.875,
         "original_response": "87.50",
         "unavailable_reason": None,
-        "invocation": None,
     }
     assert second["task_outcome"] == {"success": False, "source": SOURCE}
     assert second["confidence"] == {
@@ -97,7 +96,6 @@ def test_every_raw_pair_is_in_the_scorecard_with_the_rating_as_written_and_the_s
         "normalized": 0.125,
         "original_response": "12.5",
         "unavailable_reason": None,
-        "invocation": None,
     }
     brier = metric(scorecard)
     assert brier["value"] == 0.984375
@@ -159,7 +157,6 @@ def test_an_answer_that_is_one_number_from_0_to_100_is_accepted_and_normalized_t
         "normalized": normalized,
         "original_response": response,
         "unavailable_reason": None,
-        "invocation": None,
     }
     assert metric(scorecard)["state"] == "available"
 
@@ -192,7 +189,6 @@ def test_a_missing_unreadable_ambiguous_or_out_of_range_rating_is_unavailable_wi
         "normalized": None,
         "original_response": response,
         "unavailable_reason": reason,
-        "invocation": None,
     }
     brier = metric(scorecard)
     assert brier["state"] == "unavailable"
@@ -216,7 +212,6 @@ def unavailable(reason, original_response=None):
         "normalized": None,
         "original_response": original_response,
         "unavailable_reason": reason,
-        "invocation": None,
     }
 
 

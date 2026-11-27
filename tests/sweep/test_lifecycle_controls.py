@@ -619,7 +619,6 @@ NOT_ASKED = {
     "normalized": None,
     "original_response": None,
     "unavailable_reason": "the Attempt did not complete, so no confidence request was sent",
-    "invocation": None,
 }
 
 

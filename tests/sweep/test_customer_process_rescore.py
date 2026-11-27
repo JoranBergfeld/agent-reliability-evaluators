@@ -27,6 +27,7 @@ from reliability_evaluators.sweep import (
 )
 from tests.fake_foundry import FakeFoundryProject
 from tests.fakes import FakeAgentTarget
+from tests.managed_artifact import altered_evidence
 from tests.report_reader import assert_faithful_rendering
 
 SOURCE = "final state of the fake service"
@@ -68,8 +69,12 @@ def metric(scorecard, metric_id="outcome_consistency"):
 
 def one_outcome_flipped(item):
     """What a project that altered the submitted evidence would hand the evaluator, which then raises."""
-    (field, text), = item.items()
-    return {field: text.replace('"success":true', '"success":false', 1)}
+    return altered_evidence(item, '"success":true', '"success":false')
+
+
+def as_the_plain_value(number):
+    """Foundry returns that number as the plain value of the metric, and the rest of the result as the evaluator did."""
+    return lambda score, item: number if item["result_part"] == "value" else score
 
 
 def failing():
@@ -110,7 +115,7 @@ def test_the_managed_failure_is_retained_beside_the_rescore_and_the_scorecard_st
 
 def test_an_unverified_managed_value_and_its_limitation_are_retained_beside_the_rescore():
     # The project returns 0.25. This process calculates 0.68 from the same evidence. Both are reported.
-    earlier = sweep(TWO_TASKS, FakeFoundryProject(alter_score=lambda score: 0.25))
+    earlier = sweep(TWO_TASKS, FakeFoundryProject(alter_score=as_the_plain_value(0.25)))
 
     rescored = rescore_in_customer_process(earlier_scorecard=earlier, metrics=["outcome_consistency"])
 
@@ -181,7 +186,7 @@ def test_acceptance_is_assessed_on_the_rescore_apart_from_the_managed_result_whi
     # The project returns 0.9, which would meet the criterion. It is unverified, so it is not assessed.
     # The rescore is 0.68, which is at least 0.5, and is assessed as its own result.
     earlier = sweep(
-        TWO_TASKS, FakeFoundryProject(alter_score=lambda score: 0.9), acceptance_criteria=[AT_LEAST_HALF]
+        TWO_TASKS, FakeFoundryProject(alter_score=as_the_plain_value(0.9)), acceptance_criteria=[AT_LEAST_HALF]
     )
 
     rescored = rescore_in_customer_process(
@@ -223,9 +228,9 @@ def test_a_rescore_without_a_criterion_has_no_acceptance_assessment():
     assert metric(rescored)["customer_process_rescore"]["acceptance"] is None
 
 
-def test_an_unavailable_measurement_in_this_process_is_reported_as_one_beside_the_managed_failure():
-    # One Attempt at each Task. The managed evaluator raises, so the managed run fails. In this
-    # process the Evaluator says what it found: no Task has two Attempts with a task outcome.
+def test_an_unavailable_measurement_in_this_process_is_reported_as_one_beside_the_managed_one():
+    # One Attempt at each Task. The Evaluator says what it found, in Foundry and in this process:
+    # no Task has two Attempts with a task outcome.
     earlier = sweep({"close": ["success"], "archive": ["failure"]}, FakeFoundryProject())
 
     rescored = rescore_in_customer_process(earlier_scorecard=earlier, metrics=["outcome_consistency"])
@@ -234,11 +239,14 @@ def test_an_unavailable_measurement_in_this_process_is_reported_as_one_beside_th
     assert rescore["state"] == "unavailable"
     assert rescore["value"] is None
     assert rescore["reason"] == "no Task has at least two Attempts with a task outcome"
-    assert metric(rescored)["state"] is None
+    assert rescore["scoring_path"] == "customer_process"
+    assert (metric(rescored)["state"], metric(rescored)["reason"]) == ("unavailable", rescore["reason"])
+    assert metric(rescored)["scoring_path"] == "foundry_managed"
+    assert metric(rescored)["counts"] == rescore["counts"]
 
 
 def test_a_rescore_of_attempts_that_were_cut_short_has_an_execution_failure_as_in_a_sweep():
-    # Every invocation fails, so no Attempt completed. The managed run fails, and so does the calculation here.
+    # Every invocation fails, so no Attempt completed. Too little was collected for a calculation, in Foundry and here.
     earlier = sweep({"close": ["error", "error"]}, FakeFoundryProject())
 
     rescore = metric(rescore_in_customer_process(earlier_scorecard=earlier, metrics=["outcome_consistency"]))[
@@ -278,8 +286,7 @@ BOTH_MANAGED = [MANAGED, ConfiguredEvaluator(metric_id="resource_consistency", s
 def test_only_the_metrics_the_customer_names_are_rescored(resource_consistency_has_a_managed_evaluator):
     # Both managed runs fail: every Evaluator is handed altered evidence.
     def altered(item):
-        (field, text), = item.items()
-        return {field: text.replace('"task_id":"close"', '"task_id":"other"', 1)}
+        return altered_evidence(item, '"task_id":"close"', '"task_id":"other"')
 
     earlier = sweep(MEASURED, FakeFoundryProject(alter_item=altered), metrics=BOTH_MANAGED, resources=RESOURCES)
 

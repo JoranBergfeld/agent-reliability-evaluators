@@ -388,7 +388,6 @@ def test_a_hosted_agent_is_not_asked_for_a_confidence_rating(project, setup):
             "what it does with a request, so a caller cannot ensure that the agent does not act while it answers "
             "a follow-up"
         ),
-        "invocation": None,
     }
     # The one request the agent received was the Attempt itself.
     assert len(project.agents["todo-hosted"].invocations) == 1

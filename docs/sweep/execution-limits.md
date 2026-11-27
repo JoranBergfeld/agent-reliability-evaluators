@@ -155,7 +155,7 @@ Without the declaration it records `"mode": "sequential"` and `"max_concurrent_a
 | `kind` | What is missing | Fields |
 | --- | --- | --- |
 | `attempt_evidence` | Planned Attempts that were not made or did not complete. | `experiment_id` (`null` for a Task given without an experiment), `task_id` and `attempt_set`; `status` and `reason` of the execution, as below; `attempts_not_made`; `attempts_not_completed`, with each Attempt's execution status and error |
-| `metric_result` | The result of a selected metric. | `metric_id`, `reason`, `experiment_ids`, `task_ids`. Both lists are empty when it is [Foundry-managed scoring that gave no result](../managed_scoring/readme.md#when-managed-scoring-gives-no-value), and not the Attempts that were cut short |
+| `metric_result` | The result of a selected metric. | `metric_id`, `reason`, `experiment_ids`, `task_ids`. Both lists are empty when it is [Foundry-managed scoring that gave no result](../managed_scoring/readme.md#when-managed-scoring-gives-no-result), and not the Attempts that were cut short |
 
 A metric that is an unavailable measurement is a result. It does not make a scorecard partial.
 
@@ -236,7 +236,7 @@ Both lists are empty when none were. A metric that is `available` with a `cut_sh
 | `state` is `available` | A value was calculated. In a partial scorecard, read its `counts` to see what it rests on. | |
 | `state` is `unavailable` | The Evaluator found too little to calculate from, in evidence that was not cut short. In a partial scorecard its `counts` name the Attempts it left out. | Collect more evidence. |
 | `state` is `null` and `execution_failure` is set | The Attempts were cut short. Nothing was measured. | Investigate the failure. |
-| `state` is `null`, `execution_failure` is set and `managed_scoring.error` is set | [Foundry-managed scoring gave no result](../managed_scoring/readme.md#when-managed-scoring-gives-no-value). Nothing was measured, and the metric was not scored in your own process instead. | Investigate the failure. You can ask for a [customer-process rescore](../managed_scoring/readme.md#a-customer-process-rescore). |
+| `state` is `null`, `execution_failure` is set and `managed_scoring.error` is set | [Foundry-managed scoring gave no result](../managed_scoring/readme.md#when-managed-scoring-gives-no-result). Nothing was measured, and the metric was not scored in your own process instead. | Investigate the failure. You can ask for a [customer-process rescore](../managed_scoring/readme.md#a-customer-process-rescore). |
 
 `execution_failure` is `null` on every metric that has a result. The same failure is listed in `missing` with the kind `metric_result`.
 

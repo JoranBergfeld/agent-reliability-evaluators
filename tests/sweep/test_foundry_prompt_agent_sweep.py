@@ -325,6 +325,35 @@ def test_a_tool_fault_that_fails_the_invocation_is_an_execution_failure_and_not_
     assert outcome_consistency["evidence"] == {"attempt_ids": ["todo/baseline/attempt-1", "todo/baseline/attempt-2"]}
 
 
+def test_the_usage_the_project_returned_is_reported_per_attempt_and_a_refused_invocation_has_none(todo_service):
+    # Each baseline Attempt makes five tool calls, for which the fake project reports 670 tokens.
+    # Under the fault the project answers HTTP 400 with no response and no usage, as observed live.
+    # Known: 670 + 670 = 1340 tokens, a partial sum.
+    scorecard = sweep(todo_service, ["completes"] * 4, attempts=2, variation=UPDATE_FAILS)
+
+    usage_reported = scorecard["token_usage"]
+    assert [
+        (entry["attempt_id"], entry["execution_status"], entry["invocation"]["basis"], entry["total_tokens"])
+        for entry in usage_reported["attempts"]
+    ] == [
+        ("todo/baseline/attempt-1", "completed", "reported", 670),
+        ("todo/baseline/attempt-2", "completed", "reported", 670),
+        ("todo/update-fails/attempt-1", "failed", "missing", None),
+        ("todo/update-fails/attempt-2", "failed", "missing", None),
+    ]
+    assert usage_reported["attempts"][0]["invocation"]["response_id"] == "resp_fake_1"
+    # The refused request is still identified, so that what it used can be looked up on the platform.
+    assert usage_reported["attempts"][2]["invocation"] == {
+        "basis": "missing",
+        "total_tokens": None,
+        "reason": NO_RESPONSE,
+        "response_id": None,
+        "request_ids": {"x-request-id": "req_fake_3", "apim-request-id": "apim_fake_3"},
+    }
+    assert (usage_reported["sweep"]["coverage"], usage_reported["sweep"]["total_tokens"]) == ("partial", 1340)
+    assert usage_reported["sweep"]["uses_missing"] == 2
+
+
 def test_a_response_that_was_delivered_but_did_not_complete_is_an_execution_failure(todo_service):
     # The second response arrives with HTTP 200 and the status failed, after one tool call.
     # Two Attempts complete the Task: p = 2/2, value 1. As a task failure it would be (2 * 2/3 - 1)^2 = 0.111...
@@ -448,7 +477,7 @@ def test_a_prompt_agent_is_asked_for_its_confidence_after_each_attempt_and_the_b
     assert brier_based_score["value"] == pytest.approx(0.88, abs=1e-12)
 
 
-def test_the_confidence_evidence_keeps_what_the_platform_returned_for_the_follow_up(todo_service):
+def test_each_attempt_keeps_what_the_platform_returned_for_its_follow_up(todo_service):
     scorecard = sweep(
         todo_service, ["completes", "completes"], metrics=["brier_based_score"], project={"confidence": ["87.50", "100"]}
     )
@@ -460,33 +489,33 @@ def test_the_confidence_evidence_keeps_what_the_platform_returned_for_the_follow
         "normalized": 0.875,
         "original_response": "87.50",
         "unavailable_reason": None,
-        "invocation": {
-            "agent_target": "foundry_prompt_agent",
-            "protocol": "responses",
-            "api_version": "v1",
-            # The question as the agent was sent it: the success rule, and nothing about the outcome.
-            "input": QUESTION,
-            "http_status": 200,
-            "request_ids": {"x-request-id": "req_fake_2", "apim-request-id": "apim_fake_2"},
-            "agent": {"type": "agent_reference", "name": "todo-prompt", "version": "2"},
-            "response_id": "resp_fake_2",
-            # The project says which response the follow-up continued and which tool choice it applied.
-            "previous_response_id": "resp_fake_1",
-            "tool_choice": "none",
-            "status": "completed",
-            "model": "todo-gpt-41-mini",
-            "served_model": "gpt-4.1-mini-2025-04-14",
-            "metadata": {"attempt_id": "todo/baseline/attempt-1", "task_id": "todo", "request": "confidence"},
-            "error": None,
-            "token_usage": usage(800, 2),
-            "token_usage_missing": None,
-            "tool_calls": [],
-        },
+    }
+    assert first["confidence_invocation"] == {
+        "agent_target": "foundry_prompt_agent",
+        "protocol": "responses",
+        "api_version": "v1",
+        # The question as the agent was sent it: the success rule, and nothing about the outcome.
+        "input": QUESTION,
+        "http_status": 200,
+        "request_ids": {"x-request-id": "req_fake_2", "apim-request-id": "apim_fake_2"},
+        "agent": {"type": "agent_reference", "name": "todo-prompt", "version": "2"},
+        "response_id": "resp_fake_2",
+        # The project says which response the follow-up continued and which tool choice it applied.
+        "previous_response_id": "resp_fake_1",
+        "tool_choice": "none",
+        "status": "completed",
+        "model": "todo-gpt-41-mini",
+        "served_model": "gpt-4.1-mini-2025-04-14",
+        "metadata": {"attempt_id": "todo/baseline/attempt-1", "task_id": "todo", "request": "confidence"},
+        "error": None,
+        "token_usage": usage(800, 2),
+        "token_usage_missing": None,
+        "tool_calls": [],
     }
     # The second Attempt is a response of its own, and its follow-up continued that one.
     assert second["invocation"]["response_id"] == "resp_fake_3"
-    assert second["confidence"]["invocation"]["previous_response_id"] == "resp_fake_3"
-    assert second["confidence"]["invocation"]["response_id"] == "resp_fake_4"
+    assert second["confidence_invocation"]["previous_response_id"] == "resp_fake_3"
+    assert second["confidence_invocation"]["response_id"] == "resp_fake_4"
     assert second["confidence"]["rating"] == "100"
 
 
@@ -503,13 +532,36 @@ def test_an_agent_that_calls_a_tool_whenever_it_can_calls_none_while_it_is_asked
 
     (attempt,) = scorecard["attempts"]
     assert attempt["confidence"]["rating"] == "70"
-    assert attempt["confidence"]["invocation"]["tool_choice"] == "none"
-    assert attempt["confidence"]["invocation"]["tool_calls"] == []
+    assert attempt["confidence_invocation"]["tool_choice"] == "none"
+    assert attempt["confidence_invocation"]["tool_calls"] == []
     # The service received the five calls of the Attempt and none after them.
     during_the_attempt = fixture.service_evidence[attempt["attempt_id"]]["events"]
     after_the_follow_up = fixture.service_evidence_at_clean_up[attempt["attempt_id"]]["events"]
     assert len(during_the_attempt) == 5
     assert after_the_follow_up == during_the_attempt
+
+
+def test_the_usage_of_the_follow_up_is_reported_with_its_attempt(todo_service):
+    # The fake project reports 670 tokens for an Attempt of five tool calls and 802 for a follow-up.
+    # Per Attempt 670 + 802 = 1472, and for the sweep 2 * 1472 = 2944.
+    scorecard = sweep(todo_service, ["completes", "completes"], metrics=["brier_based_score"])
+
+    usage_reported = scorecard["token_usage"]
+    assert [
+        (
+            entry["attempt_id"],
+            entry["invocation"]["total_tokens"],
+            entry["confidence_follow_up"]["basis"],
+            entry["confidence_follow_up"]["total_tokens"],
+            entry["confidence_follow_up"]["response_id"],
+            entry["total_tokens"],
+        )
+        for entry in usage_reported["attempts"]
+    ] == [
+        ("todo/baseline/attempt-1", 670, "reported", 802, "resp_fake_2", 1472),
+        ("todo/baseline/attempt-2", 670, "reported", 802, "resp_fake_4", 1472),
+    ]
+    assert (usage_reported["sweep"]["coverage"], usage_reported["sweep"]["total_tokens"]) == ("complete", 2944)
 
 
 def test_the_evidence_of_the_follow_up_is_kept_when_the_scorecard_is_recalculated(todo_service):
@@ -539,10 +591,10 @@ def test_the_evidence_of_the_follow_up_is_kept_when_the_scorecard_is_recalculate
     )
 
     assert metric(recalculated, "brier_based_score")["value"] == pytest.approx(0.8, abs=1e-12)
-    assert [attempt["confidence"] for attempt in recalculated["attempts"]] == [
-        attempt["confidence"] for attempt in earlier["attempts"]
+    assert [(attempt["confidence"], attempt["confidence_invocation"]) for attempt in recalculated["attempts"]] == [
+        (attempt["confidence"], attempt["confidence_invocation"]) for attempt in earlier["attempts"]
     ]
-    assert recalculated["attempts"][1]["confidence"]["invocation"]["response_id"] == "resp_fake_4"
+    assert recalculated["attempts"][1]["confidence_invocation"]["response_id"] == "resp_fake_4"
 
 
 def no_rating(scorecard):
@@ -570,7 +622,7 @@ def test_the_answer_to_a_follow_up_in_which_the_agent_called_a_tool_is_not_used(
         "(todos_readTodo). The follow-up was not isolated, so its answer is not used"
     )
     # What the agent did stays in the evidence.
-    recorded = scorecard["attempts"][0]["confidence"]["invocation"]
+    recorded = scorecard["attempts"][0]["confidence_invocation"]
     assert recorded["response_id"] == "resp_fake_2"
     assert [call["name"] for call in recorded["tool_calls"]] == ["todos_readTodo"]
 
@@ -615,9 +667,12 @@ def test_an_agent_whose_definition_specifies_a_tool_choice_is_not_run_and_gives_
         "the confidence request failed: InvocationFailed: the Foundry project answered HTTP 400: invalid_payload: "
         "ToolChoice must match the agent's tool_choice when agent specifies tool_choice. [Request ID: req_fake_2]"
     )
-    recorded = scorecard["attempts"][0]["confidence"]["invocation"]
+    recorded = scorecard["attempts"][0]["confidence_invocation"]
     assert (recorded["http_status"], recorded["response_id"], recorded["tool_calls"]) == (400, None, None)
     assert recorded["request_ids"] == {"x-request-id": "req_fake_2", "apim-request-id": "apim_fake_2"}
+    # The refused request used nothing that the project reported, and the usage report says so.
+    follow_up = scorecard["token_usage"]["attempts"][0]["confidence_follow_up"]
+    assert (follow_up["basis"], follow_up["total_tokens"], follow_up["reason"]) == ("missing", None, NO_RESPONSE)
 
 
 def test_a_follow_up_response_that_did_not_complete_gives_no_rating(todo_service):

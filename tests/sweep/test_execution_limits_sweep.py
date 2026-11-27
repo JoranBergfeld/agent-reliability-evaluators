@@ -627,7 +627,6 @@ NOT_ASKED = {
     "normalized": None,
     "original_response": None,
     "unavailable_reason": "the Attempt did not complete, so no confidence request was sent",
-    "invocation": None,
 }
 
 
@@ -673,7 +672,6 @@ def test_no_confidence_request_is_sent_once_the_sweep_was_cancelled():
     assert in_flight["confidence"] == {
         **NOT_ASKED,
         "unavailable_reason": "the sweep was cancelled, so no confidence request was sent",
-        "invocation": None,
     }
 
 
@@ -681,7 +679,7 @@ def test_a_sweep_that_stops_early_delivers_its_partial_scorecard_and_is_not_a_re
     # The caller cancels while the second Attempt is in flight, so the third is not made.
     scorecard = sweep({"close": ["success", cancelling("failure"), "success"]}, artifact_dir=tmp_path)
 
-    assert sorted(path.name for path in tmp_path.iterdir()) == ["evidence.json", "report.html", "scorecard.json"]
+    assert sorted(path.name for path in tmp_path.iterdir()) == ["evidence.json", "report.html", "scorecard.json", "summary.md"]
     delivered = json.loads((tmp_path / "scorecard.json").read_text(encoding="utf-8"))
     assert delivered == scorecard
     assert delivered["status"] == "partial"
