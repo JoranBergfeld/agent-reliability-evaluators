@@ -11,6 +11,7 @@ on this machine, as the other live checks of managed scoring do, so that only th
 What Foundry holds for a managed run is read back from the project as the signed-in identity.
 """
 
+import base64
 import hashlib
 import json
 import os
@@ -20,6 +21,7 @@ import time
 import urllib.error
 import urllib.request
 import uuid
+import zlib
 
 import pytest
 
@@ -113,8 +115,10 @@ def sweep_the_hosted_agent(live, metrics, location, managed_scoring=None):
     )
 
 
-def sweep_the_scripted_agent(managed_scoring, monkeypatch, location, agent=ScriptedTodoAgent, metrics=(MANAGED,)):
-    """Eight synthetic Attempts on the to-do service on this machine, scored in the live project."""
+def sweep_the_scripted_agent(
+    managed_scoring, monkeypatch, location, agent=ScriptedTodoAgent, metrics=(MANAGED,), script=SCRIPT
+):
+    """Synthetic Attempts on the to-do service on this machine, eight unless scripted otherwise, scored in the live project."""
     with local_service() as service:
         monkeypatch.setenv("TODO_SERVICE_URL", service.url)
         monkeypatch.setenv("TODO_API_KEY", service.api_key)
@@ -125,11 +129,11 @@ def sweep_the_scripted_agent(managed_scoring, monkeypatch, location, agent=Scrip
 
         tasks = [
             Task(task_id=task_id, prompt=TASK_PROMPT, success_rule=strict_success, attempts=len(behaviours))
-            for task_id, behaviours in SCRIPT.items()
+            for task_id, behaviours in script.items()
         ]
         return run_sweep(
             tasks=tasks,
-            agent_target=agent(service, SCRIPT),
+            agent_target=agent(service, script),
             metrics=metrics,
             managed_scoring=managed_scoring,
             artifact_dir=location,
@@ -184,17 +188,25 @@ def outcome_consistency_of(attempts, attempt_ids):
     return sum(per_task) / len(per_task)
 
 
-def run_path(managed_scoring):
-    return f"/openai/v1/evals/{managed_scoring['eval_id']}/runs/{managed_scoring['run_id']}"
+def run_path(managed_scoring, run_id=None):
+    """The run that returned the plain value, or another run of the same evaluation."""
+    return f"/openai/v1/evals/{managed_scoring['eval_id']}/runs/{run_id or managed_scoring['run_id']}"
 
 
 def submitted_evidence(run):
-    """The evidence item a managed run was made with, as the run itself still holds it."""
-    (row,) = run["data_source"]["source"]["content"]
-    assert list(row["item"]) == [EVIDENCE_FIELD]
-    digest, _, payload = row["item"][EVIDENCE_FIELD].partition(":")
+    """What a managed run was made with, as the run itself still holds it.
+
+    Every row carries the same evidence, deflated and written in base64 behind its digest, and
+    names the part of the result it asks for. Returns the digest, the Attempts and the parts.
+    """
+    rows = [row["item"] for row in run["data_source"]["source"]["content"]]
+    assert all(sorted(row) == [EVIDENCE_FIELD, "result_part"] for row in rows)
+    (encoded,) = {row[EVIDENCE_FIELD] for row in rows}
+    digest, _, packed = encoded.partition(":")
+    payload = zlib.decompress(base64.b64decode(packed), -15).decode("utf-8")
     assert digest == sha256(payload)
-    return digest, [attempt for task in json.loads(payload)["tasks"] for attempt in task["attempts"]]
+    attempts = [attempt for task in json.loads(payload)["tasks"] for attempt in task["attempts"]]
+    return digest, attempts, [row["result_part"] for row in rows]
 
 
 def output_items(project, managed_scoring):
@@ -277,13 +289,17 @@ def test_a_foundry_managed_run_delivers_the_same_files_and_foundry_holds_only_wh
     outcome_consistency = metric(delivered)
     managed_scoring = outcome_consistency["managed_scoring"]
     run = project.request("GET", run_path(managed_scoring))
-    digest, held = submitted_evidence(run)
+    digest, held, parts = submitted_evidence(run)
     items = output_items(project, managed_scoring)
+    encoded_result = managed_scoring["encoded_result"]
+    later_runs = [project.request("GET", run_path(managed_scoring, run_id)) for run_id in encoded_result["run_ids"]]
     without_token = answered_without_the_customers_token(live, run_path(managed_scoring))
     print(json.dumps({"foundry_managed_run": {
         "status": delivered["status"],
         "outcome_consistency": {key: outcome_consistency[key] for key in ("state", "value", "scoring_path", "fidelity")},
         "foundry_run": {key: run.get(key) for key in ("status", "metadata", "result_counts")},
+        "encoded_result": encoded_result | {"run_ids": len(encoded_result["run_ids"])},
+        "rows_of_the_later_runs": [len(later["data_source"]["source"]["content"]) for later in later_runs],
         "fields_foundry_holds_of_an_attempt": sorted(key for key, value in held[0].items() if value not in (None, [], {})),
         "read_without_the_customers_token": without_token,
     }}))
@@ -298,15 +314,20 @@ def test_a_foundry_managed_run_delivers_the_same_files_and_foundry_holds_only_wh
     # The value Foundry returned is the one the delivered evidence gives, calculated here. One comparison, not a fidelity rule.
     used = outcome_consistency["attempts_used"]["attempt_ids"]
     assert outcome_consistency["value"] == pytest.approx(outcome_consistency_of(evidence["attempts"], used), abs=1e-12)
-    # The scorecard leads to the run, and the run holds the number and the evidence it was sent.
+    # The scorecard leads to the runs, and they hold the number and the evidence they were sent.
     assert run["status"] == "completed"
+    assert parts == ["value", "size"]
     assert digest == managed_scoring["evidence_sha256"]
     assert [attempt["attempt_id"] for attempt in held] == used
-    (item,) = items
-    assert item["id"] == managed_scoring["output_item_id"]
+    (item,) = [item for item in items if item["id"] == managed_scoring["output_item_id"]]
+    assert item["datasource_item"]["result_part"] == "value"
     assert item["datasource_item"][EVIDENCE_FIELD].partition(":")[0] == digest
     (result,) = item["results"]
     assert result["score"] == outcome_consistency["value"]
+    # The rest of the result came back in parts, from runs of the same evaluation that were sent the same evidence.
+    assert later_runs and all(later["status"] == "completed" for later in later_runs)
+    assert all(submitted_evidence(later)[0] == digest for later in later_runs)
+    assert submitted_evidence(later_runs[0])[2] == [str(part) for part in range(1, encoded_result["parts"] + 1)]
     # Foundry was sent the task outcomes and nothing else of the Attempts. The rest is at the location only.
     at_location = {attempt["attempt_id"]: attempt for attempt in evidence["attempts"]}
     for attempt in held:
@@ -381,7 +402,7 @@ def test_a_managed_run_that_fails_delivers_a_scorecard_marked_partial_and_foundr
     outcome_consistency = metric(delivered)
     managed_scoring = outcome_consistency["managed_scoring"]
     run = project.request("GET", run_path(managed_scoring))
-    digest, held = submitted_evidence(run)
+    digest, held, _ = submitted_evidence(run)
     eval_path = f"/openai/v1/evals/{managed_scoring['eval_id']}"
     project.request("POST", eval_path, {"metadata": {"reliability_scorecard": PUBLISHED_AT}})
     print(json.dumps({"failed_managed_run": {
@@ -407,6 +428,39 @@ def test_a_managed_run_that_fails_delivers_a_scorecard_marked_partial_and_foundr
     assert [attempt["attempt_id"] for attempt in held] == [attempt["attempt_id"] for attempt in evidence["attempts"]]
     # A reference can be left on the eval of a failed run as well.
     assert project.request("GET", eval_path)["metadata"]["reliability_scorecard"] == PUBLISHED_AT
+
+
+def test_an_unavailable_measurement_that_foundry_returned_is_delivered_as_one_in_both_formats(
+    project, monkeypatch, tmp_path
+):
+    # One Attempt at each Task: no Task has two, so outcome consistency cannot be calculated from this evidence.
+    scorecard = sweep_the_scripted_agent(
+        FoundryManagedScoring(project=project), monkeypatch, tmp_path, script={"close": ["success"], "archive": ["failure"]}
+    )
+
+    delivered, report, evidence = delivered_to(tmp_path, scorecard)
+    outcome_consistency = metric(delivered)
+    print(json.dumps({"managed_unavailable_measurement": {
+        "status": delivered["status"],
+        "outcome_consistency": {
+            key: outcome_consistency[key] for key in ("state", "value", "reason", "counts", "scoring_path", "fidelity")
+        },
+    }}))
+    # An evidence limit that shows at evaluation time, on the managed path: an unavailable measurement with its
+    # reason and counts, and not a failed run, a missing result or a number.
+    assert (delivered["status"], delivered["missing"]) == ("complete", [])
+    assert (outcome_consistency["state"], outcome_consistency["value"]) == ("unavailable", None)
+    assert outcome_consistency["reason"] == "no Task has at least two Attempts with a task outcome"
+    tasks = outcome_consistency["counts"]["tasks"]
+    assert (tasks["total"], tasks["valid"]) == (2, 0)
+    assert [(excluded["count"], excluded["ids"]) for excluded in tasks["excluded"]] == [(2, ["close", "archive"])]
+    assert (outcome_consistency["scoring_path"], outcome_consistency["fidelity"]) == ("foundry_managed", "unverified")
+    position = position_of(delivered, "outcome_consistency")
+    assert report.value(f"/metrics/{position}/state") == "unavailable"
+    assert report.value(f"/metrics/{position}/value") == "\N{EM DASH}"
+    assert report.value(f"/metrics/{position}/reason") == outcome_consistency["reason"]
+    assert "Unavailable measurement" in report.article_wording[f"metric-{position}"]
+    assert [attempt["task_outcome"]["success"] for attempt in evidence["attempts"]] == [True, False]
 
 
 def test_a_managed_run_that_does_not_end_in_time_delivers_a_scorecard_marked_partial(project, monkeypatch, tmp_path):
