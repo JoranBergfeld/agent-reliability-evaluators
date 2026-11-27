@@ -25,6 +25,7 @@ from ..evidence import (
     VariationKind,
     ViolationAssessment,
 )
+from ..managed_scoring import FoundryManagedScoring, has_managed_evaluator
 from ..scorecard import (
     AcceptanceCriterion,
     ArtifactLocation,
@@ -57,12 +58,22 @@ def run_sweep(
     cancellation: Callable[[], bool] | None = None,
     clock: Callable[[], float] = perf_counter,
     artifact_dir: str | os.PathLike[str] | None = None,
+    managed_scoring: FoundryManagedScoring | None = None,
 ) -> dict[str, Any]:
     """Make the declared Attempts, score the selected metrics, and return the scorecard.
 
     `metrics` selects the reliability metrics to score, each by its metric identity or as
-    a ConfiguredEvaluator with declarations of its own. Scoring happens in this process.
+    a ConfiguredEvaluator with declarations of its own. Scoring happens in this process
+    unless an Evaluator is configured for Foundry-managed scoring.
     The result is the machine-readable reliability scorecard, as JSON-compatible data.
+
+    `managed_scoring` is the customer's Foundry project, for the Evaluators configured with
+    the scoring path "foundry_managed". Their derived evaluators are registered in that
+    project before any Attempt is made, and after the Attempts the project calculates their
+    values from the grouped evidence. A value it returns is reported as Foundry returned it,
+    attributed to that scoring path, as an unverified result. When the project returns no
+    value the sweep stops with ManagedScoringFailure. It never scores such an Evaluator in
+    this process instead.
 
     `experiments` are controlled experiments: the sweep invokes their customer controls
     around every Attempt and follows their starting-state policy. `tasks` are Tasks given
@@ -150,6 +161,7 @@ def run_sweep(
             max_concurrent_attempts=max_concurrent_attempts,
             cancellation=cancellation,
             clock=clock,
+            managed_scoring=managed_scoring,
         )
     except Exception as error:
         if location is None:
@@ -176,6 +188,7 @@ def _sweep(
     max_concurrent_attempts: int,
     cancellation: Callable[[], bool] | None,
     clock: Callable[[], float],
+    managed_scoring: FoundryManagedScoring | None,
 ) -> dict[str, Any]:
     """Make the Attempts and score them. Each Attempt is added to `attempts` as it is made,
     so that `run_sweep` still has the evidence if this stops.
@@ -190,6 +203,11 @@ def _sweep(
     if type(max_concurrent_attempts) is not int or max_concurrent_attempts < 1:
         raise ValueError(f"max_concurrent_attempts is a whole number, 1 or more, got {max_concurrent_attempts!r}")
     cancelled = Cancellation(cancellation)
+    managed = [evaluator.metric_id for evaluator in selected if evaluator.scoring_path is ScoringPath.FOUNDRY_MANAGED]
+    _require_managed_scoring(managed, managed_scoring)
+    if managed:
+        # Before any Attempt, so that a project that cannot be used costs no Attempts.
+        managed_scoring.register(managed)
     # With no Evaluator selected the planned Attempts are still made, once.
     sharing = share_attempts((evaluator, evaluator.requirements()) for evaluator in selected) or [SharedAttempts()]
     planned = [_plan(tasks, experiments, set_number) for set_number in range(1, len(sharing) + 1)]
@@ -237,20 +255,54 @@ def _sweep(
             set_number,
         )
         made.append((attempts[first:], executions))
+    # Each Evaluator with the evidence it is calculated from and where its Attempts were cut short.
+    to_score = [
+        (
+            evaluator,
+            evaluator.evidence(attempts_of_set, executions),
+            CutShort.of(
+                execution.record
+                for execution in executions
+                if execution.cut_short_for(evaluator.evaluator.compares_variation)
+            ),
+        )
+        for shared, (attempts_of_set, executions) in zip(sharing, made)
+        for evaluator in shared.members
+    ]
+    # One managed run scores every Evaluator on that path. Its failure stops the sweep here.
+    returned = (
+        managed_scoring.score(
+            {evaluator.metric_id: evidence for evaluator, evidence, _ in to_score if evaluator.metric_id in managed}
+        )
+        if managed
+        else {}
+    )
     scored = []
-    for shared, (attempts_of_set, executions) in zip(sharing, made):
-        for evaluator in shared.members:
-            kind = evaluator.evaluator.compares_variation
-            evidence = evaluator.evidence(attempts_of_set, executions)
+    for evaluator, evidence, cut_short in to_score:
+        attributed = {
+            "attempts_used": tuple(attempt.attempt_id for task in evidence for attempt in task.attempts),
+            "cut_short": cut_short,
+        }
+        if evaluator.metric_id in returned:
+            managed_result = returned[evaluator.metric_id]
+            scored.append(
+                ScoredMetric(
+                    result=managed_result.result,
+                    scoring_path=ScoringPath.FOUNDRY_MANAGED,
+                    # A fidelity rule decides whether a value Foundry returned may be authoritative. There is none yet.
+                    fidelity=Fidelity.UNVERIFIED,
+                    limitation=managed_result.limitation,
+                    managed_scoring=managed_result.provenance,
+                    **attributed,
+                )
+            )
+        else:
             scored.append(
                 ScoredMetric(
                     result=evaluator.evaluate(evidence),
                     scoring_path=ScoringPath.CUSTOMER_PROCESS,
                     fidelity=Fidelity.AUTHORITATIVE,
-                    attempts_used=tuple(attempt.attempt_id for task in evidence for attempt in task.attempts),
-                    cut_short=CutShort.of(
-                        execution.record for execution in executions if execution.cut_short_for(kind)
-                    ),
+                    **attributed,
                 )
             )
     return build_scorecard(
@@ -289,6 +341,12 @@ class _SelectedEvaluator:
     evaluator: Evaluator
     # What the customer declared for each declaration the Evaluator names.
     declared: dict[str, Any]
+    # Where the customer declared the calculation to run.
+    scoring_path: ScoringPath = ScoringPath.CUSTOMER_PROCESS
+
+    @property
+    def metric_id(self) -> str:
+        return self.evaluator.definition.metric.metric_id
 
     def requirements(self) -> dict[str, Any]:
         """What the Attempts this Evaluator is scored from have to be made with.
@@ -376,7 +434,9 @@ def _select(
         raise ValueError(f"{configured.metric_id!r} does not use action evidence, and it is configured with one")
     declared = {"action_types": configured.action_evidence or action_evidence}
     _require_declarations(evaluator, declared)
-    return _SelectedEvaluator(evaluator, {name: declared[name] for name in evaluator.declarations})
+    return _SelectedEvaluator(
+        evaluator, {name: declared[name] for name in evaluator.declarations}, configured.scoring_path
+    )
 
 
 def _evaluator(metric_id: str) -> Evaluator:
@@ -393,6 +453,18 @@ def _require_declarations(evaluator: Evaluator, declared: dict[str, Any]) -> Non
     for name in evaluator.declarations:
         if declared[name] is None:
             raise ValueError(f"{evaluator.definition.metric.metric_id!r} needs {undeclared[name]}")
+
+
+def _require_managed_scoring(managed: Sequence[str], managed_scoring: FoundryManagedScoring | None) -> None:
+    """Reject a choice of Foundry-managed scoring that cannot be honoured. Nothing falls back to this process."""
+    for metric_id in managed:
+        if managed_scoring is None:
+            raise ValueError(
+                f"{metric_id!r} is configured for Foundry-managed scoring, which needs `managed_scoring`: "
+                "the Foundry project to score in"
+            )
+        if not has_managed_evaluator(metric_id):
+            raise ValueError(f"{metric_id!r} has no Foundry-managed evaluator in this version")
 
 
 def _declares_variation(experiment: Experiment, kind: VariationKind) -> bool:

@@ -183,7 +183,7 @@ def _require_subscription(subscription):
         raise LiveFixtureError(f"Refusing to act outside the subscription named {subscription}")
 
 
-def _create_project(subscription, group, account, location, log):
+def _create_project(subscription, group, account, location, log, deploy_model=True):
     log(f"Creating Foundry account {account} and project {PROJECT}")
     resource = ("--resource-group", group, "--name", account)
     for attempt in range(3):
@@ -214,6 +214,8 @@ def _create_project(subscription, group, account, location, log):
     ):
         _az(subscription, "role", "assignment", "create", "--assignee-object-id", principal,
             "--assignee-principal-type", kind, "--role", role, "--scope", scope)
+    if not deploy_model:
+        return project
     log(f"Deploying model {MODEL['name']} as {MODEL_DEPLOYMENT}")
     _az(subscription, "cognitiveservices", "account", "deployment", "create", *resource,
         "--deployment-name", MODEL_DEPLOYMENT, "--model-format", "OpenAI",

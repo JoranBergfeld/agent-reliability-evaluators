@@ -195,6 +195,7 @@ A recalculation either gives a new scorecard or raises `RecalculationFailed`. Th
 | The `status`, `missing` or `concurrency` of the earlier scorecard is not what its evidence and its execution records give | `it does not reproduce the earlier 'status'`, or the part that differs |
 | A metric says its Attempts were cut short in an experiment or Task that the scorecard has no execution record of | `the result of '...' says its Attempts were cut short in '...'` |
 | A metric needs a declaration that was not given | `'...' needs action evidence to be declared` |
+| A metric of the earlier scorecard was scored by [Foundry-managed scoring](../managed_scoring/readme.md) | `'...' was scored on the scoring path 'foundry_managed', and a recalculation scores in this process`. A result is not scored again on another scoring path than the one you chose for it. |
 | The earlier scorecard assessed an acceptance criterion that is not declared again | `the earlier scorecard assessed an acceptance criterion for '...'` |
 
 A match is never resolved by order or by choosing one of several Attempts.
