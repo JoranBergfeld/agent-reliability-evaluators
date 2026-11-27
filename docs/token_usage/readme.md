@@ -62,7 +62,7 @@ The confidence request that follows a completed Attempt is a request of its own,
 | The request failed with `InvocationFailed` | What that exception carries as `invocation`, read as above |
 | The response belongs to another Attempt | `missing`. What that response used is not attributed to this Attempt |
 
-The two Foundry agent targets do not support an isolated follow-up in this version, so they send no confidence request.
+The Foundry prompt agent target sends a confidence request and records what the platform returned for it, its `usage` included: see [the confidence rating](../foundry_prompt_agent/readme.md#the-confidence-rating). The Foundry hosted agent target does not support an isolated follow-up, so it sends none.
 
 ### Scoring
 
@@ -260,6 +260,6 @@ Which paths expose token counts has not been verified live here. That is [#52](h
 - A hosted agent that serves the Invocations protocol is not supported, and its usage is unverified.
 - Scoring usage is not guaranteed per Evaluator. A managed run of a code evaluator reported none in the earlier prototypes. What the runs of a derived evaluator report was not looked at.
 - How per-model usage rows alias each other is not documented. The rule here counts exact repeats once and refuses to sum rows that differ.
-- The usage of a confidence follow-up has not been observed on either Foundry agent type: neither target sends one in this version.
+- The usage of a confidence follow-up was observed for a prompt agent: every follow-up that completed carried a `usage`, and one the project refused carried none. See [the Foundry prompt agent target](../foundry_prompt_agent/readme.md#the-confidence-follow-up). The hosted agent target sends no follow-up.
 
 Attempts invoked through Foundry cloud evaluation are reported like any other. The count is the `total_tokens` of the usage that the output item of the Attempt's run carried. An Attempt whose target failed, or whose run had not ended at the time limit, is missing with a reason. The run's own usage rows are kept on the Attempt as `invocation.run_per_model_usage` and are not read here: for a prompt agent they were observed to count the same tokens twice. What was observed is in [the documentation of that entry point](../foundry_cloud_evaluation/readme.md#observed-live). The counts of the two entry points were never compared on the same invocation.

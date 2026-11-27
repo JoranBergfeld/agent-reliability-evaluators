@@ -254,7 +254,7 @@ These come from the specification and are not confirmed decisions. They are impl
 
 ## What is not verified
 
-Calibration is calculated from the same confidence ratings as the Brier-based score, so the same limits apply: see [what is not verified](../brier_based_score/readme.md#what-is-not-verified) there. Where a rating cannot be collected in an isolated follow-up, the three predictability metrics are unavailable by decision.
+Calibration is calculated from the same confidence ratings as the Brier-based score, so the same limits apply: see [on Foundry agents](../brier_based_score/readme.md#on-foundry-agents) there. Where a rating cannot be collected in an isolated follow-up, as for a Foundry hosted agent, the three predictability metrics are unavailable by decision. With Foundry cloud evaluation as the entry point the follow-up is not verified.
 
 ## Numbers
 

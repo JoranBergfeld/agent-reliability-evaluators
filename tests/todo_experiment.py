@@ -90,10 +90,22 @@ class TodoSetup:
         baseline: Condition,
         agent_configuration: dict,
         limits: ExecutionLimits = ExecutionLimits(),
+        prompt: str = TASK_PROMPT,
+        shareable_success_rule: str | None = None,
     ) -> Experiment:
-        """The fixture's Task attempted under one condition, from fresh state every time."""
+        """The fixture's Task attempted under one condition, from fresh state every time.
+
+        `prompt` is what the agent is asked to do, the fixture's Task unless told otherwise. The
+        task outcome is decided by the fixture's strict rule whatever the prompt asks.
+        `shareable_success_rule` is that rule in words, for an agent that is asked for its confidence.
+        """
         task = Task(
-            task_id=task_id, prompt=TASK_PROMPT, success_rule=self.strict_success, attempts=attempts, limits=limits
+            task_id=task_id,
+            prompt=prompt,
+            success_rule=self.strict_success,
+            shareable_success_rule=shareable_success_rule,
+            attempts=attempts,
+            limits=limits,
         )
         return Experiment(
             experiment_id=task_id,
