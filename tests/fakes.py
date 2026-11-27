@@ -1,6 +1,12 @@
 """Fakes for driving the Evaluator sweep through its public entry point."""
 
-from reliability_evaluators.agent_target import AgentResponse, AttemptRequest
+from reliability_evaluators.agent_target import (
+    AgentResponse,
+    AttemptRequest,
+    ConfidenceRequest,
+    ConfidenceResponse,
+    IsolatedFollowUp,
+)
 from reliability_evaluators.evidence import ResourceMeasurement
 
 TOOL_CALL_BOUNDARY = "tool calls made on the fake service during the Attempt, counted by the fake agent target"
@@ -22,8 +28,9 @@ class FakeAgentTarget:
 
     The script gives, per Task, what happens on each Attempt in order: "success" and
     "failure" leave the service in the right or the wrong state, and "error" makes the
-    invocation itself fail. The agent always answers "Done.", so its response says
-    nothing about success; the task-success rule has to read `service_state`.
+    invocation itself fail. The agent always answers `output`, "Done." unless told
+    otherwise, so its response says nothing about success; the task-success rule has to
+    read `service_state`.
 
     "success" or "failure" followed by " and deletes unrelated" also deletes the seeded
     item the agent was told to leave alone. `unrelated_item` holds what became of it.
@@ -33,12 +40,38 @@ class FakeAgentTarget:
     is a count the agent reports; without it the agent reports no count. "own_seconds"
     is an elapsed time the agent reports itself. An Attempt with no entry takes no time
     and reports nothing.
+
+    `confidence` gives the agent's answer to the confidence request, by Attempt identity.
+    An answer is one of:
+
+    - text, which is returned as the agent's answer;
+    - a function of the confidence request and this fake that returns that text;
+    - an exception, which makes the request fail;
+    - a `ConfidenceResponse`, which is returned as it is;
+    - a list of these, answered one per request in order.
+
+    The follow-up never changes `service_state` or `unrelated_item`: this agent cannot act
+    while it answers. `isolated_follow_up` is what the target declares about that; pass
+    `IsolatedFollowUp(supported=False, reason=...)` for a target that cannot ensure it,
+    or `None` for a target that makes no declaration.
     """
 
-    def __init__(self, script: dict[str, list[str]], resources: dict[str, list[dict]] | None = None):
+    def __init__(
+        self,
+        script: dict[str, list[str]],
+        resources: dict[str, list[dict]] | None = None,
+        *,
+        confidence: dict[str, object] | None = None,
+        isolated_follow_up: IsolatedFollowUp | None = IsolatedFollowUp(supported=True),
+        output: str = "Done.",
+    ):
         self._remaining = {task_id: list(behaviours) for task_id, behaviours in script.items()}
         self._resources = {task_id: list(used) for task_id, used in (resources or {}).items()}
         self._now = 0.0
+        self._confidence = dict(confidence or {})
+        self._output = output
+        if isolated_follow_up is not None:
+            self.isolated_follow_up = isolated_follow_up
         self.service_state: dict[str, str] = {}
         self.unrelated_item: dict[str, str] = {}
 
@@ -70,7 +103,22 @@ class FakeAgentTarget:
                     resource_type="tool_calls", value=used["tool_calls"], unit="calls", boundary=TOOL_CALL_BOUNDARY
                 )
             )
-        return AgentResponse(output="Done.", resource_measurements=tuple(measurements))
+        return AgentResponse(output=self._output, resource_measurements=tuple(measurements))
+
+    def elicit_confidence(self, request: ConfidenceRequest) -> ConfidenceResponse:
+        attempt_id = request.attempt.attempt_id
+        if attempt_id not in self._confidence:
+            raise LookupError(f"the fake agent has no confidence answer scripted for {attempt_id!r}")
+        answer = self._confidence[attempt_id]
+        if isinstance(answer, list):
+            answer = answer.pop(0)
+        if isinstance(answer, Exception):
+            raise answer
+        if isinstance(answer, ConfidenceResponse):
+            return answer
+        if callable(answer):
+            answer = answer(request, self)
+        return ConfidenceResponse(attempt_id=attempt_id, output=answer)
 
 
 class FakeActingAgentTarget(FakeAgentTarget):

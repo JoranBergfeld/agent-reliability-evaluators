@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Callable
 
 from . import (
+    brier_based_score,
     constraint_compliance,
     distributional_trajectory_consistency,
     outcome_consistency,
@@ -26,6 +27,8 @@ class Evaluator:
     definition: MetricDefinition
     evaluate: Callable[..., MetricResult]
     declarations: tuple[str, ...] = ()
+    # Whether the calculation uses confidence ratings, which a sweep has to ask the agent for.
+    needs_confidence: bool = False
 
 
 EVALUATORS: dict[str, Evaluator] = {
@@ -43,6 +46,7 @@ EVALUATORS: dict[str, Evaluator] = {
             declarations=("action_types",),
         ),
         Evaluator(resource_consistency.DEFINITION, resource_consistency.evaluate),
+        Evaluator(brier_based_score.DEFINITION, brier_based_score.evaluate, needs_confidence=True),
         Evaluator(constraint_compliance.DEFINITION, constraint_compliance.evaluate),
     )
 }

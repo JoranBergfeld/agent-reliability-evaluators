@@ -27,6 +27,10 @@ ViolationAssessor = Callable[[AttemptRequest, AgentResponse], Sequence[Violation
 class Task:
     """A unit of work for the agent, its task-success rule, and how many Attempts to make.
 
+    `shareable_success_rule` is the task-success rule in words, as the agent may be shown
+    it when it is asked for its confidence rating. Leave it out when the rule cannot be
+    shared with the agent: the Task's Attempts then have no confidence rating.
+
     `operational_constraints` are the safety rules that apply to the Task, and
     `violation_assessor` assesses each Attempt against them.
     """
@@ -35,6 +39,7 @@ class Task:
     prompt: str
     success_rule: TaskSuccessRule
     attempts: int
+    shareable_success_rule: str | None = None
     operational_constraints: Sequence[OperationalConstraint] = ()
     violation_assessor: ViolationAssessor | None = None
 
@@ -43,6 +48,12 @@ class Task:
             raise ValueError(f"a Task is identified by a task_id, got {self.task_id!r}")
         if type(self.attempts) is not int or self.attempts < 1:
             raise ValueError(f"Task {self.task_id!r} needs at least one Attempt, got {self.attempts!r}")
+        rule = self.shareable_success_rule
+        if rule is not None and (not isinstance(rule, str) or not rule.strip()):
+            raise ValueError(
+                f"the shareable success rule of Task {self.task_id!r} is the rule in words, or left out. "
+                f"Got {rule!r}"
+            )
         object.__setattr__(self, "operational_constraints", tuple(self.operational_constraints))
         declared: set[str] = set()
         for constraint in self.operational_constraints:

@@ -10,6 +10,7 @@ from ..evaluators import EVALUATORS, RELIABILITY_METRICS, Evaluator, Fidelity, S
 from ..evidence import (
     ActionEvidence,
     Attempt,
+    ConfidenceUnavailable,
     EvidenceError,
     ExecutionStatus,
     ResourceMeasurement,
@@ -19,6 +20,7 @@ from ..evidence import (
     group_by_task,
 )
 from ..scorecard import AcceptanceCriterion, ScoredMetric, build_scorecard, criteria_by_metric
+from .confidence import ATTEMPT_NOT_COMPLETED, elicit_confidence
 from .declaration import ActionEvidenceDeclaration, Task
 
 ELAPSED_TIME_UNIT = "seconds"
@@ -46,6 +48,9 @@ def run_sweep(
     what action type each tool name is. The trajectory metrics need it, and every metric
     that needs it is scored from the same Attempts.
 
+    When a selected metric uses confidence, each completed Attempt is followed by one
+    separate confidence-only request through the agent target, before the next Attempt.
+
     `acceptance_criteria` are the customer's own, at most one per metric. Each is reported
     with its metric as met, not met, or not assessed with a reason. Without one, a metric
     has no acceptance verdict.
@@ -66,8 +71,9 @@ def run_sweep(
     _require_distinct_tasks(tasks)
     # Called for its check: a second criterion for one metric is rejected here, not after the Attempts.
     criteria_by_metric(acceptance_criteria)
+    ask_confidence = any(evaluator.needs_confidence for evaluator in evaluators)
     attempts = [
-        _run_attempt(task, number, agent_target, action_evidence, clock)
+        _run_attempt(task, number, agent_target, action_evidence, ask_confidence, clock)
         for task in tasks
         for number in range(1, task.attempts + 1)
     ]
@@ -113,6 +119,7 @@ def _run_attempt(
     number: int,
     agent_target: AgentTarget,
     action_evidence: ActionEvidenceDeclaration | None,
+    ask_confidence: bool,
     clock: Callable[[], float],
 ) -> Attempt:
     request = AttemptRequest(
@@ -127,6 +134,7 @@ def _run_attempt(
             task_id=task.task_id,
             execution_status=ExecutionStatus.FAILED,
             execution_error=f"{type(error).__name__}: {error}",
+            confidence=ConfidenceUnavailable(reason=ATTEMPT_NOT_COMPLETED) if ask_confidence else None,
             operational_constraints=task.operational_constraints,
         )
     elapsed = clock() - started
@@ -136,15 +144,22 @@ def _run_attempt(
             f"the task-success rule of Task {task.task_id!r} must return a TaskOutcome with its source, "
             f"got {outcome!r}"
         )
+    # The task outcome is decided before the agent is asked for its confidence rating, so the
+    # rating cannot enter the outcome, and the follow-up cannot disturb what the outcome is decided from.
+    # The same holds for the violation assessments and the recorded actions.
+    violation_assessments = _assess_violations(task, request, response)
+    actions = None if action_evidence is None else _recorded_actions(action_evidence, request, response)
+    confidence = elicit_confidence(task, request, response, agent_target) if ask_confidence else None
     return Attempt(
         attempt_id=request.attempt_id,
         task_id=task.task_id,
         execution_status=ExecutionStatus.COMPLETED,
         task_outcome=outcome,
         resource_measurements=_resource_measurements(elapsed, response.resource_measurements),
+        confidence=confidence,
         operational_constraints=task.operational_constraints,
-        violation_assessments=_assess_violations(task, request, response),
-        action_evidence=None if action_evidence is None else _recorded_actions(action_evidence, request, response),
+        violation_assessments=violation_assessments,
+        action_evidence=actions,
     )
 
 

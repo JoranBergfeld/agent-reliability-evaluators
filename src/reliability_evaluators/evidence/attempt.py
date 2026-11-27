@@ -8,6 +8,7 @@ from math import isfinite
 from typing import Any
 
 from .actions import ActionEvidence
+from .confidence import ConfidenceRating, ConfidenceUnavailable
 from .errors import EvidenceError
 
 
@@ -187,6 +188,8 @@ class Attempt:
     action_evidence: ActionEvidence | None = None
     # At most one measurement per resource type.
     resource_measurements: tuple[ResourceMeasurement, ...] = ()
+    # None when the agent was not asked for a confidence rating for this Attempt.
+    confidence: ConfidenceRating | ConfidenceUnavailable | None = None
     # The operational constraints that apply to this Attempt, and the assessments made of them.
     operational_constraints: tuple[OperationalConstraint, ...] = ()
     violation_assessments: tuple[ViolationAssessment, ...] = ()
@@ -209,6 +212,12 @@ class Attempt:
                 f"action evidence is an ActionEvidence with its source. Got {self.action_evidence!r}"
             )
         self._require_one_measurement_per_resource_type()
+        confidence = self.confidence
+        if confidence is not None and not isinstance(confidence, (ConfidenceRating, ConfidenceUnavailable)):
+            raise EvidenceError(
+                "confidence evidence is a ConfidenceRating or a ConfidenceUnavailable with its reason. "
+                f"Got {self.confidence!r}"
+            )
         self._require_assessments_of_applicable_constraints()
 
     def _require_one_measurement_per_resource_type(self) -> None:
@@ -273,6 +282,7 @@ class Attempt:
             "task_outcome": None if self.task_outcome is None else self.task_outcome.to_dict(),
             "action_evidence": None if self.action_evidence is None else self.action_evidence.to_dict(),
             "resource_measurements": [measurement.to_dict() for measurement in self.resource_measurements],
+            "confidence": None if self.confidence is None else self.confidence.to_dict(),
             "operational_constraints": [constraint.to_dict() for constraint in self.operational_constraints],
             "violation_assessments": [assessment.to_dict() for assessment in self.violation_assessments],
         }
