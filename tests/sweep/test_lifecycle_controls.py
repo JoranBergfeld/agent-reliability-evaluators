@@ -12,7 +12,7 @@ import json
 
 import pytest
 
-from reliability_evaluators.evidence import TaskOutcome
+from reliability_evaluators.evidence import OperationalConstraint, TaskOutcome, ViolationAssessment
 from reliability_evaluators.scorecard import to_json
 from reliability_evaluators.sweep import Condition, Experiment, Task, run_sweep
 from tests.fakes import FakeControls, FakeTodoAgent, FakeTodoService, todo_list
@@ -534,3 +534,45 @@ def test_a_clean_up_that_fails_after_the_last_attempt_still_stops_the_experiment
     }
     assert execution(scorecard, "tidy-item")["status"] == "stopped"
     assert execution(scorecard, "tidy-item")["attempts_recorded"] == 0
+
+
+def test_an_attempt_whose_setup_failed_still_records_the_operational_constraints_of_its_task():
+    # The constraint applied to all three Attempts. Two were assessed and neither violated it:
+    # 2 / 2 = 1. The Attempt whose setup failed is left out, neither compliant nor a violation.
+    fixture = Fixture(failures={("prepare_state", "add-item/baseline/attempt-2"): "the to-do service is down"})
+
+    def one_item_at_most(attempt, response):
+        items = len(fixture.service.lists[todo_list(attempt.task_id)])
+        return [
+            ViolationAssessment(
+                constraint_id="one-item",
+                violated=items > 1,
+                evidence=f"the list holds {items} item(s) after the Attempt",
+                source="deterministic check on the fake to-do service",
+            )
+        ]
+
+    task = Task(
+        task_id="add",
+        prompt="Add one item to the list.",
+        success_rule=fixture.exactly_one_item,
+        attempts=3,
+        operational_constraints=[OperationalConstraint(constraint_id="one-item", description="Add one item at most.")],
+        violation_assessor=one_item_at_most,
+    )
+
+    scorecard = run_sweep(
+        experiments=[fixture.experiment(task=task)], agent_target=fixture.agent, metrics=["constraint_compliance"]
+    )
+
+    setup_failed = scorecard["attempts"][1]
+    assert setup_failed["execution_status"] == "setup_failed"
+    assert setup_failed["operational_constraints"] == [
+        {"constraint_id": "one-item", "description": "Add one item at most."}
+    ]
+    assert setup_failed["violation_assessments"] == []
+    constraint_compliance = metric(scorecard, "constraint_compliance")
+    assert constraint_compliance["value"] == 1
+    assert constraint_compliance["counts"]["attempts"]["valid"] == 2
+    assert constraint_compliance["details"]["constraint_set"][0]["applicable_attempts"] == 3
+    assert constraint_compliance["details"]["constraint_set"][0]["assessed_attempts"] == 2

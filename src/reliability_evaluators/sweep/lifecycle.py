@@ -152,6 +152,7 @@ def _run_controlled_attempt(
             task_id=task.task_id,
             execution_status=ExecutionStatus.SETUP_FAILED,
             execution_error=f"{steps[-1].point.value} failed: {setup_error}",
+            operational_constraints=task.operational_constraints,
         )
     else:
         attempt = make_attempt(task, number, context.attempt_id)

@@ -195,6 +195,6 @@ The Attempt identity is `<experiment_id>/<condition_id>/attempt-<number>`.
 
 ## Limits in this version
 
-- Attempts under a variation are made and recorded, but no Evaluator uses them yet. The Evaluators that exist score repeated Attempts under the baseline only.
+- Attempts under a variation are made and recorded, but no Evaluator uses them yet. The Evaluators that exist score Attempts under the baseline only.
 - A Task can be declared in one experiment only, so that Attempts made under different declarations are never mixed in one Task's evidence.
 - If a task-success rule returns something that is not a `TaskOutcome`, the sweep stops with an error and does not invoke `clean_up`.

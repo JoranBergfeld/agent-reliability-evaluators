@@ -10,6 +10,12 @@ from .experiment import Condition, ConditionRole, LifecycleStep, ObservedConditi
 from .error import EvidenceError
 
 
+def _require_text(owner: str, **fields: Any) -> None:
+    for name, value in fields.items():
+        if not isinstance(value, str) or not value.strip():
+            raise EvidenceError(f"{owner} records its {name}. Got {value!r}")
+
+
 class ExecutionStatus(str, Enum):
     """How the execution of an Attempt ended. This is not the task outcome."""
 
@@ -48,6 +54,53 @@ class TaskOutcome:
 
 
 @dataclass(frozen=True, kw_only=True)
+class OperationalConstraint:
+    """A customer-defined safety rule that applies to a Task. `description` is the rule itself."""
+
+    constraint_id: str
+    description: str
+
+    def __post_init__(self) -> None:
+        _require_text("an operational constraint", constraint_id=self.constraint_id, description=self.description)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"constraint_id": self.constraint_id, "description": self.description}
+
+
+@dataclass(frozen=True, kw_only=True)
+class ViolationAssessment:
+    """Whether one Attempt violated one of its applicable operational constraints.
+
+    `evidence` is what the determination rests on, and `source` says what made it, such as
+    a deterministic check or a label.
+    """
+
+    constraint_id: str
+    violated: bool
+    evidence: str
+    source: str
+
+    def __post_init__(self) -> None:
+        if type(self.violated) not in (bool, int) or self.violated not in (0, 1):
+            raise EvidenceError(
+                "a violation assessment says whether the constraint was violated: True or False, "
+                f"or 1 or 0. Got {self.violated!r}"
+            )
+        object.__setattr__(self, "violated", bool(self.violated))
+        _require_text(
+            "a violation assessment", constraint_id=self.constraint_id, evidence=self.evidence, source=self.source
+        )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "constraint_id": self.constraint_id,
+            "violated": self.violated,
+            "evidence": self.evidence,
+            "source": self.source,
+        }
+
+
+@dataclass(frozen=True, kw_only=True)
 class Attempt:
     """One execution of an agent on a Task.
 
@@ -61,6 +114,9 @@ class Attempt:
     task_outcome: TaskOutcome | None = None
     # Why the execution did not complete, when it did not.
     execution_error: str | None = None
+    # The operational constraints that apply to this Attempt, and the assessments made of them.
+    operational_constraints: tuple[OperationalConstraint, ...] = ()
+    violation_assessments: tuple[ViolationAssessment, ...] = ()
     # The experiment the Attempt was made for. None: its Task was given without an experiment,
     # so no starting-state policy and no condition were declared for it.
     experiment_id: str | None = None
@@ -86,6 +142,7 @@ class Attempt:
             raise EvidenceError(
                 f"a task outcome is a TaskOutcome with its source. Got {self.task_outcome!r}"
             )
+        self._require_assessments_of_applicable_constraints()
         self._require_recorded_experiment()
 
     def _require_recorded_experiment(self) -> None:
@@ -94,13 +151,11 @@ class Attempt:
                 object.__setattr__(self, "starting_state", StartingStatePolicy(self.starting_state))
             except ValueError:
                 raise EvidenceError(f"{self.starting_state!r} is not a starting-state policy") from None
-        if self.intended_condition is None and self.condition_role is None:
-            pass
-        elif not isinstance(self.intended_condition, Condition):
-            raise EvidenceError(
-                f"an intended condition is a Condition, not a label. Got {self.intended_condition!r}"
-            )
-        else:
+        if self.intended_condition is not None or self.condition_role is not None:
+            if not isinstance(self.intended_condition, Condition):
+                raise EvidenceError(
+                    f"an intended condition is a Condition, not a label. Got {self.intended_condition!r}"
+                )
             try:
                 object.__setattr__(self, "condition_role", ConditionRole(self.condition_role))
             except ValueError:
@@ -113,6 +168,37 @@ class Attempt:
                 f"Got {self.observed_condition!r}"
             )
 
+    def _require_assessments_of_applicable_constraints(self) -> None:
+        object.__setattr__(self, "operational_constraints", tuple(self.operational_constraints))
+        object.__setattr__(self, "violation_assessments", tuple(self.violation_assessments))
+        applicable: set[str] = set()
+        for constraint in self.operational_constraints:
+            if not isinstance(constraint, OperationalConstraint):
+                raise EvidenceError(f"an operational constraint is an OperationalConstraint. Got {constraint!r}")
+            if constraint.constraint_id in applicable:
+                raise EvidenceError(
+                    f"Attempt {self.attempt_id!r} has more than one operational constraint "
+                    f"with the identity {constraint.constraint_id!r}"
+                )
+            applicable.add(constraint.constraint_id)
+        assessed: set[str] = set()
+        for assessment in self.violation_assessments:
+            if not isinstance(assessment, ViolationAssessment):
+                raise EvidenceError(
+                    f"a violation assessment is a ViolationAssessment with its evidence and source. Got {assessment!r}"
+                )
+            if assessment.constraint_id not in applicable:
+                raise EvidenceError(
+                    f"Attempt {self.attempt_id!r} has a violation assessment of {assessment.constraint_id!r}, "
+                    "which is not one of its applicable operational constraints"
+                )
+            if assessment.constraint_id in assessed:
+                raise EvidenceError(
+                    f"Attempt {self.attempt_id!r} has more than one violation assessment "
+                    f"of the operational constraint {assessment.constraint_id!r}"
+                )
+            assessed.add(assessment.constraint_id)
+
     def to_dict(self) -> dict[str, Any]:
         return {
             "attempt_id": self.attempt_id,
@@ -120,6 +206,8 @@ class Attempt:
             "execution_status": self.execution_status.value,
             "execution_error": self.execution_error,
             "task_outcome": None if self.task_outcome is None else self.task_outcome.to_dict(),
+            "operational_constraints": [constraint.to_dict() for constraint in self.operational_constraints],
+            "violation_assessments": [assessment.to_dict() for assessment in self.violation_assessments],
             "experiment_id": self.experiment_id,
             "starting_state": None if self.starting_state is None else self.starting_state.value,
             "intended_condition": self._intended_condition(),

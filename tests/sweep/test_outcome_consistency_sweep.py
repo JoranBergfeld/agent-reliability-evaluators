@@ -103,6 +103,8 @@ def test_the_value_refers_to_attempt_level_evidence_in_the_scorecard():
             "execution_status": "completed",
             "execution_error": None,
             "task_outcome": {"success": True, "source": SOURCE},
+            "operational_constraints": [],
+            "violation_assessments": [],
             **NO_EXPERIMENT,
         },
         {
@@ -111,6 +113,8 @@ def test_the_value_refers_to_attempt_level_evidence_in_the_scorecard():
             "execution_status": "completed",
             "execution_error": None,
             "task_outcome": {"success": False, "source": SOURCE},
+            "operational_constraints": [],
+            "violation_assessments": [],
             **NO_EXPERIMENT,
         },
     ]
@@ -142,6 +146,7 @@ def test_the_other_eleven_metrics_appear_as_not_configured():
         "name": "Calibration",
         "dimension": "predictability",
         "state": "not_configured",
+        "acceptance": None,
     }
 
 
@@ -162,6 +167,7 @@ def test_there_is_no_combined_score_and_no_built_in_threshold():
         "counts",
         "details",
         "evidence",
+        "acceptance",
     }
 
 
@@ -176,6 +182,8 @@ def test_an_invocation_that_fails_is_an_execution_status_and_not_a_task_failure(
         "execution_status": "failed",
         "execution_error": "ConnectionError: the agent endpoint returned 503",
         "task_outcome": None,
+        "operational_constraints": [],
+        "violation_assessments": [],
         **NO_EXPERIMENT,
     }
     outcome_consistency = metric(scorecard)

@@ -4,7 +4,14 @@ and the grouping Evaluators are called with.
 Pure: standard library only, no I/O. The canonical metric definitions depend on it.
 """
 
-from .attempt import Attempt, ExecutionStatus, TaskOutcome
+from .attempt import (
+    Attempt,
+    ExecutionStatus,
+    OperationalConstraint,
+    TaskOutcome,
+    ViolationAssessment,
+)
+from .error import EvidenceError
 from .experiment import (
     Condition,
     ConditionRole,
@@ -15,7 +22,6 @@ from .experiment import (
     StartingStatePolicy,
     json_data,
 )
-from .error import EvidenceError
 from .grouping import TaskEvidence, group_by_task, require_unambiguous
 
 __all__ = [
@@ -28,9 +34,11 @@ __all__ = [
     "LifecyclePoint",
     "LifecycleStep",
     "ObservedCondition",
+    "OperationalConstraint",
     "StartingStatePolicy",
     "TaskEvidence",
     "TaskOutcome",
+    "ViolationAssessment",
     "group_by_task",
     "json_data",
     "require_unambiguous",

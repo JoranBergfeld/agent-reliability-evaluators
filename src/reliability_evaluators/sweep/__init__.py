@@ -1,7 +1,7 @@
 """Evaluator sweep: coordinates the Attempts the Evaluators need and returns the scorecard."""
 
 from ..evidence import Condition, ObservedCondition, StartingStatePolicy
-from .declaration import ControlContext, CustomerControls, Experiment, Task, TaskSuccessRule
+from .declaration import ControlContext, CustomerControls, Experiment, Task, TaskSuccessRule, ViolationAssessor
 from .runner import run_sweep
 
 __all__ = [
@@ -13,5 +13,6 @@ __all__ = [
     "StartingStatePolicy",
     "Task",
     "TaskSuccessRule",
+    "ViolationAssessor",
     "run_sweep",
 ]
