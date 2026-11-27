@@ -1,7 +1,7 @@
 """The twelve reliability metrics, in the order of paper v3 Table 2.
 
-Every scorecard lists all twelve. A metric without an Evaluator here is still named,
-so that it can be reported as not configured and never silently omitted.
+Every scorecard lists all twelve. A metric that was not selected is still named,
+so that it is reported as not configured and never silently omitted.
 """
 
 from __future__ import annotations

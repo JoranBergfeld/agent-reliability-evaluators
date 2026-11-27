@@ -1,0 +1,53 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 780 430" width="780" height="430" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13">
+  <title>The same to-do item under the baseline presentation and under an equivalent presentation</title>
+  <desc>On the left the service returns an item with the fields title, due and done, and the date 2026-04-03. On the right it returns the same item wrapped in data, with the title called name and the date written day first as 03/04/2026. The item, the tools, the Task and the prompt are the same. The transformation between the two is declared in the parameters of the variation and recorded in the scorecard.</desc>
+  <rect width="780" height="430" fill="#ffffff"/>
+
+  <g fill="#616161" font-weight="600">
+    <text x="20" y="30">Baseline: the presentation of production</text>
+    <text x="410" y="30">Variation: an equivalent presentation that you supply</text>
+  </g>
+
+  <rect x="20" y="44" width="350" height="246" rx="6" fill="#fafafa" stroke="#bdbdbd"/>
+  <rect x="410" y="44" width="350" height="246" rx="6" fill="#fafafa" stroke="#1565c0" stroke-width="1.5"/>
+
+  <g font-family="Consolas, Menlo, monospace" font-size="13" fill="#212121">
+    <text x="36" y="72">{</text>
+    <text x="51" y="92">"items": [</text>
+    <text x="66" y="112">{</text>
+    <text x="81" y="132">"title": "buy milk",</text>
+    <text x="81" y="152">"due": "2026-04-03",</text>
+    <text x="81" y="172">"done": false</text>
+    <text x="66" y="192">}</text>
+    <text x="51" y="212">]</text>
+    <text x="36" y="232">}</text>
+  </g>
+  <g font-family="Consolas, Menlo, monospace" font-size="13" fill="#212121">
+    <text x="426" y="72">{</text>
+    <text x="441" y="92"><tspan fill="#1565c0" font-weight="700">"data": {</tspan></text>
+    <text x="456" y="112">"items": [</text>
+    <text x="471" y="132">{</text>
+    <text x="486" y="152"><tspan fill="#1565c0" font-weight="700">"name"</tspan>: "buy milk",</text>
+    <text x="486" y="172">"due": <tspan fill="#1565c0" font-weight="700">"03/04/2026"</tspan>,</text>
+    <text x="486" y="192">"done": false</text>
+    <text x="471" y="212">}</text>
+    <text x="456" y="232">]</text>
+    <text x="441" y="252"><tspan fill="#1565c0" font-weight="700">}</tspan></text>
+    <text x="426" y="272">}</text>
+  </g>
+  <g fill="#1565c0" font-size="12">
+    <text x="640" y="92">wrapped in data</text>
+    <text x="660" y="152">title renamed</text>
+    <text x="660" y="172">day first</text>
+  </g>
+
+  <g fill="#212121">
+    <text x="20" y="322" font-weight="600">The same: the item, the tools, the Task, the task-success rule and the prompt.</text>
+    <text x="20" y="344" font-weight="600">Different: only how the item is presented to the agent.</text>
+  </g>
+  <g fill="#616161">
+    <text x="20" y="376">The transformation is declared in the parameters of the variation and recorded in the scorecard:</text>
+    <text x="20" y="398" font-family="Consolas, Menlo, monospace" font-size="12" fill="#212121">{"wrap_in": "data", "rename_fields": {"title": "name"}, "date_format": "DD/MM/YYYY"}</text>
+    <text x="20" y="420">Your apply control applies it. That it is equivalent is your claim: the metric cannot check it.</text>
+  </g>
+</svg>

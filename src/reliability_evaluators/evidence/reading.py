@@ -23,7 +23,7 @@ from .attempt import (
 )
 from .confidence import ConfidenceRating, ConfidenceUnavailable
 from .errors import EvidenceError
-from .experiment import Condition, LifecyclePoint, LifecycleStep, ObservedCondition
+from .experiment import Condition, LifecyclePoint, LifecycleStep, ObservedCondition, PromptVariant
 
 
 def read_attempts(recorded: Any) -> tuple[Attempt, ...]:
@@ -102,6 +102,7 @@ def _attempt(recorded: Any) -> Attempt:
         "experiment_id",
         "starting_state",
         "intended_condition",
+        "prompt_variant",
         "observed_condition",
         "lifecycle",
     )
@@ -140,6 +141,7 @@ def _attempt(recorded: Any) -> Attempt:
             ],
             "intended_condition": intended_condition,
             "condition_role": condition_role,
+            "prompt_variant": _prompt_variant(fields["prompt_variant"]),
             "observed_condition": _observed_condition(fields["observed_condition"]),
             "lifecycle": tuple(_lifecycle_step(record) for record in _each("lifecycle steps", fields["lifecycle"])),
         }
@@ -194,6 +196,12 @@ def _intended_condition(recorded: Any) -> tuple[Condition | None, Any]:
     # The kind is recorded for a variation that declares one, and not otherwise.
     declared_kind = {"kind": recorded["kind"]} if "kind" in recorded else {}
     return Condition(**fields, **declared_kind), role
+
+
+def _prompt_variant(recorded: Any) -> PromptVariant | None:
+    if recorded is None:
+        return None
+    return PromptVariant(**_fields("a prompt variant", recorded, "variant_id", "text", "source"))
 
 
 def _observed_condition(recorded: Any) -> ObservedCondition | None:

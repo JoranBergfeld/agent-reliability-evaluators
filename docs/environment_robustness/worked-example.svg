@@ -1,0 +1,75 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 780 360" width="780" height="360" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13">
+  <title>Worked example: three Tasks under the baseline and under the presentation, two of them compared</title>
+  <desc>close succeeds 4 of 4 under the baseline and 3 of 4 under the presentation. reschedule succeeds 1 of 2 under the baseline and 1 of 4 under the presentation; a fifth Attempt in which the agent was not served the presentation is left out. add is left out because the agent was served the presentation in neither of its Attempts. The baseline accuracy is 0.75, the accuracy under the presentation is 0.5, and environment robustness is 0.6667.</desc>
+  <defs>
+    <g id="success">
+      <circle r="11" fill="#2e7d32"/>
+      <polyline points="-5,0 -1,4 5,-4" fill="none" stroke="#ffffff" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+    <g id="failure">
+      <circle r="10" fill="#ffffff" stroke="#c62828" stroke-width="2"/>
+      <path d="M-4,-4 L4,4 M-4,4 L4,-4" stroke="#c62828" stroke-width="2.2" stroke-linecap="round"/>
+    </g>
+    <g id="left-out">
+      <circle r="10" fill="#ffffff" stroke="#9e9e9e" stroke-width="2" stroke-dasharray="4 3"/>
+      <polyline points="-5,0 -1,4 5,-4" fill="none" stroke="#9e9e9e" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"/>
+    </g>
+  </defs>
+  <rect width="780" height="360" fill="#ffffff"/>
+  <g fill="#616161" font-weight="600">
+    <text x="20" y="30">Task</text>
+    <text x="108" y="30">Baseline: the presentation of production</text>
+    <text x="420" y="30">Variation: the equivalent presentation</text>
+  </g>
+  <line x1="20" y1="42" x2="760" y2="42" stroke="#bdbdbd"/>
+  <line x1="400" y1="14" x2="400" y2="206" stroke="#e0e0e0"/>
+
+  <g fill="#212121">
+    <text x="20" y="75">close</text>
+    <use href="#success" x="120" y="70"/>
+    <use href="#success" x="148" y="70"/>
+    <use href="#success" x="176" y="70"/>
+    <use href="#success" x="204" y="70"/>
+    <text x="290" y="75">4/4 = 1</text>
+    <use href="#success" x="432" y="70"/>
+    <use href="#success" x="460" y="70"/>
+    <use href="#success" x="488" y="70"/>
+    <use href="#failure" x="516" y="70"/>
+    <text x="602" y="75">3/4 = 0.75</text>
+
+    <text x="20" y="120">reschedule</text>
+    <use href="#success" x="120" y="115"/>
+    <use href="#failure" x="148" y="115"/>
+    <text x="290" y="120">1/2 = 0.5</text>
+    <use href="#success" x="432" y="115"/>
+    <use href="#failure" x="460" y="115"/>
+    <use href="#failure" x="488" y="115"/>
+    <use href="#failure" x="516" y="115"/>
+    <use href="#left-out" x="544" y="115"/>
+    <text x="602" y="120">1/4 = 0.25</text>
+  </g>
+
+  <g fill="#9e9e9e">
+    <text x="20" y="165">add</text>
+    <use href="#success" x="120" y="160" opacity="0.4"/>
+    <use href="#success" x="148" y="160" opacity="0.4"/>
+    <text x="290" y="165">not used</text>
+    <use href="#left-out" x="432" y="160"/>
+    <use href="#left-out" x="460" y="160"/>
+    <text x="602" y="165">no valid Attempt</text>
+  </g>
+
+  <line x1="20" y1="206" x2="760" y2="206" stroke="#bdbdbd"/>
+  <g fill="#212121">
+    <text x="20" y="236" font-weight="600">Accuracy</text>
+    <text x="108" y="236">(1 + 0.5) / 2 = 0.75</text>
+    <text x="420" y="236">(0.75 + 0.25) / 2 = 0.5</text>
+    <text x="20" y="270" font-weight="600">Environment robustness</text>
+    <text x="420" y="270" fill="#1565c0" font-weight="600">min(0.5 / 0.75, 1) = 0.6667</text>
+  </g>
+  <g fill="#616161">
+    <use href="#left-out" x="31" y="304"/>
+    <text x="52" y="309">Left out: the presentation was applied, and the response log shows that the agent was not served it.</text>
+    <text x="20" y="338">Two compared Tasks, each weighted equally. Counting the three Attempts that were left out would give 0.86.</text>
+  </g>
+</svg>

@@ -8,6 +8,7 @@ import json
 
 import pytest
 
+from reliability_evaluators.evaluators import EVALUATORS
 from reliability_evaluators.evidence import EvidenceError, TaskOutcome
 from reliability_evaluators.scorecard import to_json
 from reliability_evaluators.sweep import Task, run_sweep
@@ -267,9 +268,14 @@ def test_a_task_success_rule_that_decides_a_fractional_outcome_is_rejected():
         (lambda: [one_task(attempts=0)], ["outcome_consistency"], "at least one Attempt"),
         (lambda: [one_task(task_id="")], ["outcome_consistency"], "task_id"),
         (lambda: [one_task()], ["overall_reliability"], "not a reliability metric"),
-        (lambda: [one_task()], ["environment_robustness"], "no Evaluator"),
     ],
 )
 def test_a_declaration_the_sweep_cannot_run_is_rejected(tasks, metrics, problem):
     with pytest.raises(ValueError, match=problem):
         run_sweep(tasks=tasks(), agent_target=FakeAgentTarget({"close": ["success"] * 4}), metrics=metrics)
+
+
+def test_every_one_of_the_twelve_metrics_has_an_evaluator():
+    # A sweep used to reject the selection of a metric that had no Evaluator yet. Every metric has
+    # one now, so that rejection is gone. This is what keeps it unnecessary.
+    assert list(EVALUATORS) == TWELVE_METRICS
