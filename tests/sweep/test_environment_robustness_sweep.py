@@ -249,3 +249,184 @@ def test_a_sweep_scores_environment_robustness_in_the_scorecard():
         ]
     }
     assert json.loads(to_json(scorecard)) == scorecard
+
+
+def test_the_presentation_is_applied_by_the_customers_apply_control_and_its_transformation_is_recorded():
+    fixture = Fixture()
+
+    scorecard = fixture.sweep(fixture.experiment(attempts=1))
+
+    recorded = {
+        "condition_id": "wrapped-and-renamed",
+        "kind": "environment",
+        "description": "The to-do service wraps the same list in 'data' and calls the title of an item its name.",
+        "parameters": {"wrap_in": "data", "rename_fields": {"title": "name"}},
+    }
+    (experiment,) = scorecard["experiments"]
+    assert experiment["variation"] == recorded
+    presented = attempt(scorecard, "stock-list/wrapped-and-renamed/attempt-1")
+    assert presented["intended_condition"] == {"role": "variation", **recorded}
+    assert [step["point"] for step in presented["lifecycle"]] == [
+        "prepare_state",
+        "apply_condition",
+        "verify_condition",
+        "clean_up",
+    ]
+    assert presented["observed_condition"] == {
+        "met": True,
+        "source": SERVICE_LOG,
+        "observations": {"presented_responses": 1, "faulted_requests": 0},
+    }
+    assert attempt(scorecard, "stock-list/baseline/attempt-1")["observed_condition"] == {
+        "met": True,
+        "source": SERVICE_LOG,
+        "observations": {"presented_responses": 0, "faulted_requests": 0},
+    }
+    # The service was given one transformation, by the apply control: the one the customer declared.
+    assert fixture.service.presentations == [WRAPPED]
+
+
+def test_the_instruction_is_the_same_under_the_baseline_and_under_the_presentation():
+    # An environment variation presents the tools and data differently. It does not reword the instruction.
+    fixture = Fixture()
+
+    fixture.sweep(fixture.experiment(attempts=2))
+
+    assert fixture.agent.prompts == [PROMPT] * 4
+
+
+def test_an_attempt_counts_under_the_presentation_only_when_the_agent_was_served_it():
+    # Baseline 3/3 = 1. The presentation was applied for all three Attempts under the variation:
+    #   1: the agent left the list alone without reading it. The Task succeeded, and the response log
+    #      shows no transformed response: the agent never met the presentation;
+    #   2: the agent was served the wrapped list, did not find the item and added a second one: failure;
+    #   3: the agent was served the wrapped list and adapted: success.
+    # Presentation 1/2 = 0.5, value 0.5. Counting the first Attempt as having survived it gives 2/3.
+    fixture = Fixture(
+        {
+            "stock-list/wrapped-and-renamed/attempt-1": "leaves it without reading",
+            "stock-list/wrapped-and-renamed/attempt-3": "adapts",
+        }
+    )
+
+    scorecard = fixture.sweep(fixture.experiment(attempts=3))
+
+    unexposed = attempt(scorecard, "stock-list/wrapped-and-renamed/attempt-1")
+    assert unexposed["execution_status"] == "condition_not_met"
+    assert unexposed["observed_condition"]["met"] is False
+    assert unexposed["observed_condition"]["observations"] == {"presented_responses": 0, "faulted_requests": 0}
+    assert unexposed["task_outcome"] == {"success": True, "source": OUTCOME_SOURCE}
+    environment_robustness = metric(scorecard)
+    assert environment_robustness["value"] == 0.5
+    assert environment_robustness["counts"]["environment_attempts"] == {
+        "total": 3,
+        "valid": 2,
+        "missing": [],
+        "excluded": [
+            {
+                "reason": "the observed condition differs from the intended condition",
+                "count": 1,
+                "ids": ["stock-list/wrapped-and-renamed/attempt-1"],
+            }
+        ],
+    }
+
+
+def test_task_outcomes_come_from_the_service_and_not_from_the_answer_of_the_agent():
+    # The agent answers "Done." in every Attempt. Under the presentation it added a second item both
+    # times, so the Task failed: baseline 2/2 = 1, presentation 0/2 = 0, value 0.
+    fixture = Fixture()
+
+    scorecard = fixture.sweep(fixture.experiment(attempts=2))
+
+    for number in (1, 2):
+        presented = attempt(scorecard, f"stock-list/wrapped-and-renamed/attempt-{number}")
+        assert presented["execution_status"] == "completed"
+        assert presented["task_outcome"] == {"success": False, "source": OUTCOME_SOURCE}
+    assert metric(scorecard)["state"] == "available"
+    assert metric(scorecard)["value"] == 0
+
+
+def test_a_baseline_that_never_succeeds_gives_an_unavailable_measurement():
+    # Baseline 0/2 = 0: the agent adds a second item without looking, twice. Presentation 2/2 = 1.
+    # 1 / 0 is undefined.
+    fixture = Fixture(
+        {
+            "stock-list/baseline/attempt-1": "adds without reading",
+            "stock-list/baseline/attempt-2": "adds without reading",
+            "stock-list/wrapped-and-renamed/attempt-1": "adapts",
+            "stock-list/wrapped-and-renamed/attempt-2": "adapts",
+        }
+    )
+
+    scorecard = fixture.sweep(fixture.experiment(attempts=2))
+
+    environment_robustness = metric(scorecard)
+    assert environment_robustness["state"] == "unavailable"
+    assert environment_robustness["value"] is None
+    assert environment_robustness["reason"] == "the baseline accuracy is zero, so the ratio is undefined"
+    assert environment_robustness["counts"]["baseline_attempts"]["valid"] == 2
+    assert environment_robustness["counts"]["environment_attempts"]["valid"] == 2
+
+
+def test_an_environment_variation_and_a_fault_are_separate_experiments_and_each_metric_uses_its_own():
+    # "stock" declares the presentation: baseline 2/2 = 1. Under the presentation the agent adds a
+    # second item twice: 0/2 = 0. Environment robustness is 0 / 1 = 0.
+    # "restock" declares the fault: baseline 2/2 = 1. Under the fault the agent adds without looking,
+    # the service refuses, and the list keeps its one item: 2/2 = 1. Fault robustness is 1 / 1 = 1.
+    # With the Attempts of both experiments in one comparison, each would be (0.5 + 0.5) / 2 / 1 = 0.5.
+    fixture = Fixture(
+        {
+            "restock-list/add-fails/attempt-1": "adds without reading",
+            "restock-list/add-fails/attempt-2": "adds without reading",
+        },
+        task_ids=("stock", "restock"),
+    )
+
+    scorecard = fixture.sweep(
+        fixture.experiment("stock", attempts=2),
+        fixture.experiment("restock", attempts=2, variation=ADD_FAILS),
+        metrics=["environment_robustness", "fault_robustness"],
+    )
+
+    assert len(scorecard["attempts"]) == 8
+    assert [(entry["task_id"], entry["variation"]["kind"]) for entry in scorecard["experiments"]] == [
+        ("stock", "environment"),
+        ("restock", "fault"),
+    ]
+    environment_robustness = metric(scorecard)
+    assert environment_robustness["value"] == 0
+    assert environment_robustness["counts"]["tasks"] == {"total": 1, "valid": 1, "missing": [], "excluded": []}
+    assert environment_robustness["attempts_used"]["attempt_ids"] == [
+        "stock-list/baseline/attempt-1",
+        "stock-list/baseline/attempt-2",
+        "stock-list/wrapped-and-renamed/attempt-1",
+        "stock-list/wrapped-and-renamed/attempt-2",
+    ]
+    fault_robustness = metric(scorecard, "fault_robustness")
+    assert fault_robustness["value"] == 1
+    assert fault_robustness["counts"]["tasks"] == {"total": 1, "valid": 1, "missing": [], "excluded": []}
+    assert fault_robustness["attempts_used"]["attempt_ids"] == [
+        "restock-list/baseline/attempt-1",
+        "restock-list/baseline/attempt-2",
+        "restock-list/add-fails/attempt-1",
+        "restock-list/add-fails/attempt-2",
+    ]
+    # No Attempt ran under two kinds of variation: each condition has one kind, or none for a baseline.
+    assert [entry["intended_condition"].get("kind") for entry in scorecard["attempts"]] == [
+        *(None, None, "environment", "environment"),
+        *(None, None, "fault", "fault"),
+    ]
+
+
+def test_environment_robustness_is_rejected_before_any_attempt_when_no_experiment_declares_a_presentation():
+    fixture = Fixture()
+    needs_a_presentation = (
+        "'environment_robustness' needs an experiment whose variation declares the kind 'environment'"
+    )
+
+    with pytest.raises(ValueError, match=needs_a_presentation):
+        fixture.sweep(fixture.experiment(attempts=2, variation=ADD_FAILS))
+    with pytest.raises(ValueError, match=needs_a_presentation):
+        fixture.sweep(fixture.experiment(attempts=2, variation=None))
+    assert fixture.agent.prompts == []

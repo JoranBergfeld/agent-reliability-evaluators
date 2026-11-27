@@ -36,6 +36,8 @@ class VariationKind(str, Enum):
     FAULT = "fault"
     # The same tools and data are presented to the agent in an equivalent, different way.
     ENVIRONMENT = "environment"
+    # The instruction of the Task is given to the agent in an equivalent, different wording.
+    PROMPT = "prompt"
 
 
 def json_data(value: Any, what: str) -> Any:
@@ -97,6 +99,31 @@ class Condition:
             "description": self.description,
             "parameters": self.parameters,
         }
+
+
+@dataclass(frozen=True, kw_only=True)
+class PromptVariant:
+    """A wording of a Task's instruction that the customer supplies or approves as equivalent to the Task's own.
+
+    `text` is the exact wording the agent is given. `source` says where the wording comes
+    from and who holds it to be equivalent, such as the team that wrote it. Nothing here
+    generates a variant, changes its text or checks that it is equivalent.
+    """
+
+    variant_id: str
+    text: str
+    source: str
+
+    def __post_init__(self) -> None:
+        for name in ("variant_id", "text", "source"):
+            value = getattr(self, name)
+            if not isinstance(value, str) or not value.strip():
+                raise EvidenceError(
+                    f"a prompt variant is identified, and records its exact text and its source: {name} is {value!r}"
+                )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"variant_id": self.variant_id, "text": self.text, "source": self.source}
 
 
 @dataclass(frozen=True, kw_only=True)
