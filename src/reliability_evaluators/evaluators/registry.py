@@ -7,11 +7,13 @@ from typing import Callable
 
 from . import (
     brier_based_score,
+    calibration,
     constraint_compliance,
     distributional_trajectory_consistency,
     outcome_consistency,
     resource_consistency,
     sequential_trajectory_consistency,
+    strict_confidence_discrimination,
 )
 from .result import MetricDefinition, MetricResult
 
@@ -46,6 +48,12 @@ EVALUATORS: dict[str, Evaluator] = {
             declarations=("action_types",),
         ),
         Evaluator(resource_consistency.DEFINITION, resource_consistency.evaluate),
+        Evaluator(calibration.DEFINITION, calibration.evaluate, needs_confidence=True),
+        Evaluator(
+            strict_confidence_discrimination.DEFINITION,
+            strict_confidence_discrimination.evaluate,
+            needs_confidence=True,
+        ),
         Evaluator(brier_based_score.DEFINITION, brier_based_score.evaluate, needs_confidence=True),
         Evaluator(constraint_compliance.DEFINITION, constraint_compliance.evaluate),
     )
