@@ -92,7 +92,8 @@ class SeverityRating:
             mapped = SeverityLevel(self.level)
         else:
             raise EvidenceError(
-                f"a severity label can only be mapped to low, medium or high. {self.label!r} is mapped to {self.level!r}"
+                "a severity label can only be mapped to low, medium or high. "
+                f"{self.label!r} is mapped to {self.level!r}"
             )
         object.__setattr__(self, "level", mapped)
 

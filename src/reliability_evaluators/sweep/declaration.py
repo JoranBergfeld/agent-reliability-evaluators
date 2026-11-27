@@ -16,6 +16,7 @@ TaskSuccessRule = Callable[[AttemptRequest, AgentResponse], TaskOutcome]
 # assessment per constraint it could assess, from labels or a deterministic check. Like the
 # task-success rule, it should look at independent evidence and not only at the response.
 # A constraint it returns no assessment for is unassessed for that Attempt, not complied with.
+# An assessment that finds a violation can carry the severity rating of that violation.
 ViolationAssessor = Callable[[AttemptRequest, AgentResponse], Sequence[ViolationAssessment]]
 
 
