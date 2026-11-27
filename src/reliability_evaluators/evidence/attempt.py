@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+from math import isfinite
 from typing import Any
 
 from .actions import ActionEvidence
@@ -45,6 +46,79 @@ class TaskOutcome:
 
     def to_dict(self) -> dict[str, Any]:
         return {"success": self.success, "source": self.source}
+
+
+class ResourceType(str, Enum):
+    """The resources an Attempt's use of is measured."""
+
+    ELAPSED_TIME = "elapsed_time"
+    TOOL_CALLS = "tool_calls"
+    TOKEN_USAGE = "token_usage"
+
+
+COUNTED_RESOURCE_TYPES = (ResourceType.TOOL_CALLS, ResourceType.TOKEN_USAGE)
+
+
+@dataclass(frozen=True, kw_only=True)
+class ResourceMeasurement:
+    """How much of one resource an Attempt used.
+
+    `boundary` says what the number covers: where the measurement starts and stops, what
+    it includes and who measured it. A measurement that was not made is left off the
+    Attempt. It is never recorded as zero.
+    """
+
+    resource_type: ResourceType
+    value: float
+    unit: str
+    boundary: str
+    # Whether the provider vouches that the number covers the whole Attempt. Token usage is
+    # not reliably sourced unless this says so; every other resource type is unless it says not.
+    reliably_sourced: bool | None = None
+
+    def __post_init__(self) -> None:
+        try:
+            object.__setattr__(self, "resource_type", ResourceType(self.resource_type))
+        except ValueError:
+            raise EvidenceError(f"{self.resource_type!r} is not a resource type") from None
+        value = self.value
+        if not _is_finite_and_not_negative(value):
+            raise EvidenceError(
+                f"a resource measurement is a finite number that is not negative. Got {value!r} "
+                f"for {self.resource_type.value}. A measurement that was not made is left off the Attempt"
+            )
+        if self.resource_type in COUNTED_RESOURCE_TYPES and type(value) is not int:
+            raise EvidenceError(f"{self.resource_type.value} is a count, so a whole number. Got {value!r}")
+        for name, described in (("unit", "unit"), ("boundary", "measurement boundary")):
+            text = getattr(self, name)
+            if not isinstance(text, str) or not text.strip():
+                raise EvidenceError(
+                    f"a resource measurement records its {described}: "
+                    f"{name} is {text!r} for {self.resource_type.value}"
+                )
+        if self.reliably_sourced is None:
+            object.__setattr__(self, "reliably_sourced", self.resource_type is not ResourceType.TOKEN_USAGE)
+        elif type(self.reliably_sourced) is not bool:
+            raise EvidenceError(f"reliably_sourced is True or False. Got {self.reliably_sourced!r}")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "resource_type": self.resource_type.value,
+            "value": self.value,
+            "unit": self.unit,
+            "boundary": self.boundary,
+            "reliably_sourced": self.reliably_sourced,
+        }
+
+
+def _is_finite_and_not_negative(value: Any) -> bool:
+    if type(value) not in (int, float):
+        return False
+    try:
+        return isfinite(value) and value >= 0
+    except OverflowError:
+        # An integer too large to be a float.
+        return False
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -111,6 +185,8 @@ class Attempt:
     # The actions the agent took, in order. None means they were not recorded, which is
     # not the same as a recording with no events.
     action_evidence: ActionEvidence | None = None
+    # At most one measurement per resource type.
+    resource_measurements: tuple[ResourceMeasurement, ...] = ()
     # The operational constraints that apply to this Attempt, and the assessments made of them.
     operational_constraints: tuple[OperationalConstraint, ...] = ()
     violation_assessments: tuple[ViolationAssessment, ...] = ()
@@ -132,7 +208,30 @@ class Attempt:
             raise EvidenceError(
                 f"action evidence is an ActionEvidence with its source. Got {self.action_evidence!r}"
             )
+        self._require_one_measurement_per_resource_type()
         self._require_assessments_of_applicable_constraints()
+
+    def _require_one_measurement_per_resource_type(self) -> None:
+        try:
+            measurements = tuple(self.resource_measurements)
+        except TypeError:
+            raise EvidenceError(
+                f"resource measurements are a sequence of ResourceMeasurement. Got {self.resource_measurements!r}"
+            ) from None
+        measured: set[ResourceType] = set()
+        for measurement in measurements:
+            if not isinstance(measurement, ResourceMeasurement):
+                raise EvidenceError(
+                    f"a resource measurement is a ResourceMeasurement with its unit and measurement "
+                    f"boundary. Got {measurement!r}"
+                )
+            if measurement.resource_type in measured:
+                raise EvidenceError(
+                    f"Attempt {self.attempt_id!r} has more than one measurement of "
+                    f"{measurement.resource_type.value}"
+                )
+            measured.add(measurement.resource_type)
+        object.__setattr__(self, "resource_measurements", measurements)
 
     def _require_assessments_of_applicable_constraints(self) -> None:
         object.__setattr__(self, "operational_constraints", tuple(self.operational_constraints))
@@ -173,6 +272,7 @@ class Attempt:
             "execution_error": self.execution_error,
             "task_outcome": None if self.task_outcome is None else self.task_outcome.to_dict(),
             "action_evidence": None if self.action_evidence is None else self.action_evidence.to_dict(),
+            "resource_measurements": [measurement.to_dict() for measurement in self.resource_measurements],
             "operational_constraints": [constraint.to_dict() for constraint in self.operational_constraints],
             "violation_assessments": [assessment.to_dict() for assessment in self.violation_assessments],
         }

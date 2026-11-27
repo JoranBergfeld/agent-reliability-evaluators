@@ -2,7 +2,8 @@
 
 from __future__ import annotations
 
-from typing import Any, Sequence
+from time import perf_counter
+from typing import Any, Callable, Sequence
 
 from ..agent_target import AgentResponse, AgentTarget, AttemptRequest
 from ..evaluators import EVALUATORS, RELIABILITY_METRICS, Evaluator, Fidelity, ScoringPath
@@ -11,12 +12,19 @@ from ..evidence import (
     Attempt,
     EvidenceError,
     ExecutionStatus,
+    ResourceMeasurement,
+    ResourceType,
     TaskOutcome,
     ViolationAssessment,
     group_by_task,
 )
 from ..scorecard import AcceptanceCriterion, ScoredMetric, build_scorecard, criteria_by_metric
 from .declaration import ActionEvidenceDeclaration, Task
+
+ELAPSED_TIME_UNIT = "seconds"
+ELAPSED_TIME_BOUNDARY = (
+    "wall clock from just before the agent target is invoked until it returns, measured by the Evaluator sweep"
+)
 
 
 def run_sweep(
@@ -26,6 +34,7 @@ def run_sweep(
     metrics: Sequence[str],
     action_evidence: ActionEvidenceDeclaration | None = None,
     acceptance_criteria: Sequence[AcceptanceCriterion] = (),
+    clock: Callable[[], float] = perf_counter,
 ) -> dict[str, Any]:
     """Make the declared Attempts, score the selected metrics, and return the scorecard.
 
@@ -41,6 +50,10 @@ def run_sweep(
     with its metric as met, not met, or not assessed with a reason. Without one, a metric
     has no acceptance verdict.
 
+    The sweep times every invocation that returns, on `clock`, which gives seconds and
+    never runs backwards. An agent target that reports its own elapsed time is recorded
+    instead. Every other resource measurement comes from the agent target.
+
     A declaration that cannot be run is rejected before any Attempt is made. A task-success
     rule that does not return a sourced, binary TaskOutcome stops the sweep. So does a
     violation assessor that does not return sourced violation assessments of the operational
@@ -54,7 +67,7 @@ def run_sweep(
     # Called for its check: a second criterion for one metric is rejected here, not after the Attempts.
     criteria_by_metric(acceptance_criteria)
     attempts = [
-        _run_attempt(task, number, agent_target, action_evidence)
+        _run_attempt(task, number, agent_target, action_evidence, clock)
         for task in tasks
         for number in range(1, task.attempts + 1)
     ]
@@ -96,11 +109,16 @@ def _require_distinct_tasks(tasks: Sequence[Task]) -> None:
 
 
 def _run_attempt(
-    task: Task, number: int, agent_target: AgentTarget, action_evidence: ActionEvidenceDeclaration | None
+    task: Task,
+    number: int,
+    agent_target: AgentTarget,
+    action_evidence: ActionEvidenceDeclaration | None,
+    clock: Callable[[], float],
 ) -> Attempt:
     request = AttemptRequest(
         attempt_id=f"{task.task_id}/attempt-{number}", task_id=task.task_id, prompt=task.prompt
     )
+    started = clock()
     try:
         response = agent_target.invoke(request)
     except Exception as error:
@@ -111,6 +129,7 @@ def _run_attempt(
             execution_error=f"{type(error).__name__}: {error}",
             operational_constraints=task.operational_constraints,
         )
+    elapsed = clock() - started
     outcome = task.success_rule(request, response)
     if not isinstance(outcome, TaskOutcome):
         raise EvidenceError(
@@ -122,10 +141,26 @@ def _run_attempt(
         task_id=task.task_id,
         execution_status=ExecutionStatus.COMPLETED,
         task_outcome=outcome,
+        resource_measurements=_resource_measurements(elapsed, response.resource_measurements),
         operational_constraints=task.operational_constraints,
         violation_assessments=_assess_violations(task, request, response),
         action_evidence=None if action_evidence is None else _recorded_actions(action_evidence, request, response),
     )
+
+
+def _resource_measurements(
+    elapsed: float, reported: Sequence[ResourceMeasurement]
+) -> tuple[ResourceMeasurement, ...]:
+    """What the agent target reported, with the sweep's own elapsed time unless the target gave one."""
+    if any(getattr(measurement, "resource_type", None) is ResourceType.ELAPSED_TIME for measurement in reported):
+        return tuple(reported)
+    timed = ResourceMeasurement(
+        resource_type=ResourceType.ELAPSED_TIME,
+        value=elapsed,
+        unit=ELAPSED_TIME_UNIT,
+        boundary=ELAPSED_TIME_BOUNDARY,
+    )
+    return (timed, *reported)
 
 
 def _assess_violations(

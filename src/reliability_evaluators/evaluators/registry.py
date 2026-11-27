@@ -9,6 +9,7 @@ from . import (
     constraint_compliance,
     distributional_trajectory_consistency,
     outcome_consistency,
+    resource_consistency,
     sequential_trajectory_consistency,
 )
 from .result import MetricDefinition, MetricResult
@@ -41,6 +42,7 @@ EVALUATORS: dict[str, Evaluator] = {
             sequential_trajectory_consistency.evaluate,
             declarations=("action_types",),
         ),
+        Evaluator(resource_consistency.DEFINITION, resource_consistency.evaluate),
         Evaluator(constraint_compliance.DEFINITION, constraint_compliance.evaluate),
     )
 }

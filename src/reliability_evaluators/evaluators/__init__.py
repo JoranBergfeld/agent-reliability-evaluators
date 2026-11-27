@@ -10,6 +10,7 @@ from . import (
     constraint_compliance,
     distributional_trajectory_consistency,
     outcome_consistency,
+    resource_consistency,
     sequential_trajectory_consistency,
 )
 from .catalogue import RELIABILITY_METRICS, ReliabilityMetric
@@ -43,5 +44,6 @@ __all__ = [
     "counted",
     "distributional_trajectory_consistency",
     "outcome_consistency",
+    "resource_consistency",
     "sequential_trajectory_consistency",
 ]

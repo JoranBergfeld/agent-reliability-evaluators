@@ -11,7 +11,7 @@ import pytest
 from reliability_evaluators.evidence import EvidenceError, TaskOutcome
 from reliability_evaluators.scorecard import to_json
 from reliability_evaluators.sweep import Task, run_sweep
-from tests.fakes import FakeAgentTarget
+from tests.fakes import FakeAgentTarget, attempt_evidence
 
 SOURCE = "final state of the fake service"
 
@@ -87,16 +87,13 @@ def test_the_value_refers_to_attempt_level_evidence_in_the_scorecard():
     scorecard = sweep({"close": ["success", "failure"]})
 
     assert metric(scorecard)["evidence"] == {"attempt_ids": ["close/attempt-1", "close/attempt-2"]}
-    assert scorecard["attempts"] == [
+    assert [attempt_evidence(attempt) for attempt in scorecard["attempts"]] == [
         {
             "attempt_id": "close/attempt-1",
             "task_id": "close",
             "execution_status": "completed",
             "execution_error": None,
             "task_outcome": {"success": True, "source": SOURCE},
-            "action_evidence": None,
-            "operational_constraints": [],
-            "violation_assessments": [],
         },
         {
             "attempt_id": "close/attempt-2",
@@ -104,9 +101,6 @@ def test_the_value_refers_to_attempt_level_evidence_in_the_scorecard():
             "execution_status": "completed",
             "execution_error": None,
             "task_outcome": {"success": False, "source": SOURCE},
-            "action_evidence": None,
-            "operational_constraints": [],
-            "violation_assessments": [],
         },
     ]
 
@@ -167,15 +161,12 @@ def test_an_invocation_that_fails_is_an_execution_status_and_not_a_task_failure(
     # Scoring the failed invocation as a task failure would give (2 * 2/3 - 1)^2 = 0.111...
     scorecard = sweep({"close": ["success", "error", "success"]})
 
-    assert scorecard["attempts"][1] == {
+    assert attempt_evidence(scorecard["attempts"][1]) == {
         "attempt_id": "close/attempt-2",
         "task_id": "close",
         "execution_status": "failed",
         "execution_error": "ConnectionError: the agent endpoint returned 503",
         "task_outcome": None,
-        "action_evidence": None,
-        "operational_constraints": [],
-        "violation_assessments": [],
     }
     outcome_consistency = metric(scorecard)
     assert outcome_consistency["value"] == 1
