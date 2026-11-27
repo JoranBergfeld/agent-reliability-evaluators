@@ -12,7 +12,11 @@ class EvidenceError(ValueError):
 
 
 class ExecutionStatus(str, Enum):
-    """How the execution of an Attempt ended. This is not the task outcome."""
+    """How the running of an Attempt or an experiment ended. This is not the task outcome.
+
+    Only a completed Attempt has a task outcome. Every other status is an execution that
+    did not complete, and is never a failed Task.
+    """
 
     COMPLETED = "completed"
     FAILED = "failed"
@@ -72,6 +76,14 @@ class Attempt:
             object.__setattr__(self, "execution_status", ExecutionStatus(self.execution_status))
         except ValueError:
             raise EvidenceError(f"{self.execution_status!r} is not an execution status") from None
+        retry_of = self.retry_of
+        if retry_of is not None and (
+            not isinstance(retry_of, str) or not retry_of.strip() or retry_of == self.attempt_id
+        ):
+            raise EvidenceError(
+                f"a retry identifies the other Attempt it retries: retry_of is {retry_of!r} "
+                f"for Attempt {self.attempt_id!r}"
+            )
         if self.task_outcome is not None and not isinstance(self.task_outcome, TaskOutcome):
             raise EvidenceError(
                 f"a task outcome is a TaskOutcome with its source. Got {self.task_outcome!r}"

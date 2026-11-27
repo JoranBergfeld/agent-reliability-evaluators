@@ -9,7 +9,7 @@ import pytest
 
 from reliability_evaluators.evidence import TaskOutcome
 from reliability_evaluators.sweep import ExecutionLimits, Task, run_sweep
-from tests.fakes import FakeAgentTarget, FakeClock, cancelling, taking
+from tests.fakes import FakeAgentTarget, FakeClock, MeetingAgentTarget, cancelling, taking
 
 SOURCE = "final state of the fake service"
 
@@ -432,3 +432,78 @@ def test_an_unavailable_measurement_stays_unavailable_when_every_experiment_comp
     assert outcome_consistency["reason"] == "no Task has at least two Attempts with a task outcome"
     assert outcome_consistency["experiment_failure"] is None
     assert scorecard["status"] == "complete"
+
+
+def always_succeeds(attempt, response):
+    return TaskOutcome(success=True, source=SOURCE)
+
+
+def two_tasks_of_two_attempts():
+    return [
+        Task(task_id=task_id, prompt=f"Do {task_id}.", success_rule=always_succeeds, attempts=2)
+        for task_id in ("close", "archive")
+    ]
+
+
+def test_attempts_run_one_after_another_by_default_and_the_scorecard_says_so():
+    # The agent only answers when two invocations are in flight at once, which never happens.
+    scorecard = run_sweep(
+        tasks=two_tasks_of_two_attempts(),
+        agent_target=MeetingAgentTarget(wait_seconds=0.05),
+        metrics=["outcome_consistency"],
+    )
+
+    assert scorecard["execution"] == {"concurrency": {"mode": "sequential", "max_concurrent_attempts": 1}}
+    assert [entry["execution_status"] for entry in scorecard["attempts"]] == ["failed"] * 4
+    assert scorecard["attempts"][0]["execution_error"] == "ConnectionError: no other invocation was in flight"
+
+
+def test_concurrency_is_declared_by_the_caller_and_recorded_in_the_scorecard():
+    # The agent only answers when two invocations are in flight at once. All four Attempts complete.
+    scorecard = run_sweep(
+        tasks=two_tasks_of_two_attempts(),
+        agent_target=MeetingAgentTarget(wait_seconds=30),
+        metrics=["outcome_consistency"],
+        max_concurrent_attempts=2,
+    )
+
+    assert scorecard["execution"] == {"concurrency": {"mode": "concurrent", "max_concurrent_attempts": 2}}
+    assert [(entry["attempt_id"], entry["execution_status"]) for entry in scorecard["attempts"]] == [
+        ("close/attempt-1", "completed"),
+        ("close/attempt-2", "completed"),
+        ("archive/attempt-1", "completed"),
+        ("archive/attempt-2", "completed"),
+    ]
+    assert scorecard["status"] == "complete"
+    assert metric(scorecard)["value"] == 1
+
+
+@pytest.mark.parametrize(
+    ("declared", "problem"),
+    [
+        ({"attempt_timeout_seconds": 0}, "attempt_timeout_seconds"),
+        ({"attempt_timeout_seconds": "30"}, "attempt_timeout_seconds"),
+        ({"experiment_timeout_seconds": -1}, "experiment_timeout_seconds"),
+        ({"max_retries": -1}, "max_retries"),
+        ({"max_retries": 1.5}, "max_retries"),
+    ],
+)
+def test_a_limit_that_cannot_be_applied_is_rejected_when_it_is_declared(declared, problem):
+    with pytest.raises(ValueError, match=problem):
+        ExecutionLimits(**declared)
+
+
+def test_limits_that_are_not_execution_limits_are_rejected_when_the_task_is_declared():
+    with pytest.raises(ValueError, match="ExecutionLimits"):
+        Task(task_id="close", prompt="Close it.", success_rule=always_succeeds, attempts=2, limits={"max_retries": 1})
+
+
+@pytest.mark.parametrize("declared", [0, 1.5, True])
+def test_a_concurrency_that_cannot_be_applied_is_rejected(declared):
+    with pytest.raises(ValueError, match="max_concurrent_attempts"):
+        run_sweep(
+            tasks=two_tasks_of_two_attempts(),
+            agent_target=FakeAgentTarget({"close": ["success"] * 2, "archive": ["success"] * 2}),
+            metrics=["outcome_consistency"],
+            max_concurrent_attempts=declared,
+        )

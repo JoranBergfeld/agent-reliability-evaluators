@@ -1,5 +1,6 @@
 """Fakes for driving the Evaluator sweep through its public entry point."""
 
+import threading
 from dataclasses import dataclass
 
 from reliability_evaluators.agent_target import AgentResponse, AttemptRequest
@@ -80,4 +81,23 @@ class FakeAgentTarget:
         if step.behaviour == "aborted":
             raise ConnectionAbortedError("the caller closed the connection")
         self.service_state[request.attempt_id] = "done" if step.behaviour == "success" else "open"
+        return AgentResponse(output="Done.")
+
+
+class MeetingAgentTarget:
+    """An agent that answers only when two invocations are in flight at the same time.
+
+    An invocation waits up to `wait_seconds` for another one to arrive. If none does, it
+    fails, and so does every later invocation. Used to show through the scorecard whether
+    Attempts overlapped.
+    """
+
+    def __init__(self, *, wait_seconds: float):
+        self._meeting = threading.Barrier(2, timeout=wait_seconds)
+
+    def invoke(self, request: AttemptRequest) -> AgentResponse:
+        try:
+            self._meeting.wait()
+        except threading.BrokenBarrierError:
+            raise ConnectionError("no other invocation was in flight") from None
         return AgentResponse(output="Done.")

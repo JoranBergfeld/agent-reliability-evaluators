@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
-from typing import Any, Callable, Sequence
+from functools import partial
+from typing import Any, Callable, Iterator, Sequence
 
 from ..agent_target import AgentTarget, AttemptRequest
 from ..evaluators import EVALUATORS, RELIABILITY_METRICS, Evaluator, Fidelity, ScoringPath
@@ -18,30 +21,53 @@ def run_sweep(
     tasks: Sequence[Task],
     agent_target: AgentTarget,
     metrics: Sequence[str],
+    max_concurrent_attempts: int = 1,
     cancellation: Callable[[], bool] | None = None,
     clock: Callable[[], float] = time.monotonic,
 ) -> dict[str, Any]:
     """Make the declared Attempts, score the selected metrics, and return the scorecard.
 
-    `metrics` names the reliability metrics to score, by metric identity. Attempts run one
-    after another, Task by Task, and scoring happens in this process. The result is the
-    machine-readable reliability scorecard, as JSON-compatible data.
+    `metrics` names the reliability metrics to score, by metric identity. Scoring happens
+    in this process. The result is the machine-readable reliability scorecard, as
+    JSON-compatible data.
+
+    Attempts run one after another, Task by Task, unless `max_concurrent_attempts` is more
+    than 1. Then up to that many Attempts are in flight at once, and the agent target, the
+    task-success rules and `cancellation` are called from several threads. The scorecard
+    records which of the two it was. Shared state and timing are the caller's to control.
+
+    The Attempts planned at one Task are one experiment, run under that Task's execution
+    limits. `cancellation` is asked before every Attempt and retry; once it returns True no
+    further one is started. Attempts that are in flight are not interrupted. What was
+    collected until then is scored, and the scorecard is partial and names what is missing.
+
+    `clock` returns seconds and is what time limits are measured with.
 
     A declaration that cannot be run is rejected before any Attempt is made. A task-success
     rule that does not return a sourced, binary TaskOutcome stops the sweep.
     """
     evaluators = [_evaluator(metric_id) for metric_id in metrics]
     _require_distinct_tasks(tasks)
+    if type(max_concurrent_attempts) is not int or max_concurrent_attempts < 1:
+        raise ValueError(f"max_concurrent_attempts is a whole number, 1 or more, got {max_concurrent_attempts!r}")
+    cancelled = _Cancellation(cancellation)
+    running = [_Experiment(task, agent_target, cancelled, clock) for task in tasks]
+    planned = _run_planned_attempts(
+        [
+            partial(experiment.run_planned_attempt, number)
+            for task, experiment in zip(tasks, running)
+            for number in range(1, task.attempts + 1)
+        ],
+        max_concurrent_attempts,
+    )
     attempts: list[Attempt] = []
     experiments: list[ExperimentRun] = []
     evidence: list[TaskEvidence] = []
-    cancelled = _Cancellation(cancellation)
-    for task in tasks:
-        experiment = _Experiment(task, agent_target, cancelled, clock)
-        planned = [experiment.run_planned_attempt(number) for number in range(1, task.attempts + 1)]
-        made = [attempt for executions in planned for attempt in executions]
+    for task, experiment in zip(tasks, running):
+        of_experiment = [next(planned) for _ in range(task.attempts)]
+        made = [attempt for executions in of_experiment for attempt in executions]
         attempts.extend(made)
-        experiments.append(experiment.run(planned))
+        experiments.append(experiment.summary(of_experiment))
         # A Task whose Attempts were not made is still a Task in the evidence.
         evidence.append(TaskEvidence(task.task_id, tuple(made)))
     scored = [
@@ -53,7 +79,25 @@ def run_sweep(
         )
         for evaluator in evaluators
     ]
-    return build_scorecard(metrics=scored, attempts=attempts, experiments=experiments)
+    return build_scorecard(
+        metrics=scored, attempts=attempts, experiments=experiments, max_concurrent_attempts=max_concurrent_attempts
+    )
+
+
+def _run_planned_attempts(
+    planned: Sequence[Callable[[], list[Attempt]]], max_concurrent_attempts: int
+) -> Iterator[list[Attempt]]:
+    """Run every planned Attempt and give their executions in the order they were planned."""
+    if max_concurrent_attempts == 1:
+        return iter([run() for run in planned])
+    with ThreadPoolExecutor(max_workers=max_concurrent_attempts) as pool:
+        futures = [pool.submit(run) for run in planned]
+        try:
+            return iter([future.result() for future in futures])
+        except BaseException:
+            for future in futures:
+                future.cancel()
+            raise
 
 
 def _evaluator(metric_id: str) -> Evaluator:
@@ -98,6 +142,8 @@ class _Experiment:
         self._agent_target = agent_target
         self._cancellation = cancellation
         self._clock = clock
+        # Planned Attempts of one experiment may run on several threads.
+        self._lock = threading.Lock()
         self._started: float | None = None
         # Why no further Attempt of this experiment is started, once that is so.
         self._stopped: ExecutionStatus | None = None
@@ -123,19 +169,20 @@ class _Experiment:
         return executions
 
     def _may_start(self) -> bool:
-        if self._stopped is not None:
-            return False
-        if self._cancellation.requested():
-            self._stopped = ExecutionStatus.CANCELLED
-            return False
-        now = self._clock()
-        if self._started is None:
-            self._started = now
-        limit = self._task.limits.experiment_timeout_seconds
-        if limit is not None and now - self._started >= limit:
-            self._stopped = ExecutionStatus.TIMED_OUT
-            return False
-        return True
+        with self._lock:
+            if self._stopped is not None:
+                return False
+            if self._cancellation.requested():
+                self._stopped = ExecutionStatus.CANCELLED
+                return False
+            now = self._clock()
+            if self._started is None:
+                self._started = now
+            limit = self._task.limits.experiment_timeout_seconds
+            if limit is not None and now - self._started >= limit:
+                self._stopped = ExecutionStatus.TIMED_OUT
+                return False
+            return True
 
     def _run_attempt(self, attempt_id: str, retry_of: str | None) -> Attempt:
         task = self._task
@@ -151,24 +198,27 @@ class _Experiment:
                 retry_of=retry_of,
             )
 
-        def over_the_limit() -> bool:
-            return limit is not None and self._clock() - started > limit
-
+        error = None
         started = self._clock()
         try:
             response = self._agent_target.invoke(request)
-        except Exception as error:
+        except Exception as raised:
+            error = raised
+        # The sweep cannot interrupt an invocation. It measures, so that the limit holds
+        # whether or not the agent target stopped at it.
+        over_the_limit = limit is not None and self._clock() - started > limit
+        if error is not None:
             why = f"{type(error).__name__}: {error}"
             if isinstance(error, TimeoutError):
                 return not_completed(ExecutionStatus.TIMED_OUT, why)
-            if over_the_limit():
+            if over_the_limit:
                 return not_completed(
                     ExecutionStatus.TIMED_OUT, f"{why}, after the Attempt's time limit of {limit:g} seconds"
                 )
             if self._cancellation.requested():
                 return not_completed(ExecutionStatus.CANCELLED, f"{why}, after the sweep was cancelled")
             return not_completed(ExecutionStatus.FAILED, why)
-        if over_the_limit():
+        if over_the_limit:
             # The limit applies to every Attempt alike, so a late answer is not scored.
             return not_completed(
                 ExecutionStatus.TIMED_OUT,
@@ -188,8 +238,8 @@ class _Experiment:
             retry_of=retry_of,
         )
 
-    def run(self, planned: Sequence[Sequence[Attempt]]) -> ExperimentRun:
-        """Sum up the experiment from its planned Attempts, each given as its executions in order."""
+    def summary(self, planned: Sequence[Sequence[Attempt]]) -> ExperimentRun:
+        """How the experiment ended, from its planned Attempts, each given as its executions in order."""
         task = self._task
         not_made = sum(1 for executions in planned if not executions)
         not_completed = tuple(

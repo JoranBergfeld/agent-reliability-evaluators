@@ -74,13 +74,18 @@ class ExperimentRun:
 
 
 def build_scorecard(
-    *, metrics: Sequence[ScoredMetric], attempts: Sequence[Attempt], experiments: Sequence[ExperimentRun]
+    *,
+    metrics: Sequence[ScoredMetric],
+    attempts: Sequence[Attempt],
+    experiments: Sequence[ExperimentRun],
+    max_concurrent_attempts: int,
 ) -> dict[str, Any]:
     """Assemble the scorecard as JSON-compatible data.
 
     All twelve metrics are listed individually, in catalogue order. A metric that was not
     scored is not configured. Metric entries and `experiments` refer to `attempts` by
-    Attempt identity.
+    Attempt identity. `max_concurrent_attempts` is how many Attempts the sweep allowed in
+    flight at once; 1 means they ran one after another.
 
     The scorecard is complete when nothing that was planned is missing. Otherwise it is
     partial, and `missing` names what is missing and why. A metric keeps its result when
@@ -103,6 +108,12 @@ def build_scorecard(
         "schema_version": SCHEMA_VERSION,
         "status": (ScorecardStatus.PARTIAL if missing else ScorecardStatus.COMPLETE).value,
         "missing": missing,
+        "execution": {
+            "concurrency": {
+                "mode": "sequential" if max_concurrent_attempts == 1 else "concurrent",
+                "max_concurrent_attempts": max_concurrent_attempts,
+            }
+        },
         "metrics": [
             _metric_entry(metric, scored_by_id.get(metric.metric_id), failures.get(metric.metric_id))
             for metric in RELIABILITY_METRICS
