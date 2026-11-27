@@ -297,6 +297,7 @@ def _sweep(
     returned = _score_managed(
         managed_scoring,
         {evaluator.metric_id: evidence for evaluator, evidence, _ in to_score if evaluator.metric_id in managed},
+        {evaluator.metric_id: evaluator.evaluated_with() for evaluator, _, _ in to_score},
     )
     scored: list[ScoredMetric | MissingResult] = []
     for evaluator, evidence, cut_short in to_score:
@@ -390,9 +391,14 @@ def _in_every_set(preparation: PreparationUsage, sets: int) -> PreparationUsage:
 
 
 def _score_managed(
-    managed_scoring: FoundryManagedScoring | None, evidence: dict[str, Sequence[TaskEvidence]]
+    managed_scoring: FoundryManagedScoring | None,
+    evidence: dict[str, Sequence[TaskEvidence]],
+    declared: dict[str, tuple[Any, ...]],
 ) -> dict[str, Any]:
     """What Foundry-managed scoring gives for each metric on that path: its result, or its failure.
+
+    `declared` is what each Evaluator is called with besides its evidence, which is
+    submitted with it.
 
     The Attempts are made by now. Whatever goes wrong here leaves those metrics without a
     result, and never without the evidence or the results of the other metrics.
@@ -400,7 +406,7 @@ def _score_managed(
     if not evidence:
         return {}
     try:
-        returned = dict(managed_scoring.score(evidence))
+        returned = dict(managed_scoring.score(evidence, {metric_id: declared[metric_id] for metric_id in evidence}))
     except Exception as error:
         failure = ManagedFailure(error=f"{type(error).__name__}: {error}")
         return dict.fromkeys(evidence, failure)
@@ -485,9 +491,12 @@ class _SelectedEvaluator:
                 )
         return tuple(evidence)
 
+    def evaluated_with(self) -> tuple[Any, ...]:
+        """What the Evaluator is called with after its evidence: the customer's declarations, in its order."""
+        return tuple(_EVALUATED_WITH[name](self.declared[name]) for name in self.evaluator.declarations)
+
     def evaluate(self, evidence: Sequence[TaskEvidence]) -> MetricResult:
-        declared = (_EVALUATED_WITH[name](self.declared[name]) for name in self.evaluator.declarations)
-        return self.evaluator.evaluate(evidence, *declared)
+        return self.evaluator.evaluate(evidence, *self.evaluated_with())
 
 
 @dataclass(frozen=True)

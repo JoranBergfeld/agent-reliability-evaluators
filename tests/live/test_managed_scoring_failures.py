@@ -23,8 +23,7 @@ import pytest
 from live_fixture import TASK_PROMPT, local_service, strict_task_outcome, teardown
 from live_fixture.project_only import connect_project, provision_project
 from reliability_evaluators.evidence import TaskOutcome
-from reliability_evaluators.managed_scoring import FoundryManagedScoring, FoundryProject, azure_cli_token, derive_artifact
-from reliability_evaluators.managed_scoring.artifact import MANAGED_ATTEMPT_EVIDENCE
+from reliability_evaluators.managed_scoring import FoundryManagedScoring, FoundryProject, azure_cli_token
 from reliability_evaluators.scorecard import to_json
 from reliability_evaluators.sweep import ConfiguredEvaluator, Task, rescore_in_customer_process, run_sweep
 from tests.live.test_managed_outcome_consistency import ScriptedTodoAgent, service_attempt
@@ -209,19 +208,13 @@ def test_a_rescore_stands_beside_the_value_that_the_live_project_returned(live, 
 def test_one_managed_run_that_fails_does_not_take_the_result_of_another_managed_run(
     live, project, failing_evaluator_version, monkeypatch
 ):
-    # Only outcome consistency has a Foundry evaluator in this version. A second Evaluator on the
-    # managed path is needed to show two managed runs of one sweep, so the Attempt evidence of
-    # resource consistency is declared for this check. Its derived evaluator is registered and is
-    # not run: the test-only evaluator that raises is run in its place.
-    monkeypatch.setitem(MANAGED_ATTEMPT_EVIDENCE, "resource_consistency", ("resource_measurements",))
-    derive_artifact.cache_clear()
+    # A second Evaluator on the managed path shows two managed runs of one sweep. The derived
+    # evaluator of resource consistency is registered and is not run: the test-only evaluator
+    # that raises is run in its place.
     failing = RunsTheFailingEvaluator(project, failing_evaluator_version, for_metric="resource_consistency")
     both_managed = [MANAGED, ConfiguredEvaluator(metric_id="resource_consistency", scoring_path="foundry_managed")]
 
-    try:
-        scorecard = sweep_on_the_fixture(failing, monkeypatch, metrics=both_managed)
-    finally:
-        derive_artifact.cache_clear()
+    scorecard = sweep_on_the_fixture(failing, monkeypatch, metrics=both_managed)
 
     outcome_consistency, resource_consistency = metric(scorecard), metric(scorecard, "resource_consistency")
     print(json.dumps({"kept": {key: outcome_consistency[key] for key in ("state", "value", "scoring_path", "fidelity")},

@@ -200,6 +200,16 @@ The metric's entry in the scorecard carries:
 
 Each Attempt under `attempts` carries its `action_evidence`: the source and the events in order, each with tool name, arguments, result and error. It is `null` for an Attempt that was not recorded.
 
+## Scoring it in your Foundry project
+
+Sequential trajectory consistency can also be calculated by a custom evaluator in your own Foundry project. That evaluator is derived from the canonical definition above; there is no second formula. Select the metric as `ConfiguredEvaluator(metric_id="sequential_trajectory_consistency", scoring_path="foundry_managed")` and give the sweep your project as `managed_scoring`. Everything else is declared as above.
+
+For each Attempt the evaluator is sent its identity, its Task, its execution status, and the source of its action evidence and the tool name of each action, in order. The arguments, the result and the error of an action are not sent. The evidence source and the action types you declare are sent with it. Nothing else about the Attempt leaves your process.
+
+The value is then the number Foundry returned. It is reported with `scoring_path` `foundry_managed`. Its `fidelity` is `authoritative` when it equals the value the evaluator returned with it in encoded form, and `unverified`, with its limitation, when it does not: see [the fidelity check](../managed_scoring/readme.md#the-fidelity-check) for what that establishes. An unverified result cannot be met or not met by an acceptance criterion. Only the metric value is compared in that way. The state, the reason, the counts and the details, with the value and the mean distance of each Task, are the ones the evaluator returned from Foundry in the encoded result, and they are what your own process gives for the same evidence. An unavailable measurement comes back as one.
+
+A sweep that is too large for one managed run has no result for the metric, and the scorecard says so. With Tasks of five Attempts, the largest synthetic sweep that fitted had 415 Attempts of six actions each. A Task with many Attempts that each take hundreds of actions can also take longer to compare than Foundry allows one call, which leaves the metric without a result too. See [Foundry-managed scoring](../managed_scoring/readme.md) and its [limits](../managed_scoring/readme.md#limits).
+
 ## Evidence it needs
 
 Each Attempt must identify itself and its Task, and carry:

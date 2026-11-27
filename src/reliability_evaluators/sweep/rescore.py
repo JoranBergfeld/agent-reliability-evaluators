@@ -129,7 +129,8 @@ def _rescore(
             attempts_used=rescoring.attempt_ids,
             cut_short=rescoring.cut_short,
         )
-        entry[RESCORE] = rescore_entry(scored, _same_evidence(entry, evidence), criteria.get(metric_id))
+        same_evidence = _same_evidence(entry, evidence, rescoring.evaluator.evaluated_with())
+        entry[RESCORE] = rescore_entry(scored, same_evidence, criteria.get(metric_id))
         with _validating_the_supplied_evidence():
             # The rescore is a scoring of its own. It is code in this process, so it used no tokens,
             # and what the managed runs used stays as it was reported.
@@ -205,11 +206,13 @@ def _attempts_used(entry: Mapping[str, Any], earlier: _EarlierScorecard) -> tupl
     return tuple(attempt_ids)
 
 
-def _same_evidence(entry: Mapping[str, Any], evidence: Sequence[Any]) -> str | None:
+def _same_evidence(entry: Mapping[str, Any], evidence: Sequence[Any], declared: Sequence[Any]) -> str | None:
     """The digest of the evidence that is rescored, which has to be the digest of what was submitted.
 
     The digest is the one the evidence travels to Foundry with, so the two are the same
     exactly when the rescore is calculated from the evidence the managed evaluator was sent.
+    `declared` is what the customer declares for the Evaluator, such as the action types. It
+    is submitted with the evidence, so a rescore under another declaration is refused too.
     None when this version derives no Foundry evaluator for the metric and nothing was
     recorded as submitted: there is then nothing to compare.
     """
@@ -217,7 +220,7 @@ def _same_evidence(entry: Mapping[str, Any], evidence: Sequence[Any]) -> str | N
     managed = entry.get("managed_scoring")
     submitted = managed.get("evidence_sha256") if isinstance(managed, Mapping) else None
     try:
-        digest = submitted_evidence_sha256(metric_id, evidence)
+        digest = submitted_evidence_sha256(metric_id, evidence, *declared)
     except DerivationError as error:
         if submitted is None:
             return None
@@ -229,6 +232,7 @@ def _same_evidence(entry: Mapping[str, Any], evidence: Sequence[Any]) -> str | N
         raise EvidenceError(
             f"the supplied evidence is not the evidence that was submitted to Foundry for {metric_id!r}: it has "
             f"the digest {digest}, and {submitted} was submitted. A customer-process rescore is of the same "
-            "evidence. Rescore with the scorecard as the sweep wrote it, and with the commit or tag that made it"
+            "evidence, with what the customer declared for the Evaluator as it was declared for the sweep. "
+            "Rescore with the scorecard as the sweep wrote it, and with the commit or tag that made it"
         )
     return digest

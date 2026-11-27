@@ -228,7 +228,7 @@ class ManagedScoringThatDoesNotCheck:
     def register(self, metric_ids):
         return {}
 
-    def score(self, evidence):
+    def score(self, evidence, declared=None):
         result = MetricResult.available(outcome_consistency.DEFINITION, 0.36)
         return {"outcome_consistency": ManagedResult(result=result, provenance={"eval_id": "eval_1"})}
 
