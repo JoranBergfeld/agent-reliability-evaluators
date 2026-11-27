@@ -7,4 +7,5 @@ Modules:
 - `sweep`: the Evaluator sweep and what a customer declares for it.
 - `agent_target`: the interface the sweep invokes an agent through, for an Attempt and for the confidence follow-up.
 - `scorecard`: the machine-readable reliability scorecard, the human-readable report and their delivery.
+- `managed_scoring`: scoring as a custom evaluator in the customer's Foundry project, derived from the canonical definition.
 """

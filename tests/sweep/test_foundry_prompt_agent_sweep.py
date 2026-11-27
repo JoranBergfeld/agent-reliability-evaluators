@@ -18,7 +18,7 @@ from reliability_evaluators.agent_target import (
     platform_tool_calls,
 )
 from reliability_evaluators.sweep import ActionEvidenceDeclaration, ExecutionLimits, run_sweep
-from tests.fake_foundry import fake_foundry_project
+from tests.fake_foundry_prompt_agent import fake_prompt_agent_project
 from tests.fakes import attempt_evidence
 from tests.todo_fixture_sweep import CONDITION_SOURCE, UPDATE_FAILS, TodoFixtureSweep
 
@@ -81,7 +81,7 @@ def sweep(
     the caller's token provider. Everything else is declared to the sweep.
     """
     fixture = TodoFixtureSweep(todo_service, state=STATE)
-    with fake_foundry_project(todo_service, script) as project:
+    with fake_prompt_agent_project(todo_service, script) as project:
         target = FoundryPromptAgentTarget(
             project=FoundryProject(project.endpoint, token=token), agent_name="todo-prompt", **(agent or {})
         )
@@ -341,7 +341,7 @@ def test_the_target_puts_no_starting_state_policy_in_the_place_of_one_that_was_n
     fixture = TodoFixtureSweep(todo_service, state=STATE)
     task = fixture.experiment(attempts=2).task
 
-    with fake_foundry_project(todo_service) as project:
+    with fake_prompt_agent_project(todo_service) as project:
         target = FoundryPromptAgentTarget(
             project=FoundryProject(project.endpoint, token=lambda: "fake-token"), agent_name="todo-prompt"
         )
@@ -494,7 +494,7 @@ class FakeAzureCli:
 
 def sweep_as_the_azure_cli_identity(todo_service, attempts, signed_in=True):
     fixture = TodoFixtureSweep(todo_service, state=STATE)
-    with fake_foundry_project(todo_service, valid_tokens=()) as project:
+    with fake_prompt_agent_project(todo_service, valid_tokens=()) as project:
         cli = FakeAzureCli(project, signed_in)
         target = FoundryPromptAgentTarget(
             project=FoundryProject(project.endpoint, token=AzureCliToken(run_cli=cli.run, clock=cli.clock)),

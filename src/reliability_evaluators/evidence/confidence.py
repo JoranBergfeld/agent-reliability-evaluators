@@ -10,7 +10,9 @@ from typing import Any
 from .errors import EvidenceError
 
 # A number written in plain decimal digits. Nothing else is read as a rating.
-_NUMBER = re.compile(r"-?(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)")
+# The patterns are kept as text and matched with the functions of `re`: the Foundry
+# code-evaluator sandbox refuses any source that calls `compile`, `re.compile` included.
+_NUMBER = r"-?(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)"
 # Far more digits than a rating has, and few enough to calculate with exactly.
 MAXIMUM_RATING_LENGTH = 100
 
@@ -32,7 +34,7 @@ class ConfidenceRating:
             raise EvidenceError(
                 f"a confidence rating is recorded as the agent wrote it, as text. Got {self.rating!r}"
             )
-        if not _NUMBER.fullmatch(self.rating):
+        if not re.fullmatch(_NUMBER, self.rating):
             raise EvidenceError(
                 f"a confidence rating is one number in plain decimal digits. Got {self.rating!r}"
             )
@@ -95,7 +97,7 @@ TOO_LONG = f"the number in the confidence response is longer than {MAXIMUM_RATIN
 OUT_OF_RANGE = "the rating is outside 0 to 100"
 
 # The whole answer: one number, with nothing around it but whitespace and an optional percent sign.
-_ONLY_A_NUMBER = re.compile(rf"\s*({_NUMBER.pattern})\s*%?\s*")
+_ONLY_A_NUMBER = rf"\s*({_NUMBER})\s*%?\s*"
 
 
 def read_confidence_response(response: str) -> ConfidenceRating | ConfidenceUnavailable:
@@ -109,12 +111,12 @@ def read_confidence_response(response: str) -> ConfidenceRating | ConfidenceUnav
         raise EvidenceError(f"a confidence response is the agent's answer as text. Got {response!r}")
     if not response.strip():
         return ConfidenceUnavailable(reason=EMPTY_RESPONSE, original_response=response)
-    numbers = _NUMBER.findall(response)
+    numbers = re.findall(_NUMBER, response)
     if not numbers:
         return ConfidenceUnavailable(reason=NO_NUMBER, original_response=response)
     if len(numbers) > 1:
         return ConfidenceUnavailable(reason=SEVERAL_NUMBERS, original_response=response)
-    only_a_number = _ONLY_A_NUMBER.fullmatch(response)
+    only_a_number = re.fullmatch(_ONLY_A_NUMBER, response)
     if not only_a_number:
         return ConfidenceUnavailable(reason=OTHER_TEXT, original_response=response)
     number = only_a_number.group(1)

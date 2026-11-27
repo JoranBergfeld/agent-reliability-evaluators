@@ -59,6 +59,8 @@ Only the first row was run here. The others are how the Azure CLI is documented 
 
 The token is asked for again when it is within five minutes of the expiry the CLI gave, so a sweep can run longer than a token lives. It is held in memory only and is never written to the scorecard.
 
+`FoundryProject` here is `reliability_evaluators.agent_target.FoundryProject`. [Foundry-managed scoring](../managed_scoring/readme.md) has a class of the same name for the same project, and the two are not interchangeable yet.
+
 To use another source, pass any function that returns a token:
 
 ```python
