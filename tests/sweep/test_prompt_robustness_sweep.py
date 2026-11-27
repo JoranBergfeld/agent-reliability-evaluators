@@ -15,9 +15,10 @@ import pytest
 
 from reliability_evaluators.agent_target import AgentResponse
 from reliability_evaluators.evidence import TaskOutcome
-from reliability_evaluators.scorecard import to_json
+from reliability_evaluators.scorecard import render_report, to_json
 from reliability_evaluators.sweep import Condition, Experiment, PromptVariant, Task, run_sweep
 from tests.fakes import FakeControls, FakeTodoService, todo_list
+from tests.report_reader import assert_faithful_rendering
 
 OUTCOME_SOURCE = "final state of the fake to-do service"
 REQUEST_LOG = "request log of the fake to-do service"
@@ -448,3 +449,13 @@ def test_an_attempt_under_a_prompt_variant_counts_only_when_the_verify_control_s
             }
         ],
     }
+
+def test_the_human_readable_report_shows_the_exact_text_of_each_prompt_variant():
+    fixture = Fixture()
+    scorecard = fixture.sweep(fixture.experiment(attempts=1, prompt_variants=[PLEASE, SHOUTED]))
+
+    report = assert_faithful_rendering(render_report(scorecard), scorecard)
+
+    assert report.value("/experiments/0/task_prompt") == "Add one item to the list."
+    assert report.value("/experiments/0/prompt_variants/1/text") == "  pls ADD 1 thing\n"
+    assert report.value("/attempts/2/prompt_variant/text") == "  pls ADD 1 thing\n"
