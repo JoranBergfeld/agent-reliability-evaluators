@@ -229,7 +229,7 @@ In your Foundry project, the runs of this path therefore show many rows of large
 
 The run's link to the Foundry portal is not recorded, because it embeds your subscription identifier. Find the run by its eval and run identifiers.
 
-**What the scoring used** is not in the metric's entry. It is reported under `token_usage`, with the usage of the Attempts: what Foundry reported for each managed run of the Evaluator, or that it reported none. A run of a code evaluator was observed, in the earlier prototypes, to report an empty list of per-model usage and no usage on its result. That is reported as missing and not as zero. See [token usage](../token_usage/readme.md#scoring).
+**What the scoring used** is not in the metric's entry. It is reported under `token_usage`, with the usage of the Attempts: what Foundry reported for each managed run of the Evaluator, or that it reported none. Every managed run of a derived evaluator was [observed](../token_usage/readme.md#foundry-managed-scoring) to report an empty list of per-model usage and no usage on its results. That is reported as missing and not as zero. See [token usage](../token_usage/readme.md#scoring).
 
 The human-readable report shows all of this, because it renders every field of the scorecard.
 
@@ -681,4 +681,4 @@ The eight encoded results were 219 to 303 bytes and came back in 345 parts. Each
 - **A request that the live project refuses after the Attempts were made**, such as a rate limit. Exercised against the fake project only.
 - **Two pipelines registering at the same moment.** Both could register a version with the same code. Either is the derived code, so the result would be the same, but the project would hold a duplicate.
 - **What the Foundry portal shows** for the evaluator, the run or its result.
-- **What a managed run reports of the usage of its scoring.** The saved runs of code evaluators in the earlier prototypes reported none. What a run of a derived evaluator reports, and how per-model usage rows relate to each other, was not observed here.
+- **What a managed run reports of the usage of its scoring** was not observed here. It was observed later: a run of a derived evaluator reports none, and how per-model usage rows relate to each other was seen on runs made by hand. See [token usage](../token_usage/readme.md#foundry-managed-scoring).

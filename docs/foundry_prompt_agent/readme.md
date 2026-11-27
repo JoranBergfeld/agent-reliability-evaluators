@@ -107,13 +107,14 @@ Every Attempt in the scorecard has an `invocation` entry with what the platform 
 | `status`, `error` | The status and the error of the response. For an answer without a response, the error it carried |
 | `token_usage` | The `usage` of the response, as the platform reported it |
 | `token_usage_missing` | Why there is no usage, when there is none. Missing usage is never recorded as zero |
+| `token_usage_source` | Where the usage comes from, when there is one: `the usage of the response the Foundry project returned for the prompt agent`. The usage report repeats it as the `source` of the count |
 | `tool_calls` | The tool calls the response exposed, in order: `call_id`, `type`, `name`, `arguments`, the `output` the tool returned and the `status` of the call |
 
 An Attempt whose invocation failed keeps the same entry with whatever the platform returned, so its request identifiers and any token usage are not lost. An Attempt for which no answer came back at all has `"invocation": null`.
 
 A tool call is an output item of the response whose type ends in `_call`, paired by `call_id` with the item of the type `<that type>_output`. For an OpenAPI tool these are `openapi_call` and `openapi_call_output`, and the name is `<tool name>_<operationId>`, such as `todos_readTodo`. The arguments are decoded from the JSON text the protocol gives them as. The output is kept as the text the platform gave. Only `openapi_call` was observed live: other tool types follow the same rule without having been observed. `tool_calls` is `null` when the answer has no response, which is not the same as an empty list.
 
-The token usage is recorded here as the platform reported it, and the scorecard reports it from here: per Attempt, per Evaluator and for the sweep, see [token usage](../token_usage/readme.md). The usage is not given to the sweep as a resource measurement, because it has not been established that it covers every model call of an Attempt.
+The token usage is recorded here as the platform reported it, and the scorecard reports it from here: per Attempt, per Evaluator and for the sweep, see [token usage](../token_usage/readme.md). The usage is not given to the sweep as a resource measurement. When the target was written it had not been established that it covers every model call of an Attempt. It has been compared since: in every invocation that was looked at on its own, the usage of the response was what the model deployment metered, to the token, with one model request per invocation whatever the number of tool calls. See [what was observed](../token_usage/readme.md#observed-live). The target still gives no such measurement.
 
 `invocation` is part of the attempt-level evidence, so it is in `evidence.json` and in the human-readable report, and a [recalculation](../sweep/late-and-corrected-outcomes.md) keeps it.
 
@@ -270,7 +271,7 @@ The interface as it worked on that date:
 - **A new conversation did not reset the service.** Every Attempt was a response of its own. The service held 5, 10, 15, 20 and 25 operations after the five baseline Attempts. Had each new conversation been a reset, every Attempt would have succeeded and the value would have been 1.
 - **Each Attempt was identifiable.** Every completed response had its own `id`. The response returned the `metadata` it was sent. Both request identifier headers were present, and so were the agent version `1`, the model deployment and the served model `gpt-4.1-mini-2025-04-14`.
 - **Tool calls were exposed in order** as `openapi_call` and `openapi_call_output` items, five in each completed Attempt. In every one the tool calls of the response were the calls the service received during the Attempt, in the same order.
-- **Token usage was reported on every completed response**: 798 to 821 total tokens. Whether it covers every model call was not established.
+- **Token usage was reported on every completed response**: 798 to 821 total tokens. Whether it covers every model call was not established here. It was compared with the deployment's own metrics later: see [token usage](../token_usage/readme.md#observed-live).
 - **The request took 5.6 to 11.4 seconds**, by the target's own timing.
 - **Each Attempt under the fault was answered with HTTP 400 `tool_user_error`** and recorded as `failed`, with no task outcome, no usage with the reason for that, and no resource measurement. During each, the service recorded four successful calls and then the update, answered with 503 by the injected fault. The verify control observed the fault from those events.
 - **Fault robustness was unavailable**, with the reason `no valid Attempt under the fault variation`.

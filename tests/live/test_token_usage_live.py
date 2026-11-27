@@ -30,6 +30,7 @@ from reliability_evaluators.agent_target.foundry_hosted import FoundryHostedAgen
 from reliability_evaluators.agent_target.foundry_prompt_agent import FoundryPromptAgentTarget
 from reliability_evaluators.managed_scoring import FoundryManagedScoring, FoundryProject
 from reliability_evaluators.sweep import Condition, ConfiguredEvaluator, ExecutionLimits, run_sweep
+from tests.live.test_confidence_follow_up_live import RULE
 from tests.todo_experiment import ALL_TOOLS_WORK, TodoSetup
 
 pytestmark = pytest.mark.live
@@ -313,7 +314,7 @@ def test_every_attempt_is_in_the_usage_with_its_status_and_a_count_or_the_reason
                 "source": None,
             }, attempt_id
             assert (entry["coverage"], entry["total_tokens"]) == ("unavailable", None), attempt_id
-        # Neither Foundry target sends a confidence request, so there is no such use.
+        # No selected metric uses confidence, so no confidence request was sent: there is no such use.
         assert entry["confidence_follow_up"] is None
     assert usage[RETRY_AFTER_THE_TIME_LIMIT]["retry_of"] == TIME_LIMIT
     if RETRY_AFTER_THE_FAULT in expected:
@@ -431,6 +432,46 @@ def test_the_usage_rows_of_a_cloud_evaluation_run_repeat_the_usage_of_its_one_it
         # A prompt agent's run names the same tokens twice. The report counts the item's usage once.
         assert len(rows) == (2 if kind == PROMPT else 1), attempt_id
         assert {row["total_tokens"] for row in rows} == {usage[attempt_id]["invocation"]["total_tokens"]}, attempt_id
+
+
+def test_the_confidence_follow_up_of_a_prompt_agent_is_a_use_of_its_own_and_leaves_the_count_of_its_attempt_as_it_was(
+    live,
+):
+    setup = UsageSetup(live.service, run_id=f"usage-{uuid.uuid4().hex[:8]}")
+    target = agent_target(live, PROMPT, CUSTOMER_CODE, setup.instruction)
+
+    scorecard = run_sweep(
+        experiments=[
+            setup.experiment("completed", 2, ALL_TOOLS_WORK, {"agent": live.prompt_agent}, shareable_success_rule=RULE)
+        ],
+        agent_target=target,
+        metrics=["brier_based_score"],
+    )
+
+    usage = scorecard["token_usage"]
+    print(json.dumps({"confidence_follow_up": {"sweep": usage["sweep"], "attempts": usage["attempts"]}}))
+    known = 0
+    for entry in usage["attempts"]:
+        invocation, follow_up = entry["invocation"], entry["confidence_follow_up"]
+        # Two responses, and each count is the one the platform gives for its response when it is asked again,
+        # after the follow-up: the follow-up added nothing to the count of the Attempt it continued.
+        assert invocation["response_id"] != follow_up["response_id"]
+        asked_again = [
+            live.project_request("GET", f"/openai/v1/responses/{use['response_id']}")["usage"]["total_tokens"]
+            for use in (invocation, follow_up)
+        ]
+        assert [invocation["total_tokens"], follow_up["total_tokens"]] == asked_again
+        assert (follow_up["basis"], follow_up["source"]) == ("reported", SOURCE[PROMPT, CUSTOMER_CODE])
+        assert (entry["coverage"], entry["total_tokens"]) == ("complete", asked_again[0] + asked_again[1])
+        known += asked_again[0] + asked_again[1]
+    # Four uses, each counted once. The Evaluator is scored by code in this process, which adds a known zero.
+    assert usage["sweep"] == {
+        "coverage": "complete",
+        "total_tokens": known,
+        "uses_reported": 4,
+        "uses_missing": 0,
+        "missing": [],
+    }
 
 
 MANAGED = ConfiguredEvaluator(metric_id="outcome_consistency", scoring_path="foundry_managed")

@@ -451,7 +451,9 @@ def _recorded_use(recorded: Mapping[str, Any] | None, of: str) -> dict[str, Any]
             **identifiers,
         )
     source = recorded.get("token_usage_source")
-    return _reported(total, **{**identifiers, "source": source if isinstance(source, str) and source.strip() else None})
+    if isinstance(source, str) and source.strip():
+        identifiers["source"] = source
+    return _reported(total, **identifiers)
 
 
 def _evaluation_run(recorded: Mapping[str, Any]) -> dict[str, Any] | None:
