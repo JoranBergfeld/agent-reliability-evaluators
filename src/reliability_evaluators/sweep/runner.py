@@ -11,9 +11,17 @@ from typing import Any, Callable, Iterator, Sequence
 
 from ..agent_target import AgentResponse, AgentTarget, AttemptRequest
 from ..evaluators import EVALUATORS, RELIABILITY_METRICS, Evaluator, Fidelity, ScoringPath
-from ..evidence import Attempt, EvidenceError, ExecutionStatus, TaskEvidence, TaskOutcome, ViolationAssessment
+from ..evidence import (
+    ActionEvidence,
+    Attempt,
+    EvidenceError,
+    ExecutionStatus,
+    TaskEvidence,
+    TaskOutcome,
+    ViolationAssessment,
+)
 from ..scorecard import AcceptanceCriterion, ExperimentRun, ScoredMetric, build_scorecard, criteria_by_metric
-from .declaration import Task
+from .declaration import ActionEvidenceDeclaration, Task
 
 
 def run_sweep(
@@ -21,6 +29,7 @@ def run_sweep(
     tasks: Sequence[Task],
     agent_target: AgentTarget,
     metrics: Sequence[str],
+    action_evidence: ActionEvidenceDeclaration | None = None,
     acceptance_criteria: Sequence[AcceptanceCriterion] = (),
     max_concurrent_attempts: int = 1,
     cancellation: Callable[[], bool] | None = None,
@@ -33,9 +42,10 @@ def run_sweep(
     JSON-compatible data.
 
     Attempts run one after another, Task by Task, unless `max_concurrent_attempts` is more
-    than 1. Then up to that many Attempts are in flight at once, and the agent target, the
-    task-success rules, the violation assessors and `cancellation` are called from several threads. The scorecard
-    records which of the two it was. Shared state and timing are the caller's to control.
+    than 1. Then up to that many Attempts are in flight at once, and the agent target and
+    everything the customer supplies (task-success rules, violation assessors, the action
+    recorder and `cancellation`) are called from several threads. The scorecard records
+    which of the two it was. Shared state and timing are the caller's to control.
 
     The Attempts planned at one Task are one experiment, run under that Task's execution
     limits. `cancellation` is asked before every Attempt and retry; once it returns True no
@@ -44,6 +54,10 @@ def run_sweep(
 
     `clock` returns seconds and is what time limits are measured with.
 
+    `action_evidence` declares where the actions of every Attempt are recorded from and
+    what action type each tool name is. The trajectory metrics need it, and every metric
+    that needs it is scored from the same Attempts.
+
     `acceptance_criteria` are the customer's own, at most one per metric. Each is reported
     with its metric as met, not met, or not assessed with a reason. Without one, a metric
     has no acceptance verdict.
@@ -51,16 +65,19 @@ def run_sweep(
     A declaration that cannot be run is rejected before any Attempt is made. A task-success
     rule that does not return a sourced, binary TaskOutcome stops the sweep. So does a
     violation assessor that does not return sourced violation assessments of the operational
-    constraints its Task declares.
+    constraints its Task declares, and an action recording that is not a sequence of ActionEvent.
     """
     evaluators = [_evaluator(metric_id) for metric_id in metrics]
+    declared = {"action_types": None if action_evidence is None else action_evidence.mapping}
+    for evaluator in evaluators:
+        _require_declarations(evaluator, declared)
     _require_distinct_tasks(tasks)
     # Called for its check: a second criterion for one metric is rejected here, not after the Attempts.
     criteria_by_metric(acceptance_criteria)
     if type(max_concurrent_attempts) is not int or max_concurrent_attempts < 1:
         raise ValueError(f"max_concurrent_attempts is a whole number, 1 or more, got {max_concurrent_attempts!r}")
     cancelled = _Cancellation(cancellation)
-    running = [_Experiment(task, agent_target, cancelled, clock) for task in tasks]
+    running = [_Experiment(task, agent_target, action_evidence, cancelled, clock) for task in tasks]
     planned = _run_planned_attempts(
         [
             partial(experiment.run_planned_attempt, number)
@@ -81,7 +98,7 @@ def run_sweep(
         evidence.append(TaskEvidence(task.task_id, tuple(made)))
     scored = [
         ScoredMetric(
-            result=evaluator.evaluate(evidence),
+            result=evaluator.evaluate(evidence, *(declared[name] for name in evaluator.declarations)),
             scoring_path=ScoringPath.CUSTOMER_PROCESS,
             fidelity=Fidelity.AUTHORITATIVE,
             experiment_ids=tuple(experiment.experiment_id for experiment in experiments),
@@ -121,6 +138,15 @@ def _evaluator(metric_id: str) -> Evaluator:
     raise ValueError(f"{metric_id!r} is not a reliability metric")
 
 
+def _require_declarations(evaluator: Evaluator, declared: dict[str, Any]) -> None:
+    undeclared = {
+        "action_types": "action evidence to be declared: the evidence source and the action types have no default",
+    }
+    for name in evaluator.declarations:
+        if declared[name] is None:
+            raise ValueError(f"{evaluator.definition.metric.metric_id!r} needs {undeclared[name]}")
+
+
 def _require_distinct_tasks(tasks: Sequence[Task]) -> None:
     seen: set[str] = set()
     for task in tasks:
@@ -149,10 +175,16 @@ class _Experiment:
     """The Attempts planned at one Task, made under the Task's execution limits."""
 
     def __init__(
-        self, task: Task, agent_target: AgentTarget, cancellation: _Cancellation, clock: Callable[[], float]
+        self,
+        task: Task,
+        agent_target: AgentTarget,
+        action_evidence: ActionEvidenceDeclaration | None,
+        cancellation: _Cancellation,
+        clock: Callable[[], float],
     ) -> None:
         self._task = task
         self._agent_target = agent_target
+        self._action_evidence = action_evidence
         self._cancellation = cancellation
         self._clock = clock
         # Planned Attempts of one experiment may run on several threads.
@@ -252,6 +284,11 @@ class _Experiment:
             retry_of=retry_of,
             operational_constraints=task.operational_constraints,
             violation_assessments=_assess_violations(task, request, response),
+            action_evidence=(
+                None
+                if self._action_evidence is None
+                else _recorded_actions(self._action_evidence, request, response)
+            ),
         )
 
     def summary(self, planned: Sequence[Sequence[Attempt]]) -> ExperimentRun:
@@ -310,3 +347,12 @@ def _assess_violations(
             f"each with its evidence and source, got {assessments!r}"
         )
     return assessments
+
+
+def _recorded_actions(
+    declaration: ActionEvidenceDeclaration, request: AttemptRequest, response: AgentResponse
+) -> ActionEvidence | None:
+    events = declaration.record(request, response)
+    if events is None:
+        return None
+    return ActionEvidence(source=declaration.evidence_source, events=events)

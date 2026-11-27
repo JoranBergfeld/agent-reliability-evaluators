@@ -61,6 +61,11 @@ def attempt(scorecard, attempt_id):
     return entry
 
 
+def execution(entry):
+    """How one Attempt in the scorecard was executed, without the evidence other Evaluators attach."""
+    return {key: entry[key] for key in ("attempt_id", "execution_status", "execution_error", "retry_of", "task_outcome")}
+
+
 def always_succeeds(attempt, response):
     return TaskOutcome(success=True, source=SOURCE)
 
@@ -180,26 +185,20 @@ def test_a_retried_attempt_stays_in_the_evidence_next_to_its_retry():
         limits={"close": ExecutionLimits(max_retries=1)},
     )
 
-    assert scorecard["attempts"][1:3] == [
+    assert [execution(entry) for entry in scorecard["attempts"][1:3]] == [
         {
             "attempt_id": "close/attempt-2",
-            "task_id": "close",
             "execution_status": "retried",
             "execution_error": "ConnectionError: the agent endpoint returned 503",
             "retry_of": None,
             "task_outcome": None,
-            "operational_constraints": [],
-            "violation_assessments": [],
         },
         {
             "attempt_id": "close/attempt-2/retry-1",
-            "task_id": "close",
             "execution_status": "completed",
             "execution_error": None,
             "retry_of": "close/attempt-2",
             "task_outcome": {"success": True, "source": SOURCE},
-            "operational_constraints": [],
-            "violation_assessments": [],
         },
     ]
     outcome_consistency = metric(scorecard)
@@ -361,15 +360,12 @@ def test_an_attempt_that_is_aborted_by_a_cancellation_is_cancelled_and_not_faile
         limits={"close": ExecutionLimits(max_retries=1)},
     )
 
-    assert scorecard["attempts"][-1] == {
+    assert execution(scorecard["attempts"][-1]) == {
         "attempt_id": "close/attempt-3",
-        "task_id": "close",
         "execution_status": "cancelled",
         "execution_error": "ConnectionAbortedError: the caller closed the connection, after the sweep was cancelled",
         "retry_of": None,
         "task_outcome": None,
-        "operational_constraints": [],
-        "violation_assessments": [],
     }
     assert metric(scorecard)["value"] == 1
     (experiment,) = scorecard["experiments"]

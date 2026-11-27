@@ -2,16 +2,20 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from math import isfinite
-from typing import Any, Callable, Sequence
+from typing import Any, Callable, Mapping, Sequence
 
 from ..agent_target import AgentResponse, AttemptRequest
-from ..evidence import OperationalConstraint, TaskOutcome, ViolationAssessment
+from ..evidence import ActionEvent, ActionTypeMapping, OperationalConstraint, TaskOutcome, ViolationAssessment
 
 # Decides the task outcome of one Attempt and says what it was decided from. It should
 # look at independent evidence, such as the state of a service, not only at the response.
 TaskSuccessRule = Callable[[AttemptRequest, AgentResponse], TaskOutcome]
+
+# Returns the actions of one Attempt, in order, from the declared evidence source. An empty
+# sequence confirms that the Attempt took no action; None says that nothing was recorded.
+ActionRecorder = Callable[[AttemptRequest, AgentResponse], "Sequence[ActionEvent] | None"]
 
 # Assesses one Attempt against the operational constraints of its Task: one violation
 # assessment per constraint it could assess, from labels or a deterministic check. Like the
@@ -97,3 +101,25 @@ class Task:
                     f"as {constraint.constraint_id!r}"
                 )
             declared.add(constraint.constraint_id)
+
+
+@dataclass(frozen=True, kw_only=True)
+class ActionEvidenceDeclaration:
+    """Where the action evidence of every Attempt comes from, and what its events mean.
+
+    Needed by the trajectory metrics. Nothing here has a default: `evidence_source` names
+    the source, such as native tool calls or service-side effects, `record` reads the
+    actions of an Attempt from it, and `action_types` gives the action type of each tool
+    name. Different sources can give different metric values for the same Attempts.
+    """
+
+    evidence_source: str
+    record: ActionRecorder
+    action_types: Mapping[str, str]
+    mapping: ActionTypeMapping = field(init=False)
+
+    def __post_init__(self) -> None:
+        if not callable(self.record):
+            raise ValueError(f"action evidence is read by a callable, got {self.record!r}")
+        mapping = ActionTypeMapping(evidence_source=self.evidence_source, action_types=self.action_types)
+        object.__setattr__(self, "mapping", mapping)
