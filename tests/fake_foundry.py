@@ -18,8 +18,13 @@ live project was observed to behave (docs/managed_scoring/readme.md, "Observed l
   the score is not enforced.
 - A score that is a whole number comes back as an integer.
 
+- An evaluator that raises on one of several items leaves the run completed. The result for that
+  item has the status `error`, no score, and the error under its own `sample`. The item itself
+  carries no error.
+
 A test scripts what a live project could do to a run: alter the submitted item or the score,
-report an error on a completed item, refuse every request, or never finish.
+report an error on a completed item or on one of its results, refuse every request or only
+the making of a run, or never finish.
 """
 
 from __future__ import annotations
@@ -45,14 +50,18 @@ class FakeFoundryProject:
         alter_item: Callable[[dict], dict] | None = None,
         alter_score: Callable[[Any], Any] | None = None,
         sample_error: dict | None = None,
+        result_error: dict | None = None,
         refuses: FoundryRequestError | None = None,
+        refuses_evals: FoundryRequestError | None = None,
         polls_until_finished: int = 0,
         never_finishes: bool = False,
     ):
         self._alter_item = alter_item
         self._alter_score = alter_score
         self._sample_error = sample_error
+        self._result_error = result_error
         self._refuses = refuses
+        self._refuses_evals = refuses_evals
         self._polls_until_finished = polls_until_finished
         self._never_finishes = never_finishes
         # Registered evaluator versions by name, oldest first.
@@ -121,6 +130,8 @@ class FakeFoundryProject:
         return versions[-1]
 
     def _create_eval(self, *, body, **_):
+        if self._refuses_evals is not None:
+            raise self._refuses_evals
         for criterion in body["testing_criteria"]:
             held = [version["version"] for version in self.evaluators.get(criterion["evaluator_name"], [])]
             if not held or criterion.get("evaluator_version", held[-1]) not in held:
@@ -223,6 +234,19 @@ class FakeFoundryProject:
             score = int(score)
         if self._sample_error:
             return {"type": "azure_ai_evaluator", "name": name, "metric": name, "score": None, "status": "error"}
+        if self._result_error:
+            return {
+                "type": "azure_ai_evaluator",
+                "name": name,
+                "metric": name,
+                "score": None,
+                "label": None,
+                "reason": None,
+                "threshold": 0.5,
+                "passed": None,
+                "status": "error",
+                "sample": {"input": [], "output": [], "usage": None, "error": self._result_error},
+            }
         return {
             "type": "azure_ai_evaluator",
             "name": name,

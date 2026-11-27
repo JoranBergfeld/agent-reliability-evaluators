@@ -7,7 +7,15 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Iterable, Mapping, Sequence
 
-from ..evaluators import RELIABILITY_METRICS, Fidelity, MetricResult, MetricState, ReliabilityMetric, ScoringPath
+from ..evaluators import (
+    RELIABILITY_METRICS,
+    Fidelity,
+    MetricDefinition,
+    MetricResult,
+    MetricState,
+    ReliabilityMetric,
+    ScoringPath,
+)
 from ..evidence import Attempt, EvidenceError, ExperimentStatus
 from .acceptance import AcceptanceCriterion, assess, criteria_by_metric
 
@@ -167,10 +175,38 @@ class ScoredMetric:
         if self.fidelity is Fidelity.UNVERIFIED and not (self.limitation or "").strip():
             raise ValueError("an unverified result is reported with its limitation")
 
+    @property
+    def definition(self) -> MetricDefinition:
+        return self.result.definition
+
+
+@dataclass(frozen=True, kw_only=True)
+class MissingResult:
+    """A selected metric that Foundry-managed scoring gave no result for.
+
+    The metric is in no metric state. A scoring that failed is not an unavailable
+    measurement, not a value of zero and not a task failure: nothing was measured. It is
+    attributed to the scoring path that failed, and nothing was scored in its place.
+    """
+
+    definition: MetricDefinition
+    # The execution error of the scoring, in words.
+    execution_error: str
+    # Identities of the Attempts the Evaluator was given.
+    attempts_used: tuple[str, ...] = ()
+    cut_short: CutShort = CutShort()
+    # What Foundry-managed scoring recorded about the run that failed. JSON-compatible data.
+    managed_scoring: Mapping[str, Any] | None = None
+    scoring_path = ScoringPath.FOUNDRY_MANAGED
+
+    def __post_init__(self) -> None:
+        if not (self.execution_error or "").strip():
+            raise ValueError("a missing result is reported with its execution error")
+
 
 def build_scorecard(
     *,
-    metrics: Sequence[ScoredMetric],
+    metrics: Sequence[ScoredMetric | MissingResult],
     attempts: Sequence[Attempt],
     executions: Sequence[ExecutionRecord],
     max_concurrent_attempts: int,
@@ -190,14 +226,16 @@ def build_scorecard(
     experiment declared, the second under `tasks_without_experiment`. Attempts refer to
     their experiment by experiment identity.
 
-    The scorecard is complete when every planned Attempt completed. Otherwise it is
-    partial, and `missing` names what is missing and why. A metric keeps its result when
-    its Evaluator still calculates a value from the evidence that was collected.
+    The scorecard is complete when every planned Attempt completed and every selected
+    metric has a result. Otherwise it is partial, and `missing` names what is missing and
+    why. A metric keeps its result when its Evaluator still calculates a value from the
+    evidence that was collected. A metric whose scoring failed has none: it is listed in
+    `missing` with its execution error, and every other metric keeps its own.
 
     `max_concurrent_attempts` is how many Attempts of Tasks given without an experiment
     the sweep allowed in flight at once; 1 means they ran one after another.
     """
-    scored_by_id = {scored.result.definition.metric.metric_id: scored for scored in metrics}
+    scored_by_id = {scored.definition.metric.metric_id: scored for scored in metrics}
     criteria = criteria_by_metric(acceptance_criteria)
     attempts_by_id = {attempt.attempt_id: attempt for attempt in attempts}
     failures = {metric_id: _execution_failure(scored) for metric_id, scored in scored_by_id.items()}
@@ -236,13 +274,27 @@ def build_scorecard(
     }
 
 
-def _execution_failure(scored: ScoredMetric) -> dict[str, Any] | None:
-    """Why a metric has no result, when that is because the Attempts planned for it were cut short.
+MANAGED_SCORING_GAVE_NO_RESULT = (
+    "Foundry-managed scoring gave no result for this metric, and it was not scored in the customer's own "
+    "process instead"
+)
+
+
+def _execution_failure(scored: ScoredMetric | MissingResult) -> dict[str, Any] | None:
+    """Why a metric has no result: the Attempts planned for it were cut short, or scoring it failed.
 
     An Evaluator that finds too little in evidence that was cut short has not measured
     anything: that is an execution failure and not an unavailable measurement. Where every
     planned Attempt was made and some of them completed, the Evaluator's own result stands.
+
+    A scoring that failed names no experiment and no Task: it is not the Attempts that failed.
     """
+    if isinstance(scored, MissingResult):
+        return {
+            "reason": f"{MANAGED_SCORING_GAVE_NO_RESULT}: {scored.execution_error}",
+            "experiment_ids": [],
+            "task_ids": [],
+        }
     if scored.result.state is not MetricState.UNAVAILABLE or not scored.cut_short:
         return None
     return {
@@ -275,7 +327,7 @@ def _missing_attempt_evidence(execution: ExecutionRecord, attempts_by_id: dict[s
 
 
 def _metric_entry(
-    metric: ReliabilityMetric, scored: ScoredMetric | None, execution_failure: dict[str, Any] | None
+    metric: ReliabilityMetric, scored: ScoredMetric | MissingResult | None, execution_failure: dict[str, Any] | None
 ) -> dict[str, Any]:
     if scored is None:
         return {
@@ -284,25 +336,44 @@ def _metric_entry(
             "dimension": metric.dimension,
             "state": MetricState.NOT_CONFIGURED.value,
         }
+    if isinstance(scored, MissingResult):
+        # The fields of a result, with nothing in them: no value, no state, no counts and no fidelity.
+        result = {
+            "metric_id": metric.metric_id,
+            "name": metric.name,
+            "dimension": metric.dimension,
+            "state": None,
+            "value": None,
+            "reason": None,
+            "definition": scored.definition.to_dict(),
+            "counts": {},
+            "details": {},
+            "evidence": {"attempt_ids": []},
+        }
+        fidelity = None
+    else:
+        result, fidelity = scored.result.to_dict(), scored.fidelity.value
     entry = {
-        **scored.result.to_dict(),
+        **result,
         "execution_failure": execution_failure,
         "cut_short": scored.cut_short.to_dict(),
         "scoring_path": scored.scoring_path.value,
-        "fidelity": scored.fidelity.value,
+        "fidelity": fidelity,
     }
     if execution_failure is not None:
         # There is no metric result, so the metric is in no metric state.
         entry.update(state=None, reason=None)
     # Only a result that has them carries these, so that an entry never shows an empty limitation.
-    if scored.limitation is not None:
+    if getattr(scored, "limitation", None) is not None:
         entry["limitation"] = scored.limitation
     if scored.managed_scoring is not None:
         entry["managed_scoring"] = json.loads(json.dumps(scored.managed_scoring, allow_nan=False))
     return entry
 
 
-def _with_attempts_used(entry: dict[str, Any], scored_by_id: dict[str, ScoredMetric]) -> dict[str, Any]:
+def _with_attempts_used(
+    entry: dict[str, Any], scored_by_id: Mapping[str, ScoredMetric | MissingResult]
+) -> dict[str, Any]:
     """Add which Attempts the metric's Evaluator used, and which other metrics used any of them."""
     scored = scored_by_id.get(entry["metric_id"])
     if scored is None:
@@ -325,6 +396,34 @@ def _with_attempts_used(entry: dict[str, Any], scored_by_id: dict[str, ScoredMet
 
 def _with_acceptance(entry: dict[str, Any], criterion: AcceptanceCriterion | None) -> dict[str, Any]:
     return {**entry, "acceptance": None if criterion is None else assess(criterion, entry)}
+
+
+# Where the entry of a metric records the customer-process rescore that the customer requested for it.
+RESCORE = "customer_process_rescore"
+RESCORE_MEANING = (
+    "A customer-process rescore: the customer asked for the evidence that Foundry-managed scoring was given "
+    "for this metric to be scored in their own process. It is a result of its own, attributed to the "
+    "customer-process scoring path. It is not the Foundry-managed result of the metric and does not replace "
+    "it: what Foundry-managed scoring gave stays in the entry of the metric as it was."
+)
+
+
+def rescore_entry(
+    scored: ScoredMetric, evidence_sha256: str | None, criterion: AcceptanceCriterion | None
+) -> dict[str, Any]:
+    """A customer-process rescore as the entry of its metric records it, beside the Foundry-managed result.
+
+    It holds what the entry of a metric scored in the customer's own process holds, and
+    its own acceptance assessment. `evidence_sha256` is the digest of the evidence it was
+    calculated from, as that evidence is submitted to Foundry.
+    """
+    metric = scored.definition.metric
+    entry = {
+        "meaning": RESCORE_MEANING,
+        "evidence_sha256": evidence_sha256,
+        **_metric_entry(metric, scored, _execution_failure(scored)),
+    }
+    return _with_acceptance(entry, criterion)
 
 
 def to_json(scorecard: dict[str, Any]) -> str:

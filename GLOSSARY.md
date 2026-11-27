@@ -91,3 +91,7 @@ A received metric value whose fidelity to the evaluator-computed value has not b
 
 **Scoring path**:
 Where an evaluator's calculation runs: Foundry-managed, as a custom evaluator in Foundry, or customer-process, in the customer's own process. Each metric result records its scoring path, which is independent of where the attempts are invoked.
+
+**Customer-process rescore**:
+A scoring, in the customer's own process, of the evidence that Foundry-managed scoring was given for a metric, made only at the customer's explicit request. It is a separately attributed result, reported beside the Foundry-managed result or failure, which it never replaces.
+_Avoid_: Fallback, automatic rescore
