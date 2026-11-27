@@ -96,6 +96,32 @@ def test_the_summary_labels_a_partial_sum_and_names_what_is_missing_with_its_rea
     assert scorecard["token_usage"]["evaluator_totals"] in usage
 
 
+def test_the_summary_says_where_the_counts_of_the_attempts_come_from_when_the_agent_target_states_it():
+    # The first two counts were stated by the agent's own code. The target states no source for the third.
+    own_count = "the usage the agent's own code stated in its response"
+    scorecard = sweep(
+        ["success", "success", "success"],
+        invocations={
+            "close/attempt-1": {**reported(790), "token_usage_source": own_count},
+            "close/attempt-2": {**reported(812), "token_usage_source": own_count},
+            "close/attempt-3": reported(805),
+        },
+    )
+
+    _, usage = sections(render_summary(scorecard))
+
+    assert f"### Where the counts of the Attempts come from\n\n- {own_count}\n" in usage
+    assert usage.count(own_count) == 1
+
+
+def test_the_summary_names_no_source_of_the_counts_when_the_agent_target_states_none():
+    scorecard = sweep(["success", "success"], invocations={"close/attempt-1": reported(790)})
+
+    _, usage = sections(render_summary(scorecard))
+
+    assert "come from" not in usage
+
+
 def test_the_summary_says_unavailable_and_not_zero_when_no_usage_is_known():
     scorecard = sweep(["success", "success"])
 

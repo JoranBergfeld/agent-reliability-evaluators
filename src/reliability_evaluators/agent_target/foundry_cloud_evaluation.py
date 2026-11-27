@@ -61,6 +61,18 @@ NO_RUN = "no cloud evaluation run is known to have been made, so no usage was re
 RESULT_NOT_READ = "the result of the cloud evaluation run was not read, so no usage is known"
 NO_OUTPUT_ITEM = "the cloud evaluation run returned no output item, so no usage was reported"
 NO_USAGE = "the output item of the cloud evaluation run carried no usage"
+# Where a count comes from, by the type of the agent. The usage of an output item was observed to be the
+# usage of the response the run invoked the agent for, under other field names. Foundry runs a prompt agent
+# and reports that usage itself. A hosted agent's own code produces its response, usage included.
+_OF_THE_ITEM = "the usage of the output item that Foundry cloud evaluation returned for the Attempt"
+USAGE_SOURCE = {
+    "prompt": f"{_OF_THE_ITEM}: what Foundry reports for the response of the prompt agent",
+    "hosted": (
+        f"{_OF_THE_ITEM}: what the response of the hosted agent stated. A hosted agent's own code produces its "
+        "response, so this is the agent's own count: Foundry passes it on, and it is not checked against what a "
+        "model deployment metered"
+    ),
+}
 PLATFORM_DIAGNOSTICS_MEANING = (
     "Foundry cloud evaluation does not invoke the agent without a testing criterion, and labels every item "
     "against it. The criterion compares the identity of the Attempt with itself, so its labels and counts "
@@ -476,6 +488,7 @@ class _Recorded:
             # As the platform reported it for the item. Usage that was not reported is missing, never zero.
             "token_usage": usage,
             "token_usage_missing": self._usage_missing(usage),
+            "token_usage_source": None if usage is None else USAGE_SOURCE.get(self.agent_kind, _OF_THE_ITEM),
             # The run's own rows. They can count the same tokens more than once, so they are not a total.
             "run_per_model_usage": run.get("per_model_usage"),
             "latency_ms": sample.get("latency_ms"),

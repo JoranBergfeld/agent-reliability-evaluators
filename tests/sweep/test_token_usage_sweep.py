@@ -111,6 +111,8 @@ def test_the_scorecard_reports_the_usage_of_each_attempt_and_of_the_sweep_in_tok
         "reason": None,
         "response_id": "resp_1",
         "request_ids": {},
+        "evaluation_run": None,
+        "source": None,
     }
     assert usage["sweep"] == {
         "coverage": "complete",
@@ -119,6 +121,28 @@ def test_the_scorecard_reports_the_usage_of_each_attempt_and_of_the_sweep_in_tok
         "uses_missing": 0,
         "missing": [],
     }
+
+
+def test_a_count_says_where_it_comes_from_when_the_agent_target_states_it():
+    # A count is what was reported for a request, and who reported it is the agent target's to say: an agent
+    # that runs the customer's own code states that code's count in its response, which nothing here checks.
+    own_count = "the usage the agent's own code stated in its response"
+    scorecard = sweep(
+        {"close": ["success", "success", "error"]},
+        invocations={
+            "close/attempt-1": {**reported(790, "resp_1"), "token_usage_source": own_count},
+            "close/attempt-2": reported(812, "resp_2"),
+        },
+    )
+
+    usage = scorecard["token_usage"]
+    first, second, third = usage["attempts"]
+    assert (first["invocation"]["total_tokens"], first["invocation"]["source"]) == (790, own_count)
+    # A target that states no source has none, and neither has a count that is missing.
+    assert (second["invocation"]["total_tokens"], second["invocation"]["source"]) == (812, None)
+    assert (third["invocation"]["basis"], third["invocation"]["source"]) == ("missing", None)
+    # 790 + 812 = 1602. A total is the sum of the reported counts, whatever their source.
+    assert (usage["sweep"]["coverage"], usage["sweep"]["total_tokens"]) == ("partial", 1602)
 
 
 def test_usage_is_not_a_metric_and_changes_no_metric_result_and_no_acceptance_assessment():
@@ -271,6 +295,8 @@ def test_the_usage_of_a_confidence_follow_up_is_reported_with_its_attempt_when_t
         "reason": None,
         "response_id": "resp_1_confidence",
         "request_ids": {},
+        "evaluation_run": None,
+        "source": None,
     }
     assert second["confidence_follow_up"] == {
         "basis": "missing",
@@ -278,6 +304,8 @@ def test_the_usage_of_a_confidence_follow_up_is_reported_with_its_attempt_when_t
         "reason": "the agent target recorded nothing of the confidence request",
         "response_id": None,
         "request_ids": {},
+        "evaluation_run": None,
+        "source": None,
     }
     assert third["confidence_follow_up"] is None
     assert per_attempt(usage) == [
@@ -374,6 +402,8 @@ def test_the_usage_of_a_confidence_response_that_belongs_to_another_attempt_is_n
         "reason": "the confidence response belongs to Attempt 'close/attempt-9', not to this Attempt",
         "response_id": None,
         "request_ids": {},
+        "evaluation_run": None,
+        "source": None,
     }
     # The Attempt's own invocation is known, the request that was sent for it is not: 790 is partial.
     assert (attempt["coverage"], attempt["total_tokens"]) == ("partial", 790)
@@ -394,6 +424,8 @@ def test_a_confidence_request_that_fails_keeps_what_was_recorded_of_it():
         "reason": None,
         "response_id": None,
         "request_ids": {"x-request-id": "req_9"},
+        "evaluation_run": None,
+        "source": None,
     }
     assert (attempt["coverage"], attempt["total_tokens"]) == ("complete", 850)
 

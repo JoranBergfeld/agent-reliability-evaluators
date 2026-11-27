@@ -143,6 +143,7 @@ Every Attempt the target was asked to make has an `invocation` entry, however th
 | `error` | The error of the item's sample. For a run without an item, the error of the run |
 | `token_usage` | The `usage` of the item's sample, as the platform reported it: `prompt_tokens`, `completion_tokens`, `cached_tokens`, `total_tokens` |
 | `token_usage_missing` | Why there is no usage, when there is none. Missing usage is never recorded as zero |
+| `token_usage_source` | Where the usage comes from, when there is one: the output item, and behind it the response of a prompt agent, which Foundry reports, or of a hosted agent, which the agent's own code produces. The usage report repeats it as the `source` of the count |
 | `run_per_model_usage` | The run's own usage rows, as returned. They are not a total: see below |
 | `latency_ms` | The latency of the target, as Foundry measured it |
 | `tool_calls` | The tool calls the item exposed, in order: `call_id`, `type`, `name`, `arguments` and the `output` the tool returned |
@@ -154,11 +155,13 @@ The run's link to the Foundry portal is not recorded: it embeds your subscriptio
 
 **Tool calls.** The output item lists them as messages. A call is a part of an assistant message whose type ends in `_call`: `openapi_call` for the OpenAPI tool of a prompt agent, `function_call` for a hosted agent. What it returned is the part of a tool message, of the type `<that type>_output`, with the same `tool_call_id`. The arguments arrive as an object. The output is kept as the platform gave it: text for the OpenAPI tool, and an object for a hosted agent whose tool returned JSON text. `tool_calls` is `null` when the item has no list of them, which is not the same as an empty list.
 
-**Token usage.** `token_usage` is what Foundry reported for the invocation of the agent in this Attempt. It is recorded here as the platform reported it, and the scorecard reports its `total_tokens` from here: per Attempt, per Evaluator and for the sweep, see [token usage](../token_usage/readme.md). It is not given to the sweep as a resource measurement, because it has not been established that it covers every model call of an Attempt. The criterion calls no model, and no usage was reported for it.
+**Token usage.** `token_usage` is what Foundry reported for the invocation of the agent in this Attempt. It is recorded here as the platform reported it, and the scorecard reports its `total_tokens` from here: per Attempt, per Evaluator and for the sweep, see [token usage](../token_usage/readme.md). It is not given to the sweep as a resource measurement. The criterion calls no model, and no usage was reported for it.
+
+The usage of an output item was [observed](../token_usage/readme.md#observed-live) to be the usage of the response the run invoked the agent for, under other field names. For a prompt agent that was what the model deployment metered, to the token. For a hosted agent it is the agent's own count, which for the fixture's agent was about three times what was metered: see [the hosted agent target](../foundry_hosted_agent/readme.md#what-is-recorded-for-each-attempt). The usage report names the eval, the run and the output item of the Attempt next to its count, as `evaluation_run`.
 
 `run_per_model_usage` holds the rows Foundry reports for the whole run. For a prompt agent there were two, one named after the model deployment and one named `azure_ai_agent_target`, **with the same numbers**: adding them up counts every token twice. For a hosted agent there was one. They are kept so that nothing the run exposed is lost. They must not be summed, and the token usage report does not read them.
 
-What is absent, compared with what a run could be hoped to expose: usage for an Attempt whose target failed, usage for an Attempt that timed out, any usage per model call, and anything that says whether the reported usage is complete.
+What is absent, compared with what a run could be hoped to expose: usage for an Attempt whose target failed, any usage per model call, and anything that says whether the reported usage is complete. An Attempt that timed out has no usage either, because its result is not read. Its run is cancelled, and a cancelled run was [observed](../token_usage/readme.md#a-cancelled-run) to report the usage of its item later in 2 of 22 cases and never in the other 20.
 
 `invocation` is part of the attempt-level evidence, so it is in `evidence.json` and in the human-readable report, and a [recalculation](../sweep/late-and-corrected-outcomes.md) keeps it.
 
@@ -298,7 +301,7 @@ The same Task, the same controls and the same task-success rule give the same ki
 | Confidence follow-up to a prompt agent | A request of your process that continues the response of the Attempt | The same request, of your process, that continues the response the output item names. It is not a run |
 | What stays in your project | Nothing the target made | One eval per target and one run per Attempt |
 
-The two entry points were never compared on the same invocation. Do not read a difference in token usage or in elapsed time between them as a difference in what your agent used.
+The same invocation has the same token usage through both: the response that an output item names, read from customer code by its identifier, stated the numbers of the item under the other field names, [once for each agent type](../token_usage/readme.md#observed-live). The elapsed times of the two entry points have different measurement boundaries. Do not read a difference in elapsed time between them as a difference in what your agent used.
 
 ## Limits
 
@@ -381,7 +384,7 @@ One resource group was created for this work, in the subscription named `Sandbox
 - An agent that really speaks the Invocations protocol, and an agent that is neither a prompt agent nor a hosted agent.
 - A run that fails after it invoked the agent, an output item with a status other than `completed`, a run that returns no item or the item of another row, a project that refuses to make a run, and an answer that is no run. The default test run covers them against a fake project that answers in the shapes above.
 - A target error other than the one a failing tool of a prompt agent gives. The prototypes saw `(SystemError) Agent response '…' ended with status 'failed'` for a hosted agent at low model capacity on 2026-11-24. It was not seen here.
-- Whether the reported token usage covers every model call, and what a run reports for an Attempt that timed out: its result is not read.
+- Whether the reported token usage covers every model call, and what a run reports for an Attempt that timed out, were not looked at here. Both were looked at later: see [token usage](../token_usage/readme.md#observed-live).
 - A criterion other than the two above, an uploaded file or a dataset as the source of the rows, and a prompt near the size limit of a request.
 - Authentication in CI or with `azure-identity`, and which roles are really required.
 - What the Foundry portal shows for these evals and runs. None was opened there.

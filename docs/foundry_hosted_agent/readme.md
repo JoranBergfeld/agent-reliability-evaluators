@@ -116,13 +116,16 @@ Every Attempt in the scorecard has an `invocation` entry with what the platform 
 | `status`, `error` | The status and the error of the response |
 | `token_usage` | The `usage` of the response, as the platform reported it |
 | `token_usage_missing` | Why there is no usage, when the response carried none. Missing usage is never recorded as zero |
+| `token_usage_source` | Where the usage comes from, when there is one: the response the hosted agent returned, which the agent's own code produces. The usage report repeats it as the `source` of the count |
 | `tool_calls` | The tool calls the response exposed, in order: `call_id`, `name`, `arguments` and the `output` the tool returned |
 
 An Attempt whose invocation failed keeps the same entry with whatever the platform returned, so its request identifiers and any token usage are not lost. An Attempt for which no answer came back at all has `"invocation": null`.
 
 `tool_calls` are the `function_call` items of the response, each paired with its `function_call_output` by `call_id`. The arguments are decoded from the JSON text the protocol gives them as. The output is kept as the text the tool returned. `tool_calls` is `null` when the response has no list of output items, which is not the same as an empty list.
 
-The token usage is recorded here as the platform reported it, and the scorecard reports it from here: per Attempt, per Evaluator and for the sweep, see [token usage](../token_usage/readme.md). The usage is not given to the sweep as a resource measurement, because it has not been established that it covers every model call of an Attempt.
+The token usage is recorded here as the platform reported it, and the scorecard reports it from here: per Attempt, per Evaluator and for the sweep, see [token usage](../token_usage/readme.md). The usage is not given to the sweep as a resource measurement.
+
+**The usage of a hosted agent is the agent's own count.** A hosted agent's own code produces its response, usage included, and Foundry passes it on. [Observed live](../token_usage/readme.md#observed-live), the usage the fixture's agent stated was not what the model deployment metered: equal with one model call, and 10,527 tokens stated against 3,358 metered for the six model calls of the fixture's Task. The numbers fit a count that adds to every model call the tokens of the calls before it. The target records the usage as the response stated it and says in `token_usage_source` whose count it is. Nothing corrects it. Compare it with your own deployment's metrics before you read it as tokens used.
 
 ### Resource measurements
 
@@ -243,7 +246,7 @@ The live check (`tests/live/test_foundry_hosted_agent_live.py`) runs the sweep f
 - **A failed tool call did not fail the response.** In all six Attempts with the failing update the response status was `completed`. In five of them the agent called update again, once or twice more. The task outcome was failure, from the service's evidence.
 - **Each Attempt was identifiable.** Every response had its own `id` and its own `agent_session_id`. The response returned the `metadata` it was sent. Both request identifier headers were present, and `x-request-id` held its value twice, separated by a comma.
 - **Tool calls were exposed in order** as `function_call` and `function_call_output` items: five in each Attempt without a fault, and five to seven with the failing update. In every Attempt the tool calls of the response were the calls the service received, in the same order.
-- **Token usage was reported on all 24 responses**: 10,880 to 11,572 total tokens without a fault and 11,586 to 21,670 with the failing update. Whether it covers every model call was not established.
+- **Token usage was reported on all 24 responses**: 10,880 to 11,572 total tokens without a fault and 11,586 to 21,670 with the failing update. Whether it covers every model call was not established here. Compared with the deployment's own metrics later, it was about three times what was metered: see [token usage](../token_usage/readme.md#observed-live).
 - **The request took 21.0 to 35.0 seconds, and once 86.4.** The slow one was the sixth Attempt of the self-contained run and had nothing else unusual about it.
 - **A hosted agent declared with the `invocations` protocol was refused**, in each run. The project reported `"protocols": ["invocations"]` for its endpoint, and the target did not invoke it. The check creates that agent itself in the fixture's project, with the fixture's Responses code, so only its declaration was tested. Sent by hand, outside the target, a Responses request to it was answered with HTTP 400 `bad_request`: "Endpoint-scoped responses require the 'responses' protocol to be declared".
 - **Teardown.** Both resource groups created for this work, `rg-are-44-3f3d7d2b` and `rg-are-44-3fe5273d`, were deleted, and a separate `az group exists` returned `false` for each. The soft-deleted Foundry accounts were purged. The self-contained run took 58 minutes end to end. Its eight Attempts took under five of them, and tearing down about half an hour.
