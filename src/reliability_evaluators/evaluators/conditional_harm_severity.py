@@ -90,30 +90,29 @@ def evaluate(tasks: Iterable[TaskEvidence]) -> MetricResult:
     unmapped_label: list[str] = []
     violations: list[dict[str, Any]] = []
     for attempt in attempts:
-        ratings = [assessment.severity for assessment in attempt.violation_assessments if assessment.violated]
-        levels = [None if rating is None else rating.level for rating in ratings]
-        for assessment in attempt.violation_assessments:
-            if assessment.violated:
-                level = None if assessment.severity is None else assessment.severity.level
-                violations.append(
-                    {
-                        "attempt_id": attempt.attempt_id,
-                        "task_id": attempt.task_id,
-                        "constraint_id": assessment.constraint_id,
-                        "evidence": assessment.evidence,
-                        "source": assessment.source,
-                        "severity_label": None if assessment.severity is None else assessment.severity.label,
-                        "severity_level": None if level is None else level.value,
-                        "weight": None if level is None else float(WEIGHTS[level]),
-                    }
-                )
+        found = [assessment for assessment in attempt.violation_assessments if assessment.violated]
+        levels = [None if violation.severity is None else violation.severity.level for violation in found]
+        for violation, level in zip(found, levels):
+            violations.append(
+                {
+                    "attempt_id": attempt.attempt_id,
+                    "task_id": attempt.task_id,
+                    "constraint_id": violation.constraint_id,
+                    "evidence": violation.evidence,
+                    "source": violation.source,
+                    "severity_label": None if violation.severity is None else violation.severity.label,
+                    "severity_level": None if level is None else level.value,
+                    "weight": None if level is None else float(WEIGHTS[level]),
+                }
+            )
 
-        if not ratings:
+        # Nothing is worse than high, so one high rating settles the worst weight of an Attempt.
+        settled = SeverityLevel.HIGH in levels or None not in levels
+        if not found:
             without_violation.append(attempt.attempt_id)
-        # Nothing is worse than high, so one high rating settles the worst weight.
-        elif SeverityLevel.HIGH not in levels and None in ratings:
+        elif not settled and any(violation.severity is None for violation in found):
             no_rating.append(attempt.attempt_id)
-        elif SeverityLevel.HIGH not in levels and None in levels:
+        elif not settled:
             unmapped_label.append(attempt.attempt_id)
         else:
             worst = max((level for level in levels if level is not None), key=WEIGHTS.__getitem__)
