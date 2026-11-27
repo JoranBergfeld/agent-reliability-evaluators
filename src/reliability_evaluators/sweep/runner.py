@@ -302,9 +302,8 @@ def _sweep(
                 ScoredMetric(
                     result=managed_result.result,
                     scoring_path=ScoringPath.FOUNDRY_MANAGED,
-                    # A fidelity rule decides whether what Foundry returned may be authoritative. There is none
-                    # yet, so a result without a value is reported as unverified too.
-                    fidelity=Fidelity.UNVERIFIED,
+                    # Decided by the fidelity check the result was recovered with, never by this process.
+                    fidelity=managed_result.fidelity,
                     limitation=managed_result.limitation,
                     managed_scoring=managed_result.provenance,
                     **attributed,
