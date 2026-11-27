@@ -182,7 +182,9 @@ def _intended_condition(recorded: Any) -> tuple[Condition | None, Any]:
         return None, None
     fields = _fields("an intended condition", recorded, "role", "condition_id", "description", "parameters")
     role = fields.pop("role")
-    return Condition(**fields), role
+    # The kind is recorded for a variation that declares one, and not otherwise.
+    declared_kind = {"kind": recorded["kind"]} if "kind" in recorded else {}
+    return Condition(**fields, **declared_kind), role
 
 
 def _observed_condition(recorded: Any) -> ObservedCondition | None:

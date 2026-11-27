@@ -18,6 +18,7 @@ from ..evidence import (
     Attempt,
     EvidenceError,
     OutcomeCorrection,
+    TaskEvidence,
     apply_outcome_corrections,
     group_by_task,
     read_attempts,
@@ -104,7 +105,7 @@ def _recalculate(
         scored_earlier = _scored_earlier(earlier)
     evaluators = _selected(scored_earlier, metrics, action_evidence)
     with _validating_the_supplied_evidence():
-        _require_reproduced(earlier.metrics, _score(evaluators, earlier.attempts))
+        _require_reproduced(earlier.metrics, _score(evaluators, earlier.attempts, earlier.experiments))
     _require_criteria_declared_again(earlier.metrics, acceptance_criteria)
     attempts = apply_outcome_corrections(earlier.attempts, corrections)
     superseded = {
@@ -113,7 +114,7 @@ def _recalculate(
         "metrics": deepcopy(earlier.metrics),
     }
     scorecard = build_scorecard(
-        metrics=_score(evaluators, attempts),
+        metrics=_score(evaluators, attempts, earlier.experiments),
         attempts=attempts,
         experiments=deepcopy(earlier.experiments),
         acceptance_criteria=acceptance_criteria,
@@ -271,13 +272,15 @@ def _selected(
     ]
 
 
-def _score(evaluators: Sequence[_Rescoring], attempts: Sequence[Attempt]) -> list[ScoredMetric]:
+def _score(
+    evaluators: Sequence[_Rescoring], attempts: Sequence[Attempt], experiments: Sequence[Any]
+) -> list[ScoredMetric]:
     """Score each Evaluator from the Attempts it is given, taken from `attempts` by identity."""
     by_identity = {attempt.attempt_id: attempt for attempt in attempts}
     return [
         ScoredMetric(
             result=rescoring.evaluator.evaluate(
-                group_by_task(by_identity[attempt_id] for attempt_id in rescoring.attempt_ids)
+                _evidence(rescoring, [by_identity[attempt_id] for attempt_id in rescoring.attempt_ids], experiments)
             ),
             scoring_path=ScoringPath.CUSTOMER_PROCESS,
             fidelity=Fidelity.AUTHORITATIVE,
@@ -285,6 +288,53 @@ def _score(evaluators: Sequence[_Rescoring], attempts: Sequence[Attempt]) -> lis
         )
         for rescoring in evaluators
     ]
+
+
+def _evidence(
+    rescoring: _Rescoring, attempts: Sequence[Attempt], experiments: Sequence[Any]
+) -> tuple[TaskEvidence, ...]:
+    """The Attempts an Evaluator is given, grouped by Task as the sweep grouped them for it.
+
+    `experiments` are the experiments the earlier scorecard records. An Evaluator that
+    compares a kind of variation with the baseline was given the Task of every experiment
+    whose variation is of that kind, also a Task of which no Attempt was made.
+    """
+    kind = rescoring.evaluator.evaluator.compares_variation
+    if kind is None:
+        return group_by_task(attempts)
+    # Every set of Attempts is made with the same experiments, so the Tasks compared are the same
+    # whichever set the Evaluator was given, and each is named once.
+    task_of = {
+        experiment_id: task_id
+        for experiment_id, task_id, variation_kind in map(_recorded_experiment, experiments)
+        if variation_kind == kind.value
+    }
+    by_task: dict[str, list[Attempt]] = {task_id: [] for task_id in task_of.values()}
+    for attempt in attempts:
+        if attempt.experiment_id not in task_of:
+            raise EvidenceError(
+                f"the Evaluator of {rescoring.evaluator.evaluator.definition.metric.metric_id!r} used Attempt "
+                f"{attempt.attempt_id!r}, which was not made in an experiment whose variation is of the kind "
+                f"{kind.value!r}"
+            )
+        by_task[task_of[attempt.experiment_id]].append(attempt)
+    return tuple(TaskEvidence(task_id, tuple(members)) for task_id, members in by_task.items())
+
+
+def _recorded_experiment(recorded: Any) -> tuple[str, str, Any]:
+    """The identity of a recorded experiment, its Task, and the kind of its variation if it declares one."""
+    variation = recorded.get("variation") if isinstance(recorded, Mapping) else None
+    if (
+        not isinstance(recorded, Mapping)
+        or not isinstance(recorded.get("experiment_id"), str)
+        or not isinstance(recorded.get("task_id"), str)
+        or not isinstance(variation, (Mapping, type(None)))
+    ):
+        raise EvidenceError(
+            "an experiment is recorded as an object with its experiment_id, its task_id and its variation. "
+            f"Got {recorded!r}"
+        )
+    return recorded["experiment_id"], recorded["task_id"], None if variation is None else variation.get("kind")
 
 
 def _require_reproduced(earlier_metrics: Sequence[Mapping[str, Any]], rescored: Sequence[ScoredMetric]) -> None:

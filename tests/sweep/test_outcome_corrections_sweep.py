@@ -37,6 +37,7 @@ from tests.fakes import (
     FakeActingAgentTarget,
     FakeAgentTarget,
     FakeControls,
+    FakeScriptedTodoAgent,
     FakeTodoAgent,
     FakeTodoService,
     todo_list,
@@ -545,6 +546,11 @@ def instead(supplied_instead):
     return lambda scorecard: supplied_instead
 
 
+def condition_of_kind(kind):
+    """The record of an intended variation that gives `kind` as what it changes."""
+    return {"role": "variation", "condition_id": "varied", "kind": kind, "description": "Varied.", "parameters": {}}
+
+
 @pytest.mark.parametrize(
     ("supply", "problem"),
     [
@@ -596,6 +602,12 @@ def instead(supplied_instead):
             "'close/attempt-3'.*lifecycle",
         ),
         (with_attempt(intended_condition={"role": "baseline"}), "'close/attempt-3'.*condition_id"),
+        (with_attempt(intended_condition=condition_of_kind("outage")), "'close/attempt-3'.*'outage' is not a kind"),
+        (with_attempt(intended_condition=condition_of_kind(None)), "'close/attempt-3'.*intended_condition"),
+        (
+            with_attempt(intended_condition={**condition_of_kind("fault"), "role": "baseline"}),
+            "'close/attempt-3'.*the baseline is not a variation, so it has no kind",
+        ),
         (with_attempt(starting_state="pristine"), "'close/attempt-3'.*not a starting-state policy"),
         (
             with_attempt(observed_condition={"met": "yes", "source": "log", "observations": {}}),
@@ -859,6 +871,190 @@ def test_a_correction_in_an_experiment_keeps_what_every_attempt_records_about_it
         "verify_condition",
         "clean_up",
     ]
+
+
+def fault_sweep(script=None, *, task_ids=("add",), attempts=4, not_known_yet=(), failures=None, sharing_a_list=()):
+    """Fresh-state experiments on a fake to-do service, one per Task, each with a fault as its variation.
+
+    A Task succeeds when its list holds exactly one item afterwards. Under the baseline the
+    service accepts the item. Under the fault it refuses the item, and the agent gives up
+    unless `script` says, by Attempt identity, that it "works around" the refusal.
+    `not_known_yet` names the Attempts whose task outcome is not decided during the sweep.
+    `failures` scripts a customer control to fail. The experiments of the Tasks in
+    `sharing_a_list` may change one and the same list. Outcome consistency and fault
+    robustness are scored.
+    """
+    service = FakeTodoService(task_ids)
+    controls = FakeControls(service, failures=failures)
+
+    def exactly_one_item(attempt, response):
+        if attempt.attempt_id in not_known_yet:
+            return NO_TASK_OUTCOME_YET
+        return TaskOutcome(success=len(service.lists.get(todo_list(attempt.task_id), [])) == 1, source=SOURCE)
+
+    experiments = [
+        Experiment(
+            experiment_id=f"{task_id}-item",
+            task=Task(
+                task_id=task_id, prompt="Add one item to the list.", success_rule=exactly_one_item, attempts=attempts
+            ),
+            agent_configuration={"agent": "todo-agent", "version": "3"},
+            starting_state="fresh",
+            baseline=Condition(condition_id="baseline", description="The to-do service accepts every request."),
+            variation=Condition(
+                condition_id="add-fails",
+                kind="fault",
+                description="The to-do service refuses to add an item.",
+                parameters={"add_fails": True},
+            ),
+            controls=controls,
+            write_capable=True,
+            authorized_resources=["todo-list/shared" if task_id in sharing_a_list else todo_list(task_id)],
+        )
+        for task_id in task_ids
+    ]
+    return supplied(
+        run_sweep(
+            experiments=experiments,
+            agent_target=FakeScriptedTodoAgent(service, script),
+            metrics=["outcome_consistency", "fault_robustness"],
+        )
+    )
+
+
+WORKS_AROUND_TWICE = {"add-item/add-fails/attempt-1": "works around", "add-item/add-fails/attempt-3": "works around"}
+
+
+@pytest.mark.parametrize(
+    ("correction", "baseline_successes", "fault_successes", "fault_robustness", "outcome_consistency"),
+    [
+        # Under the fault: 3/4 = 0.75 against a baseline of 4/4 = 1, so 0.75 / 1 = 0.75.
+        # Outcome consistency rests on the baseline Attempts, which are as they were: p = 4/4, value 1.
+        (corrected("add-item/add-fails/attempt-2", success=True), 4, 3, 0.75, 1),
+        # Under the baseline: 3/4 = 0.75 against 2/4 = 0.5 under the fault, so 0.5 / 0.75 = 2/3.
+        # Outcome consistency: p = 3/4, (2 * 0.75 - 1)^2 = 0.25.
+        (corrected("add-item/baseline/attempt-4", success=False), 3, 2, 2 / 3, 0.25),
+    ],
+)
+def test_an_outcome_corrected_under_the_baseline_or_under_the_fault_changes_fault_robustness(
+    correction, baseline_successes, fault_successes, fault_robustness, outcome_consistency
+):
+    # Earlier: the baseline succeeds in 4 of 4 Attempts and the fault in the 2 of 4 the agent works
+    # around: 0.5 / 1 = 0.5. Outcome consistency over the baseline: p = 4/4, value 1.
+    earlier = fault_sweep(WORKS_AROUND_TWICE)
+    assert metric(earlier, "fault_robustness")["value"] == 0.5
+    assert metric(earlier, "outcome_consistency")["value"] == 1
+
+    recalculated = recalculate(earlier_scorecard=earlier, outcome_corrections=[correction])
+
+    recalculated_robustness = metric(recalculated, "fault_robustness")
+    assert recalculated_robustness["state"] == "available"
+    assert recalculated_robustness["value"] == pytest.approx(fault_robustness, abs=1e-12)
+    assert recalculated_robustness["details"]["baseline"]["successes"] == baseline_successes
+    assert recalculated_robustness["details"]["fault"]["successes"] == fault_successes
+    nothing_left_out = {"missing": [], "excluded": []}
+    assert recalculated_robustness["counts"] == {
+        "tasks": {"total": 1, "valid": 1, **nothing_left_out},
+        "baseline_attempts": {"total": 4, "valid": 4, **nothing_left_out},
+        "fault_attempts": {"total": 4, "valid": 4, **nothing_left_out},
+        "other_attempts": {"total": 0, "valid": 0, **nothing_left_out},
+    }
+    assert recalculated_robustness["attempts_used"] == metric(earlier, "fault_robustness")["attempts_used"]
+    assert metric(recalculated, "outcome_consistency")["value"] == outcome_consistency
+    (superseded,) = recalculated["superseded_results"]
+    assert metric(superseded, "fault_robustness")["value"] == 0.5
+
+
+def test_a_correction_under_the_fault_leaves_the_evidence_it_does_not_concern_as_it_was():
+    earlier = fault_sweep(WORKS_AROUND_TWICE)
+    corrected_id = "add-item/add-fails/attempt-2"
+
+    recalculated = recalculate(earlier_scorecard=earlier, outcome_corrections=[corrected(corrected_id, success=True)])
+
+    # The baseline Attempts are not concerned, so the metric that rests on them keeps its whole result.
+    assert metric(recalculated, "outcome_consistency") == metric(earlier, "outcome_consistency")
+    assert recalculated["experiments"] == earlier["experiments"]
+    assert [entry for entry in recalculated["attempts"] if entry["attempt_id"] != corrected_id] == [
+        entry for entry in earlier["attempts"] if entry["attempt_id"] != corrected_id
+    ]
+    before, after = attempt(earlier, corrected_id), attempt(recalculated, corrected_id)
+    assert {key for key in after if after[key] != before[key]} == {"task_outcome", "superseded_task_outcomes"}
+    assert after["intended_condition"]["kind"] == "fault"
+
+
+def test_a_task_outcome_under_the_fault_that_was_not_known_during_the_sweep_can_be_supplied_later():
+    # Earlier: the fourth Attempt under the fault has no task outcome, so 2 of the 3 others succeed:
+    # (2/3) / 1 = 2/3. It is supplied as a failure: 2/4 = 0.5, and 0.5 / 1 = 0.5.
+    late = "add-item/add-fails/attempt-4"
+    earlier = fault_sweep(WORKS_AROUND_TWICE, not_known_yet=[late])
+    assert metric(earlier, "fault_robustness")["value"] == pytest.approx(2 / 3, abs=1e-12)
+    assert metric(earlier, "fault_robustness")["counts"]["fault_attempts"] == {
+        "total": 4,
+        "valid": 3,
+        "missing": [{"reason": "no task outcome recorded", "count": 1, "ids": [late]}],
+        "excluded": [],
+    }
+
+    recalculated = recalculate(earlier_scorecard=earlier, outcome_corrections=[corrected(late, success=False)])
+
+    fault_robustness = metric(recalculated, "fault_robustness")
+    assert fault_robustness["value"] == 0.5
+    assert fault_robustness["counts"]["fault_attempts"] == {"total": 4, "valid": 4, "missing": [], "excluded": []}
+
+
+def test_an_experiment_of_which_no_attempt_was_made_is_still_a_task_of_the_recalculated_comparison():
+    # "tidy" could not clean up after its first Attempt and "archive", which may change the same list,
+    # was not started. "add" is the one compared Task: baseline 2/2 = 1, fault 0/2 = 0, value 0.
+    # An Attempt of "add" under the fault is corrected to a success: 1/2 = 0.5, and 0.5 / 1 = 0.5.
+    earlier = fault_sweep(
+        task_ids=("add", "tidy", "archive"),
+        attempts=2,
+        failures={("clean_up", "tidy-item/baseline/attempt-1"): "the list could not be deleted"},
+        sharing_a_list=("tidy", "archive"),
+    )
+    assert [entry["execution"]["attempts_recorded"] for entry in earlier["experiments"]] == [4, 1, 0]
+    assert metric(earlier, "fault_robustness")["value"] == 0
+    three_tasks_of_which_one_is_compared = {
+        "total": 3,
+        "valid": 1,
+        "missing": [],
+        "excluded": [{"reason": "no valid Attempt under either condition", "count": 2, "ids": ["tidy", "archive"]}],
+    }
+    assert metric(earlier, "fault_robustness")["counts"]["tasks"] == three_tasks_of_which_one_is_compared
+
+    recalculated = recalculate(
+        earlier_scorecard=earlier, outcome_corrections=[corrected("add-item/add-fails/attempt-1", success=True)]
+    )
+
+    assert metric(recalculated, "fault_robustness")["value"] == 0.5
+    assert metric(recalculated, "fault_robustness")["counts"]["tasks"] == three_tasks_of_which_one_is_compared
+
+
+@pytest.mark.parametrize(
+    ("supply", "problem"),
+    [
+        (
+            changed(lambda scorecard: scorecard["experiments"][0].pop("task_id")),
+            "an experiment is recorded as an object with its experiment_id, its task_id and its variation",
+        ),
+        (
+            changed(lambda scorecard: scorecard["experiments"][0]["variation"].pop("kind")),
+            "the Evaluator of 'fault_robustness' used Attempt 'add-item/baseline/attempt-1', which was not made "
+            "in an experiment whose variation is of the kind 'fault'",
+        ),
+    ],
+)
+def test_recorded_experiments_that_do_not_give_the_tasks_fault_robustness_compared_fail_the_recalculation(
+    supply, problem
+):
+    earlier = supply(fault_sweep(WORKS_AROUND_TWICE))
+
+    with pytest.raises(
+        RecalculationFailed, match=f"recalculation failed: the supplied evidence does not validate: {problem}"
+    ):
+        recalculate(
+            earlier_scorecard=earlier, outcome_corrections=[corrected("add-item/add-fails/attempt-2", success=True)]
+        )
 
 
 DISTRIBUTIONAL = "distributional_trajectory_consistency"
