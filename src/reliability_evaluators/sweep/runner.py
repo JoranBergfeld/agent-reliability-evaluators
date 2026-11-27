@@ -7,16 +7,26 @@ from typing import Any, Sequence
 from ..agent_target import AgentResponse, AgentTarget, AttemptRequest
 from ..evaluators import EVALUATORS, RELIABILITY_METRICS, Evaluator, Fidelity, ScoringPath
 from ..evidence import Attempt, EvidenceError, ExecutionStatus, TaskOutcome, ViolationAssessment, group_by_task
-from ..scorecard import ScoredMetric, build_scorecard
+from ..scorecard import AcceptanceCriterion, ScoredMetric, build_scorecard, criteria_by_metric
 from .declaration import Task
 
 
-def run_sweep(*, tasks: Sequence[Task], agent_target: AgentTarget, metrics: Sequence[str]) -> dict[str, Any]:
+def run_sweep(
+    *,
+    tasks: Sequence[Task],
+    agent_target: AgentTarget,
+    metrics: Sequence[str],
+    acceptance_criteria: Sequence[AcceptanceCriterion] = (),
+) -> dict[str, Any]:
     """Make the declared Attempts, score the selected metrics, and return the scorecard.
 
     `metrics` names the reliability metrics to score, by metric identity. Attempts run one
     after another, Task by Task, and scoring happens in this process. The result is the
     machine-readable reliability scorecard, as JSON-compatible data.
+
+    `acceptance_criteria` are the customer's own, at most one per metric. Each is reported
+    with its metric as met, not met, or not assessed with a reason. Without one, a metric
+    has no acceptance verdict.
 
     A declaration that cannot be run is rejected before any Attempt is made. A task-success
     rule that does not return a sourced, binary TaskOutcome stops the sweep. So does a
@@ -25,6 +35,8 @@ def run_sweep(*, tasks: Sequence[Task], agent_target: AgentTarget, metrics: Sequ
     """
     evaluators = [_evaluator(metric_id) for metric_id in metrics]
     _require_distinct_tasks(tasks)
+    # Called for its check: a second criterion for one metric is rejected here, not after the Attempts.
+    criteria_by_metric(acceptance_criteria)
     attempts = [
         _run_attempt(task, number, agent_target) for task in tasks for number in range(1, task.attempts + 1)
     ]
@@ -37,7 +49,7 @@ def run_sweep(*, tasks: Sequence[Task], agent_target: AgentTarget, metrics: Sequ
         )
         for evaluator in evaluators
     ]
-    return build_scorecard(metrics=scored, attempts=attempts)
+    return build_scorecard(metrics=scored, attempts=attempts, acceptance_criteria=acceptance_criteria)
 
 
 def _evaluator(metric_id: str) -> Evaluator:

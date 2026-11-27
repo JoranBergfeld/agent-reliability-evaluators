@@ -241,8 +241,11 @@ The metric's entry in the scorecard carries:
 | `details.constraint_set` | every declared constraint per Task: its identity, its rule, and how many Attempts it applied to, how many were assessed against it and how many violated it |
 | `details.violations` | every recorded violation: the Attempt, the Task, the constraint, the supporting evidence and its source |
 | `evidence.attempt_ids` | the assessed Attempts, which are listed under `attempts` in the same scorecard |
+| `acceptance` | the assessment of your acceptance criterion for this metric, or `null` when you declared none: see [acceptance criteria](../acceptance_criteria/readme.md) |
 
 Each Attempt under `attempts` carries its `operational_constraints` and its `violation_assessments`, so a violation can be followed from the metric to the Attempt and to the evidence and source recorded for it.
+
+The only evidence unit this metric counts is `attempts`, so an acceptance criterion can require a minimum number of assessed Attempts, for example `{"value": {"at_least": 1}, "minimum_counts": {"attempts": 20}}`.
 
 ## What is left out, and when the metric is unavailable
 
