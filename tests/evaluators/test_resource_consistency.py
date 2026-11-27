@@ -562,3 +562,29 @@ def test_measurements_near_the_largest_representable_number_are_calculated_and_n
     result = evaluate(attempts("task", [[elapsed(0.5e308)], [elapsed(1.5e308)]]))
 
     assert result.value == pytest.approx(EXP_MINUS_HALF, abs=1e-12)
+
+
+def test_the_worked_example_in_the_documentation():
+    # close:   elapsed 4, 6, 4, 6 has mean 5, population variance (1 + 1 + 1 + 1) / 4 = 1, CV 1/5 = 0.2.
+    #          Tool calls 3, 3, 3, 3 have CV 0. Mean of the CVs 0.1, Task value exp(-0.1) = 0.9048374180359595.
+    # archive: elapsed 10, 30 has mean 20, standard deviation 10, CV 0.5. Tool calls 2, 6 have mean 4,
+    #          standard deviation 2, CV 0.5. Mean of the CVs 0.5, Task value exp(-0.5) = 0.6065306597126334.
+    # report:  elapsed 60, 60, 60 has CV 0. The tool-call count is missing from the second Attempt, so
+    #          tool calls are excluded. Task value exp(0) = 1.
+    # once:    one Attempt, excluded.
+    # Metric: (0.9048374180359595 + 0.6065306597126334 + 1) / 3 = 0.8371226925828643.
+    result = evaluate(
+        attempts("close", [[elapsed(seconds), tool_calls(3)] for seconds in (4.0, 6.0, 4.0, 6.0)]),
+        attempts("archive", [[elapsed(10.0), tool_calls(2)], [elapsed(30.0), tool_calls(6)]]),
+        attempts("report", [[elapsed(60.0), tool_calls(5)], [elapsed(60.0)], [elapsed(60.0), tool_calls(5)]]),
+        attempts("once", [[elapsed(9.0), tool_calls(4)]]),
+    )
+
+    assert result.value == pytest.approx(0.8371226925828643, abs=1e-12)
+    assert [(task["task_id"], task["value"]) for task in result.details["per_task"]] == [
+        ("close", pytest.approx(0.9048374180359595, abs=1e-12)),
+        ("archive", pytest.approx(EXP_MINUS_HALF, abs=1e-12)),
+        ("report", 1.0),
+    ]
+    assert result.counts["tasks"].valid == 3
+    assert result.counts["attempts"].valid == 9

@@ -6,13 +6,14 @@ Vocabulary is defined in [`GLOSSARY.md`](GLOSSARY.md). Decisions that are hard t
 
 ## What exists today
 
-One metric, end to end, scored in your own process:
+Two metrics, end to end, scored in your own process:
 
 | Metric | Documentation |
 | --- | --- |
 | Outcome consistency | [`docs/outcome_consistency/readme.md`](docs/outcome_consistency/readme.md) |
+| Resource consistency | [`docs/resource_consistency/readme.md`](docs/resource_consistency/readme.md) |
 
-The other eleven metrics are listed in every scorecard as not configured. No Foundry agent target and no Foundry-managed scoring exists yet; the agent target is an interface that you implement.
+The other ten metrics have no Evaluator yet. Every scorecard lists all twelve, and a metric that was not selected appears as not configured. No Foundry agent target and no Foundry-managed scoring exists yet; the agent target is an interface that you implement.
 
 ## Using it in your project
 
@@ -49,7 +50,7 @@ The copyable source has one directory per module of the specification.
 | Module | Path | Contents |
 | --- | --- | --- |
 | Evaluators | `src/reliability_evaluators/evaluators/` | The canonical metric definitions, one file per metric, the metric result contract (`result.py`), the catalogue of the twelve metrics (`catalogue.py`) and the registry of Evaluators that exist (`registry.py`). |
-| Evidence model | `src/reliability_evaluators/evidence/` | The Attempt record, its validation, and the grouping of Attempts by Task. |
+| Evidence model | `src/reliability_evaluators/evidence/` | The Attempt record with its task outcome and resource measurements, its validation, and the grouping of Attempts by Task. |
 | Evaluator sweep | `src/reliability_evaluators/sweep/` | What a customer declares (`declaration.py`) and the public entry point `run_sweep` (`runner.py`). |
 | Agent target | `src/reliability_evaluators/agent_target/` | The interface the sweep invokes an agent through. |
 | Scorecard | `src/reliability_evaluators/scorecard/` | Assembly of the machine-readable scorecard (JSON). |
