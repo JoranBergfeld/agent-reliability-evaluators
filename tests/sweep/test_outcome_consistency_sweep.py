@@ -94,6 +94,7 @@ def test_the_value_refers_to_attempt_level_evidence_in_the_scorecard():
             "execution_status": "completed",
             "execution_error": None,
             "task_outcome": {"success": True, "source": SOURCE},
+            "action_evidence": None,
         },
         {
             "attempt_id": "close/attempt-2",
@@ -101,6 +102,7 @@ def test_the_value_refers_to_attempt_level_evidence_in_the_scorecard():
             "execution_status": "completed",
             "execution_error": None,
             "task_outcome": {"success": False, "source": SOURCE},
+            "action_evidence": None,
         },
     ]
 
@@ -165,6 +167,7 @@ def test_an_invocation_that_fails_is_an_execution_status_and_not_a_task_failure(
         "execution_status": "failed",
         "execution_error": "ConnectionError: the agent endpoint returned 503",
         "task_outcome": None,
+        "action_evidence": None,
     }
     outcome_consistency = metric(scorecard)
     assert outcome_consistency["value"] == 1
