@@ -12,6 +12,8 @@ One metric, end to end, scored in your own process:
 | --- | --- |
 | Outcome consistency | [`docs/outcome_consistency/readme.md`](docs/outcome_consistency/readme.md) |
 
+The Evaluator sweep can also run controlled experiments, with your own controls for preparing state, applying a condition, verifying what occurred and cleaning up: see [`docs/sweep/controlled-experiments.md`](docs/sweep/controlled-experiments.md).
+
 The other eleven metrics are listed in every scorecard as not configured. No Foundry agent target and no Foundry-managed scoring exists yet; the agent target is an interface that you implement.
 
 ## Using it in your project
@@ -49,8 +51,8 @@ The copyable source has one directory per module of the specification.
 | Module | Path | Contents |
 | --- | --- | --- |
 | Evaluators | `src/reliability_evaluators/evaluators/` | The canonical metric definitions, one file per metric, the metric result contract (`result.py`), the catalogue of the twelve metrics (`catalogue.py`) and the registry of Evaluators that exist (`registry.py`). |
-| Evidence model | `src/reliability_evaluators/evidence/` | The Attempt record, its validation, and the grouping of Attempts by Task. |
-| Evaluator sweep | `src/reliability_evaluators/sweep/` | What a customer declares (`declaration.py`) and the public entry point `run_sweep` (`runner.py`). |
+| Evidence model | `src/reliability_evaluators/evidence/` | The Attempt record, what it records about its experiment (`experiment.py`), its validation, and the grouping of Attempts by Task. |
+| Evaluator sweep | `src/reliability_evaluators/sweep/` | What a customer declares (`declaration.py`), the public entry point `run_sweep` (`runner.py`) and the customer controls invoked around each Attempt of an experiment (`lifecycle.py`). |
 | Agent target | `src/reliability_evaluators/agent_target/` | The interface the sweep invokes an agent through. |
 | Scorecard | `src/reliability_evaluators/scorecard/` | Assembly of the machine-readable scorecard (JSON). |
 | Foundry-managed scoring | not built yet | |
@@ -74,7 +76,7 @@ The default test run excludes tests marked `live`. Live checks need a disposable
 Tests are written at three seams only:
 
 - **Evaluator seam** (`tests/evaluators/`): an Evaluator's public interface, called with grouped Attempt evidence.
-- **Evaluator sweep seam** (`tests/sweep/`): `run_sweep` with the fake agent target in `tests/fakes.py`, asserting on the machine-readable scorecard only.
+- **Evaluator sweep seam** (`tests/sweep/`): `run_sweep` with the fake agent targets and the fake customer controls in `tests/fakes.py`, asserting on the machine-readable scorecard only.
 - **Live Foundry verification**: opt-in, marked `live`.
 
 Expected values are calculated by hand, never by the code under test.

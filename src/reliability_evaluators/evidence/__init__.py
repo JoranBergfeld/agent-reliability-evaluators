@@ -1,4 +1,5 @@
-"""Evidence model: the Attempt record, its validation, and the grouping Evaluators are called with.
+"""Evidence model: the Attempt record, what it records about its experiment, its validation,
+and the grouping Evaluators are called with.
 
 Pure: standard library only, no I/O. The canonical metric definitions depend on it.
 """

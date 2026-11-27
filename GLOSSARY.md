@@ -27,6 +27,18 @@ One execution of an agent on a task. Outcomes and other evaluation evidence are 
 **Evaluator sweep**:
 A coordinated evaluation of planned attempts across tasks and experimental conditions, bringing its results together in a reliability scorecard.
 
+**Experiment**:
+A task attempted under a baseline condition and at most one intended variation, with everything else held fixed. It is declared before any attempt is made.
+
+**Experimental condition**:
+The circumstances an attempt is made under: the baseline, or the one intended variation from it. The intended condition is what the experiment declared. The observed condition is what a customer control showed to have occurred. A label is not an observed condition.
+
+**Starting-state policy**:
+The declared rule for the state an attempt starts from: fresh, where the state is prepared before every attempt, or continuing, where each attempt deliberately starts from the state the previous one left.
+
+**Customer control**:
+An operation supplied by the customer that the evaluator sweep invokes at a defined point around an attempt: to prepare state, apply a condition, verify what occurred, or clean up.
+
 **Task outcome**:
 The success or failure of an attempt, determined against the customer's task-success definition, with its source recorded. It is not inferred from the agent's response alone and is distinct from deciding whether a reliability metric meets an acceptance criterion.
 _Avoid_: Reliability acceptance

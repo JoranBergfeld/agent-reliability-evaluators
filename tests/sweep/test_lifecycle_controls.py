@@ -8,9 +8,12 @@ The fake agent adds one item to its Task's to-do list, and the Task succeeds whe
 list then holds exactly one item. Neither the agent nor the service ever resets a list.
 """
 
+import json
+
 import pytest
 
 from reliability_evaluators.evidence import TaskOutcome
+from reliability_evaluators.scorecard import to_json
 from reliability_evaluators.sweep import Condition, Experiment, Task, run_sweep
 from tests.fakes import FakeControls, FakeTodoAgent, FakeTodoService, todo_list
 
@@ -342,6 +345,7 @@ def test_the_scorecard_records_what_each_experiment_declared_and_how_it_ran():
             "execution": {"status": "completed", "reason": None, "attempts_planned": 4, "attempts_recorded": 4},
         }
     ]
+    assert json.loads(to_json(scorecard)) == scorecard
 
 
 def execution(scorecard, experiment_id):
