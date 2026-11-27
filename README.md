@@ -37,7 +37,7 @@ Every scorecard lists all twelve, and a metric that was not selected appears as 
 
 A task outcome can be supplied or corrected after the run. Recalculating from the earlier scorecard, which you supply, gives a new scorecard that uses the corrected outcome and marks the earlier result as superseded: see [`docs/sweep/late-and-corrected-outcomes.md`](docs/sweep/late-and-corrected-outcomes.md).
 
-The sweep returns the machine-readable scorecard. Given a directory, it also writes the scorecard, a human-readable report rendered from it and the attempt-level evidence there, or raises an explicit reporting failure: see [`docs/report/readme.md`](docs/report/readme.md).
+The sweep returns the machine-readable scorecard. Given a directory, it also writes the scorecard, a human-readable report rendered from it and the attempt-level evidence there, or raises an explicit reporting failure: see [`docs/report/readme.md`](docs/report/readme.md). The files go to that directory on both scoring paths. What Foundry holds of a managed run, and how to leave a reference to the scorecard there, is in [`docs/report/delivery-alongside-foundry.md`](docs/report/delivery-alongside-foundry.md).
 
 ## Using it in your project
 
