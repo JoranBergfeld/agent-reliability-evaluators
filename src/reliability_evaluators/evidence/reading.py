@@ -95,6 +95,7 @@ def _attempt(recorded: Any) -> Attempt:
         "superseded_task_outcomes",
         "action_evidence",
         "resource_measurements",
+        "invocation",
         "confidence",
         "operational_constraints",
         "violation_assessments",

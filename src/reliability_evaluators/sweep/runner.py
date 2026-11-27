@@ -7,9 +7,9 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
 from functools import partial
 from time import perf_counter
-from typing import Any, Callable, Sequence
+from typing import Any, Callable, Mapping, Sequence
 
-from ..agent_target import AgentResponse, AgentTarget, AttemptRequest
+from ..agent_target import AgentResponse, AgentTarget, AttemptRequest, InvocationFailed
 from ..evaluators import EVALUATORS, Evaluator, Fidelity, MetricResult, ScoringPath
 from ..evidence import (
     ActionEvidence,
@@ -616,13 +616,16 @@ def _invoke_agent(
     limit = task.limits.attempt_timeout_seconds
     request = AttemptRequest(attempt_id=attempt_id, task_id=task.task_id, prompt=task.prompt, timeout_seconds=limit)
 
-    def not_completed(status: ExecutionStatus, why: str) -> tuple[Attempt, ConfidenceFollowUp]:
+    def not_completed(
+        status: ExecutionStatus, why: str, invocation: Mapping[str, Any] | None = None
+    ) -> tuple[Attempt, ConfidenceFollowUp]:
         attempt = Attempt(
             attempt_id=attempt_id,
             task_id=task.task_id,
             execution_status=status,
             execution_error=why,
             retry_of=retry_of,
+            invocation=invocation,
             operational_constraints=task.operational_constraints,
         )
         # The agent is not asked about an Attempt that did not complete.
@@ -633,22 +636,26 @@ def _invoke_agent(
         response = agent_target.invoke(request)
     except Exception as error:
         why = f"{type(error).__name__}: {error}"
+        # What the agent target recorded of the invocation stays on the Attempt, however it ended.
+        recorded = error.invocation if isinstance(error, InvocationFailed) else None
         if isinstance(error, TimeoutError):
             return not_completed(ExecutionStatus.TIMED_OUT, why)
         # The sweep cannot interrupt an invocation. It measures, so that the limit holds
         # whether or not the agent target stopped at it.
         if limit is not None and clock() - started > limit:
             return not_completed(
-                ExecutionStatus.TIMED_OUT, f"{why}, after the Attempt's time limit of {limit:g} seconds"
+                ExecutionStatus.TIMED_OUT, f"{why}, after the Attempt's time limit of {limit:g} seconds", recorded
             )
         if cancellation.requested():
-            return not_completed(ExecutionStatus.CANCELLED, f"{why}, after the sweep was cancelled")
-        return not_completed(ExecutionStatus.FAILED, why)
+            return not_completed(ExecutionStatus.CANCELLED, f"{why}, after the sweep was cancelled", recorded)
+        return not_completed(ExecutionStatus.FAILED, why, recorded)
     elapsed = clock() - started
     if limit is not None and elapsed > limit:
         # The limit applies to every Attempt alike, so a late answer is not scored.
         return not_completed(
-            ExecutionStatus.TIMED_OUT, f"the agent target answered after the Attempt's time limit of {limit:g} seconds"
+            ExecutionStatus.TIMED_OUT,
+            f"the agent target answered after the Attempt's time limit of {limit:g} seconds",
+            response.invocation,
         )
     outcome = task.success_rule(request, response)
     if isinstance(outcome, NoTaskOutcomeYet):
@@ -670,6 +677,7 @@ def _invoke_agent(
         task_outcome=outcome,
         retry_of=retry_of,
         resource_measurements=_resource_measurements(elapsed, response.resource_measurements),
+        invocation=response.invocation,
         operational_constraints=task.operational_constraints,
         violation_assessments=violation_assessments,
         action_evidence=actions,
