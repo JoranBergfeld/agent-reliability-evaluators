@@ -19,6 +19,7 @@ from ..evidence import (
     ExecutionStatus,
     ResourceMeasurement,
     ResourceType,
+    TaskEvidence,
     TaskOutcome,
     ViolationAssessment,
     group_by_task,
@@ -222,7 +223,7 @@ class _SelectedEvaluator:
         """
         return (attempt.condition_role or ConditionRole.BASELINE) in self.evaluator.condition_roles
 
-    def evaluate(self, evidence: Sequence[Any]) -> MetricResult:
+    def evaluate(self, evidence: Sequence[TaskEvidence]) -> MetricResult:
         declared = (_EVALUATED_WITH[name](self.declared[name]) for name in self.evaluator.declarations)
         return self.evaluator.evaluate(evidence, *declared)
 
@@ -353,7 +354,6 @@ def _invoke_agent(
     The two are separate so that an experiment can verify its condition in between.
     """
     request = AttemptRequest(attempt_id=attempt_id, task_id=task.task_id, prompt=task.prompt)
-
     started = clock()
     try:
         response = agent_target.invoke(request)

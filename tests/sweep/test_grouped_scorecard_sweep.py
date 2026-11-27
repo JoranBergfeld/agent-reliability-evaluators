@@ -1,9 +1,9 @@
 """Evaluator sweep seam: several Evaluators in one sweep, and the Attempts they share.
 
-The sweep is driven through its public entry point with a fake agent target and a fake
-service that logs the agent's tool calls. Every assertion is on the machine-readable
-scorecard. Expected values are calculated by hand; the arithmetic behind each trajectory
-pair is in `tests/evaluators/`.
+The sweep is driven through its public entry point with fake agent targets, a fake service
+that logs the agent's tool calls, and fake customer controls. Every assertion is on the
+machine-readable scorecard. Expected values are calculated by hand; the arithmetic behind
+each trajectory pair is in `tests/evaluators/`.
 """
 
 import pytest
