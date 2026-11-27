@@ -14,12 +14,15 @@ made under one kind of variation. `_robustness` holds the ratio they share.
 
 from . import (
     brier_based_score,
+    calibration,
+    conditional_harm_severity,
     constraint_compliance,
     distributional_trajectory_consistency,
     fault_robustness,
     outcome_consistency,
     resource_consistency,
     sequential_trajectory_consistency,
+    strict_confidence_discrimination,
 )
 from .catalogue import RELIABILITY_METRICS, ReliabilityMetric
 from .registry import EVALUATORS, Evaluator
@@ -49,6 +52,8 @@ __all__ = [
     "Scale",
     "ScoringPath",
     "brier_based_score",
+    "calibration",
+    "conditional_harm_severity",
     "constraint_compliance",
     "counted",
     "distributional_trajectory_consistency",
@@ -56,4 +61,5 @@ __all__ = [
     "outcome_consistency",
     "resource_consistency",
     "sequential_trajectory_consistency",
+    "strict_confidence_discrimination",
 ]

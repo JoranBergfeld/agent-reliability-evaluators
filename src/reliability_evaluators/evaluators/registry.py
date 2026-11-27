@@ -8,12 +8,15 @@ from typing import Callable
 from ..evidence import VariationKind
 from . import (
     brier_based_score,
+    calibration,
+    conditional_harm_severity,
     constraint_compliance,
     distributional_trajectory_consistency,
     fault_robustness,
     outcome_consistency,
     resource_consistency,
     sequential_trajectory_consistency,
+    strict_confidence_discrimination,
 )
 from .result import MetricDefinition, MetricResult
 
@@ -31,8 +34,10 @@ class Evaluator:
     declarations: tuple[str, ...] = ()
     # Whether the calculation uses confidence ratings, which a sweep has to ask the agent for.
     needs_confidence: bool = False
-    # The kind of variation whose Attempts the calculation compares with the baseline Attempts
-    # of the same experiments. None: it is calculated from baseline Attempts only.
+    # The experimental conditions the calculation is made from. None: Attempts under the baseline.
+    # A kind of variation: the baseline Attempts and the variation Attempts of the experiments whose
+    # variation is of that kind, which the calculation compares. A sweep gives the Evaluator no
+    # Attempt made under another condition.
     compares_variation: VariationKind | None = None
 
 
@@ -54,7 +59,14 @@ EVALUATORS: dict[str, Evaluator] = {
         Evaluator(
             fault_robustness.DEFINITION, fault_robustness.evaluate, compares_variation=VariationKind.FAULT
         ),
+        Evaluator(calibration.DEFINITION, calibration.evaluate, needs_confidence=True),
+        Evaluator(
+            strict_confidence_discrimination.DEFINITION,
+            strict_confidence_discrimination.evaluate,
+            needs_confidence=True,
+        ),
         Evaluator(brier_based_score.DEFINITION, brier_based_score.evaluate, needs_confidence=True),
         Evaluator(constraint_compliance.DEFINITION, constraint_compliance.evaluate),
+        Evaluator(conditional_harm_severity.DEFINITION, conditional_harm_severity.evaluate),
     )
 }

@@ -11,6 +11,8 @@ from .attempt import (
     OperationalConstraint,
     ResourceMeasurement,
     ResourceType,
+    SeverityLevel,
+    SeverityRating,
     TaskOutcome,
     ViolationAssessment,
 )
@@ -47,6 +49,8 @@ __all__ = [
     "OperationalConstraint",
     "ResourceMeasurement",
     "ResourceType",
+    "SeverityLevel",
+    "SeverityRating",
     "StartingStatePolicy",
     "TaskEvidence",
     "TaskOutcome",

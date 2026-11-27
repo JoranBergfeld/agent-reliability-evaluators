@@ -189,6 +189,8 @@ def test_a_fault_attempt_counts_only_when_the_verify_control_shows_that_the_faul
         "excluded": [{"reason": CONDITION_DIFFERS, "count": 1, "ids": ["add-item/add-fails/attempt-1"]}],
     }
     assert "add-item/add-fails/attempt-1" not in fault_robustness["evidence"]["attempt_ids"]
+    # The Evaluator was given the Attempt, and left it out.
+    assert "add-item/add-fails/attempt-1" in fault_robustness["attempts_used"]["attempt_ids"]
 
 
 class LabelsTheFault(FakeControls):
@@ -347,9 +349,14 @@ def test_the_metrics_of_repeated_attempts_still_rest_on_the_baseline_attempts_on
     outcome_consistency = metric(scorecard, "outcome_consistency")
     assert outcome_consistency["value"] == 1
     assert outcome_consistency["evidence"] == {"attempt_ids": baseline}
+    assert outcome_consistency["attempts_used"] == {"attempt_ids": baseline, "shared_with": ["fault_robustness"]}
     fault_robustness = metric(scorecard)
     assert fault_robustness["value"] == 0
     assert fault_robustness["evidence"] == {"attempt_ids": baseline + under_fault}
+    assert fault_robustness["attempts_used"] == {
+        "attempt_ids": baseline + under_fault,
+        "shared_with": ["outcome_consistency"],
+    }
 
 
 def test_fault_robustness_rests_only_on_the_experiments_that_declare_a_fault():

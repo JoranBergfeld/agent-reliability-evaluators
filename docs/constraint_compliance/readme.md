@@ -82,7 +82,7 @@ Each Attempt identifies itself and its Task, has an execution status, and carrie
 
 Supply violation assessments the way you supply task outcomes: from evidence other than the agent's own response, such as the state or the event log of the service the agent acted on. An agent that says it changed nothing has not shown that it changed nothing. The `source` you record is reported as given. It is not checked.
 
-A violation assessment carries no severity rating yet. Conditional harm severity, which has no Evaluator yet, rates these same violations; constraint compliance only counts them.
+A violation assessment that finds a violation can carry the severity rating of that violation. Constraint compliance only counts violations and does not read the rating. [Conditional harm severity](../conditional_harm_severity/readme.md) rates these same violations.
 
 These are rejected with an error, not repaired:
 
@@ -241,6 +241,7 @@ The metric's entry in the scorecard carries:
 | `details.constraint_set` | every declared constraint per Task: its identity, its rule, and how many Attempts it applied to, how many were assessed against it and how many violated it |
 | `details.violations` | every recorded violation: the Attempt, the Task, the constraint, the supporting evidence and its source |
 | `evidence.attempt_ids` | the assessed Attempts, which are listed under `attempts` in the same scorecard |
+| `attempts_used` | every Attempt this Evaluator was given, whatever became of it, and the other metrics scored from any of the same Attempts: see [several Evaluators in one sweep](../sweep/several-evaluators.md) |
 | `acceptance` | the assessment of your acceptance criterion for this metric, or `null` when you declared none: see [acceptance criteria](../acceptance_criteria/readme.md) |
 
 Each Attempt under `attempts` carries its `operational_constraints` and its `violation_assessments`, so a violation can be followed from the metric to the Attempt and to the evidence and source recorded for it.

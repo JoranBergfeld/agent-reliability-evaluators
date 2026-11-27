@@ -227,7 +227,7 @@ The sweep makes `attempts` Attempts under the baseline and as many under the fau
 - **The task-success rule must read independent evidence.** An agent can answer that it is done after a tool call failed. The metric uses the task outcome your rule returns, with its source, and never the agent's answer.
 - **Everything else is held fixed.** The baseline and the fault differ only in the declared fault.
 
-The same Attempts can feed other metrics in the same sweep. Outcome consistency and the other metrics of repeated Attempts are scored on the baseline Attempts only, so selecting `outcome_consistency` and `fault_robustness` together makes each Attempt once.
+The same Attempts can feed other metrics in the same sweep. Outcome consistency and the other metrics of repeated Attempts are scored on the baseline Attempts only, so selecting `outcome_consistency` and `fault_robustness` together makes each Attempt once: see [several Evaluators in one sweep](../sweep/several-evaluators.md).
 
 The sweep rejects the selection of `fault_robustness` before any Attempt is made when no experiment declares a variation of the kind `fault`. Fault robustness uses only the experiments that do. Tasks given without an experiment, experiments with a baseline only, and experiments whose variation declares no kind are not part of it.
 
@@ -245,6 +245,7 @@ The sweep rejects the selection of `fault_robustness` before any Attempt is made
 | `details.accuracy_ratio`, `details.capped` | the ratio before the cap, and whether the cap applied |
 | `details.per_task` | the Attempts, the successes and the success frequency of each compared Task under each condition |
 | `evidence.attempt_ids` | the Attempts the value rests on, which are listed under `attempts` in the same scorecard |
+| `attempts_used` | every Attempt this Evaluator was given, under the baseline and under the fault, whatever became of it, and the other metrics scored from any of the same Attempts: see [several Evaluators in one sweep](../sweep/several-evaluators.md) |
 | `acceptance` | the assessment of your acceptance criterion for this metric, or `null` when you declared none: see [acceptance criteria](../acceptance_criteria/readme.md) |
 
 Each Attempt under `attempts` carries its `intended_condition`, with `"kind": "fault"` for an Attempt under the fault, its `observed_condition` with the source and the observations of your verify control, and its `task_outcome` with its source.

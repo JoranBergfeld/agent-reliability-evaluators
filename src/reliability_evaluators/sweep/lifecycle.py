@@ -38,27 +38,35 @@ class _Stop:
 
 
 def run_experiments(
-    experiments: Sequence[Experiment], make_attempt: MakeAttempt, ask_confidence: bool
-) -> tuple[list[Attempt], list[dict[str, Any]]]:
-    """Run the experiments in the order declared. Returns their Attempts and their scorecard records.
+    experiments: Sequence[Experiment],
+    make_attempt: MakeAttempt,
+    ask_confidence: bool,
+    attempts: list[Attempt],
+    unrestored: dict[str, str] | None = None,
+) -> list[dict[str, Any]]:
+    """Run the experiments in the order declared. Returns their scorecard records.
+
+    Each Attempt is added to `attempts` as it is made, so that the caller still has the
+    evidence if an experiment raises.
 
     An experiment is not started when it may change a test resource that an earlier
     experiment failed to restore. Experiments that share no such resource are unrelated.
+    `unrestored` holds those test resources, each with why it was not restored. A caller
+    that runs experiments more than once in a sweep passes the same one every time.
 
     `ask_confidence` says whether a selected metric uses confidence. An Attempt for which
     the agent was not invoked then records why it has no confidence rating.
     """
-    attempts: list[Attempt] = []
     records = []
-    unrestored: dict[str, str] = {}
+    unrestored = {} if unrestored is None else unrestored
     for experiment in experiments:
         planned = len(_planned_attempts(experiment))
-        made: list[Attempt] = []
+        already_made = len(attempts)
         stop_reason = next(
             (unrestored[resource] for resource in experiment.authorized_resources if resource in unrestored), None
         )
         if stop_reason is None:
-            made, stop = _run_experiment(experiment, make_attempt, ask_confidence)
+            stop = _run_experiment(experiment, make_attempt, ask_confidence, attempts)
             if stop is not None:
                 stop_reason = stop.reason
                 if stop.unrestored:
@@ -68,9 +76,9 @@ def run_experiments(
                             f"experiment {experiment.experiment_id!r} did not restore the test resource "
                             f"{resource!r}: {stop.reason}",
                         )
-        attempts.extend(made)
+        made = len(attempts) - already_made
         # An experiment whose every Attempt was made completed, even if its last clean-up failed.
-        stopped = len(made) < planned
+        stopped = made < planned
         records.append(
             {
                 **experiment.to_dict(),
@@ -78,19 +86,21 @@ def run_experiments(
                     "status": (ExperimentStatus.STOPPED if stopped else ExperimentStatus.COMPLETED).value,
                     "reason": stop_reason if stopped else None,
                     "attempts_planned": planned,
-                    "attempts_recorded": len(made),
+                    "attempts_recorded": made,
                 },
             }
         )
-    return attempts, records
+    return records
 
 
 def _run_experiment(
-    experiment: Experiment, make_attempt: MakeAttempt, ask_confidence: bool
-) -> tuple[list[Attempt], _Stop | None]:
-    """Make the Attempts of an experiment until they are all made or one stops the experiment."""
+    experiment: Experiment, make_attempt: MakeAttempt, ask_confidence: bool, attempts: list[Attempt]
+) -> _Stop | None:
+    """Make the Attempts of an experiment until they are all made or one stops the experiment.
+
+    Each Attempt is added to `attempts`. Returns why the experiment stopped, if it did.
+    """
     fresh = experiment.starting_state is StartingStatePolicy.FRESH
-    attempts = []
     for context, number in _planned_attempts(experiment):
         attempt, stop = _run_controlled_attempt(
             experiment,
@@ -103,8 +113,8 @@ def _run_experiment(
         )
         attempts.append(attempt)
         if stop is not None:
-            return attempts, stop
-    return attempts, None
+            return stop
+    return None
 
 
 def planned_attempt_ids(experiment: Experiment) -> list[str]:
