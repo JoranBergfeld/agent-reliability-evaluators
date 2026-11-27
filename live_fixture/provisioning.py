@@ -31,8 +31,9 @@ AGENT_INSTRUCTIONS = (
     "Only change or delete items the task authorizes. Report tool errors honestly and do not "
     "claim a tool succeeded when it failed."
 )
-AZURE_AI_USER = "53ca6127-db72-4b80-b1b0-d745d6d5456d"
-AZURE_AI_PROJECT_MANAGER = "eadc314b-1a2d-4efa-be10-5d325db5065e"
+# Built-in role definitions, the same in every tenant.
+FOUNDRY_USER = "53ca6127-db72-4b80-b1b0-d745d6d5456d"
+FOUNDRY_PROJECT_MANAGER = "eadc314b-1a2d-4efa-be10-5d325db5065e"
 CONNECTION_API_VERSION = "2025-06-01"
 
 
@@ -137,7 +138,7 @@ def connect(resource_group, subscription="Sandbox"):
     return fixture
 
 
-def teardown(resource_group, subscription="Sandbox", log=print):
+def teardown(resource_group, subscription="Sandbox", log=print, timeout_minutes=120):
     """Delete the fixture's resource group and confirm its absence with a separate query.
 
     Returns the purge result for the soft-deleted Foundry account. Raises if the group still exists.
@@ -148,7 +149,15 @@ def teardown(resource_group, subscription="Sandbox", log=print):
     if _az(subscription, "group", "exists", "--name", resource_group):
         location = _az(subscription, "group", "show", "--name", resource_group)["location"]
         log(f"Deleting resource group {resource_group}")
-        _az(subscription, "group", "delete", "--name", resource_group, "--yes", timeout=3600)
+        # Deletion took about half an hour when observed, so poll and do not hold one call open.
+        _az(subscription, "group", "delete", "--name", resource_group, "--yes", "--no-wait")
+        deadline = time.monotonic() + timeout_minutes * 60
+        while _az(subscription, "group", "exists", "--name", resource_group):
+            if time.monotonic() > deadline:
+                raise LiveFixtureError(
+                    f"Resource group {resource_group} still exists {timeout_minutes} minutes after "
+                    "its deletion was requested. Run teardown again to confirm its absence.")
+            time.sleep(30)
         # Group deletion only soft-deletes the Foundry account, which keeps its name reserved.
         try:
             _az(subscription, "cognitiveservices", "account", "purge", "--location", location,
@@ -198,10 +207,10 @@ def _create_project(subscription, group, account, location, log):
     encoded = token.split(".")[1]
     caller = json.loads(base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4)))["oid"]
     for principal, kind, role, scope in (
-        (caller, "User", AZURE_AI_USER, foundry["id"]),
-        (foundry["identity"]["principalId"], "ServicePrincipal", AZURE_AI_USER, foundry["id"]),
-        (project["identity"]["principalId"], "ServicePrincipal", AZURE_AI_USER, foundry["id"]),
-        (caller, "User", AZURE_AI_PROJECT_MANAGER, project["id"]),
+        (caller, "User", FOUNDRY_USER, foundry["id"]),
+        (foundry["identity"]["principalId"], "ServicePrincipal", FOUNDRY_USER, foundry["id"]),
+        (project["identity"]["principalId"], "ServicePrincipal", FOUNDRY_USER, foundry["id"]),
+        (caller, "User", FOUNDRY_PROJECT_MANAGER, project["id"]),
     ):
         _az(subscription, "role", "assignment", "create", "--assignee-object-id", principal,
             "--assignee-principal-type", kind, "--role", role, "--scope", scope)
