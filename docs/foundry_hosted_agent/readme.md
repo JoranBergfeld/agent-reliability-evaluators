@@ -105,6 +105,7 @@ Every Attempt in the scorecard has an `invocation` entry with what the platform 
 | Field | Contents |
 | --- | --- |
 | `agent_target`, `protocol`, `api_version` | `foundry_hosted_agent`, `responses`, `v1` |
+| `entry_point` | `customer_code`: the request was sent from your process. The [cloud evaluation target](../foundry_cloud_evaluation/readme.md) records `foundry_cloud_evaluation` |
 | `composed_input` | What the agent was sent, when `compose_input` composed it. `null` when the agent was sent the prompt as it is |
 | `http_status` | The HTTP status of the answer |
 | `request_ids` | The `x-request-id` and `apim-request-id` headers of the answer |
@@ -200,7 +201,7 @@ The target declares that it does not support an isolated follow-up. Whether a Fo
 ## Limits
 
 - One request per Attempt, not streamed. A streamed response is not read.
-- Attempts are invoked from your process only. Foundry cloud evaluation as the entry point is not covered here.
+- This target invokes the agent from your process only. To invoke it through Foundry cloud evaluation, use the [cloud evaluation target](../foundry_cloud_evaluation/readme.md), which also lists what differs between the two entry points.
 - The target looks the agent up once. A change to the agent during a sweep is seen only in the `agent` each response reports.
 - An agent that reports its tool calls in another form than `function_call` items has a tool-call count of zero and no tool calls recorded.
 
@@ -217,7 +218,7 @@ The interfaces as they worked on that date, both with `api-version=v1` on the pr
 
 The fixture's hosted agent runs `gpt-4.1-mini` (`2025-04-14`) through Agent Framework and declares the `responses` protocol, version `2.0.0`.
 
-The live check (`tests/live/test_foundry_hosted_agent_live.py`) runs the sweep from this source against that agent: three Attempts of the fixture's Task with every tool working, and five in which the service's update tool answers 503 in Attempts 2 and 4. It ran three times: twice on one fixture that was kept for the work, and once self-contained, where the check provisioned its own fixture, ran and tore it down. The three runs were made before the Attempt recorded `composed_input`; what the agent was sent has not changed since. The results were the same each time:
+The live check (`tests/live/test_foundry_hosted_agent_live.py`) runs the sweep from this source against that agent: three Attempts of the fixture's Task with every tool working, and five in which the service's update tool answers 503 in Attempts 2 and 4. It ran three times: twice on one fixture that was kept for the work, and once self-contained, where the check provisioned its own fixture, ran and tore it down. The three runs were made before the Attempt recorded `composed_input` and `entry_point`; what the agent was sent has not changed since. The results were the same each time:
 
 - **All 24 Attempts completed.** The 18 with every tool working succeeded under the fixture's strict rule, and the 6 with the failing update failed it.
 - **Outcome consistency was 0.52 in the scorecard and 0.52 calculated independently**, in each of the three runs. The independent value is calculated in the test from the service's own evidence of each Attempt: 3 of 3 successes gives 1, 3 of 5 gives 0.04, and the mean is 0.52.
@@ -236,4 +237,4 @@ Also observed, by hand on the first fixture:
 - The three responses whose headers were inspected each reported a cold session start (`x-ms-debug-latency-session-start-type: cold`).
 - One request made in the first minutes after the first fixture was provisioned got no answer within 300 seconds. It was made by a throwaway script, not by the target, and which of its requests it was is not known. It did not happen again, also not on the first invocation after the second fixture was provisioned.
 
-Not verified here: an agent that really speaks the Invocations protocol, a response with a status other than `completed`, an HTTP error from the agent endpoint, a hosted agent built with anything but Agent Framework, authentication in CI or with `azure-identity`, more than one Attempt at a time, the confidence follow-up, and Foundry cloud evaluation as the entry point. The failure cases are covered by the default test run against a fake project that answers with the response shapes above.
+Not verified here: an agent that really speaks the Invocations protocol, a response with a status other than `completed`, an HTTP error from the agent endpoint, a hosted agent built with anything but Agent Framework, authentication in CI or with `azure-identity`, more than one Attempt at a time and the confidence follow-up. Foundry cloud evaluation as the entry point has its own target and its own [live observations](../foundry_cloud_evaluation/readme.md#observed-live). The failure cases are covered by the default test run against a fake project that answers with the response shapes above.
