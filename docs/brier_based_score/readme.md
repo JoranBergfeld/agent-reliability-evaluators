@@ -161,6 +161,8 @@ The sweep asks only when a selected metric uses confidence. For each Attempt, in
 3. The sweep sends one separate, confidence-only request through the agent target.
 4. The next Attempt starts.
 
+In a [controlled experiment](../sweep/controlled-experiments.md), the request is sent after `verify_condition` and before `clean_up`. An Attempt whose setup failed or whose condition was not met did not complete, so the agent is not asked.
+
 ### What the agent is shown
 
 The `ConfidenceRequest` carries the Attempt the agent just completed, the agent's own response, the Task's `shareable_success_rule`, and the question below. It has no field for the task outcome, a verdict or any other Attempt, and the request is sent before a later Attempt is made.

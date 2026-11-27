@@ -35,6 +35,15 @@ def metric(scorecard, metric_id="outcome_consistency"):
     return entry
 
 
+# What an Attempt records about its experiment when its Task was given without one.
+NO_EXPERIMENT = {
+    "experiment_id": None,
+    "starting_state": None,
+    "intended_condition": None,
+    "observed_condition": None,
+    "lifecycle": [],
+}
+
 FOUR_IN_FIVE = ["success", "success", "success", "success", "failure"]
 ALWAYS_FAILS = ["failure", "failure", "failure"]
 
@@ -87,13 +96,14 @@ def test_the_value_refers_to_attempt_level_evidence_in_the_scorecard():
     scorecard = sweep({"close": ["success", "failure"]})
 
     assert metric(scorecard)["evidence"] == {"attempt_ids": ["close/attempt-1", "close/attempt-2"]}
-    assert [attempt_evidence(attempt) for attempt in scorecard["attempts"]] == [
+    assert [attempt_evidence(attempt, *NO_EXPERIMENT) for attempt in scorecard["attempts"]] == [
         {
             "attempt_id": "close/attempt-1",
             "task_id": "close",
             "execution_status": "completed",
             "execution_error": None,
             "task_outcome": {"success": True, "source": SOURCE},
+            **NO_EXPERIMENT,
         },
         {
             "attempt_id": "close/attempt-2",
@@ -101,6 +111,7 @@ def test_the_value_refers_to_attempt_level_evidence_in_the_scorecard():
             "execution_status": "completed",
             "execution_error": None,
             "task_outcome": {"success": False, "source": SOURCE},
+            **NO_EXPERIMENT,
         },
     ]
 
@@ -138,7 +149,7 @@ def test_the_other_eleven_metrics_appear_as_not_configured():
 def test_there_is_no_combined_score_and_no_built_in_threshold():
     scorecard = sweep({"close": FOUR_IN_FIVE})
 
-    assert set(scorecard) == {"schema_version", "metrics", "attempts"}
+    assert set(scorecard) == {"schema_version", "metrics", "experiments", "attempts"}
     assert set(metric(scorecard)) == {
         "metric_id",
         "name",
@@ -161,12 +172,13 @@ def test_an_invocation_that_fails_is_an_execution_status_and_not_a_task_failure(
     # Scoring the failed invocation as a task failure would give (2 * 2/3 - 1)^2 = 0.111...
     scorecard = sweep({"close": ["success", "error", "success"]})
 
-    assert attempt_evidence(scorecard["attempts"][1]) == {
+    assert attempt_evidence(scorecard["attempts"][1], *NO_EXPERIMENT) == {
         "attempt_id": "close/attempt-2",
         "task_id": "close",
         "execution_status": "failed",
         "execution_error": "ConnectionError: the agent endpoint returned 503",
         "task_outcome": None,
+        **NO_EXPERIMENT,
     }
     outcome_consistency = metric(scorecard)
     assert outcome_consistency["value"] == 1
