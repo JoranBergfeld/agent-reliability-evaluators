@@ -45,7 +45,7 @@ The report is one HTML file. It opens from disk or from a CI artifact view, with
   | anything else | A note that the report has no description of this state, and the state as recorded. |
 
 - **Execution failure apart from all of those.** How the running of an Attempt ended is its execution status. It is shown in the attempt-level evidence and is not a metric state. An Attempt that did not complete is marked, shows its execution error, and has a dash where its task outcome would be: it is not shown as a failed Task. A metric that left it out says so in its counts, with the reason.
-- **Attempt-level evidence.** Every Attempt in the scorecard has its own block with everything the scorecard records for it: today its identity, Task, execution status, execution error, task outcome with its source, the ordered action evidence with its source, the operational constraints that applied and the violation assessments with their evidence and source. Wherever a metric names an Attempt, in the evidence its value rests on or in the evidence it excluded, the identity links to that Attempt.
+- **Attempt-level evidence.** Every Attempt in the scorecard has its own block with everything the scorecard records for it: today its identity, Task, execution status, execution error, task outcome with its source, the ordered action evidence with its source, the resource measurements with their units and boundaries, the operational constraints that applied and the violation assessments with their evidence and source. Wherever a metric names an Attempt, in the evidence its value rests on or in the evidence it excluded, the identity links to that Attempt.
 
 ## A rendering of the scorecard, and nothing else
 
@@ -68,7 +68,7 @@ How values are written:
 
 ### Precision
 
-A number is shown with every digit the scorecard has for it. A Task value of one ninth is shown as `0.1111111111111111`, not as `0.11`.
+A number is shown with every digit the scorecard has for it. A Task value of one ninth is shown as `0.1111111111111111`, not as `0.11`. A very small or very large number is written with an exponent, as the JSON writes it: an elapsed time of under ten microseconds can read `7.70005863159895e-06` seconds.
 
 The scorecard holds a number that is not whole as a double-precision floating-point value, and its JSON writes it as the shortest decimal text that reads back as exactly that value. That is the limit of the representation: a value that floating-point arithmetic cannot hold exactly is shown with the small error it was calculated with, the way the sum of 0.1 and 0.2 is `0.30000000000000004`. The report does not hide that by rounding.
 
