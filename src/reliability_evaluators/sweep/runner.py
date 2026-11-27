@@ -33,6 +33,7 @@ def run_sweep(
     """
     evaluators = [_evaluator(metric_id) for metric_id in metrics]
     _require_distinct_tasks(tasks)
+    # Called for its check: a second criterion for one metric is rejected here, not after the Attempts.
     criteria_by_metric(acceptance_criteria)
     attempts = [
         _run_attempt(task, number, agent_target) for task in tasks for number in range(1, task.attempts + 1)

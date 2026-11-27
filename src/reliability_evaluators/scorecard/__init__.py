@@ -1,4 +1,7 @@
-"""Scorecard: assembles metric results, acceptance assessments and attempt-level evidence into the reliability scorecard."""
+"""Scorecard: assembles metric results, acceptance assessments and attempt-level evidence.
+
+The result is the machine-readable reliability scorecard.
+"""
 
 from .acceptance import AcceptanceCriterion, CustomerAssessment, criteria_by_metric
 from .assemble import SCHEMA_VERSION, ScoredMetric, build_scorecard, to_json
