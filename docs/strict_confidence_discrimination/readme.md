@@ -182,6 +182,7 @@ The metric's own entry carries:
 | `details.success_failure_pairs.failure_rated_higher` | the pairs in which the failure was rated higher |
 | `details.pairs` | every valid confidence/outcome pair: Attempt and Task identity, `rating` as written, `confidence`, and `task_outcome` with its `source` |
 | `evidence.attempt_ids` | the Attempts the value rests on. Empty when the metric is unavailable. |
+| `attempts_used` | every Attempt this Evaluator was given, whatever became of it, and the other metrics scored from any of the same Attempts: see [several Evaluators in one sweep](../sweep/several-evaluators.md) |
 | `acceptance` | the assessment of your acceptance criterion for this metric, or `null` when you declared none: see [acceptance criteria](../acceptance_criteria/readme.md). A criterion can require a number of success/failure pairs with `{"minimum_counts": {"success_failure_pairs": 20}}`. |
 
 The individual success/failure pairs are not listed, because their number grows with the product of the two classes. Every one of them can be rebuilt from `details.pairs`.

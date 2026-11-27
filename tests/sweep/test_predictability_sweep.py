@@ -98,6 +98,19 @@ def test_one_sweep_reports_the_three_predictability_metrics_as_separate_results_
         }
 
 
+def test_the_three_predictability_metrics_share_their_attempts_and_say_so_in_the_scorecard():
+    # Every Attempt is made once and given to all three, also the one whose rating cannot be read.
+    scorecard = sweep(DOCUMENTED, DOCUMENTED_ANSWERS)
+
+    made = [attempt["attempt_id"] for attempt in scorecard["attempts"]]
+    assert made == [*RATED, "archive/attempt-3"]
+    for metric_id in ALL_THREE:
+        assert metric(scorecard, metric_id)["attempts_used"] == {
+            "attempt_ids": made,
+            "shared_with": [other for other in ALL_THREE if other != metric_id],
+        }
+
+
 def test_the_agent_is_asked_once_per_attempt_however_many_metrics_use_its_rating():
     # The fake agent answers with the number of confidence requests it has had for the Attempt.
     asked = {}

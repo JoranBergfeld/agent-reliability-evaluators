@@ -176,6 +176,7 @@ The metric's own entry carries:
 | `details.bins` | all ten bins, in order, including the empty ones |
 | `details.pairs` | every valid pair: Attempt and Task identity, `rating` as written, `confidence`, `task_outcome` with its `source`, and the number of the `bin` it is in |
 | `evidence.attempt_ids` | the Attempts the value rests on |
+| `attempts_used` | every Attempt this Evaluator was given, whatever became of it, and the other metrics scored from any of the same Attempts: see [several Evaluators in one sweep](../sweep/several-evaluators.md) |
 | `acceptance` | the assessment of your acceptance criterion for this metric, or `null` when you declared none: see [acceptance criteria](../acceptance_criteria/readme.md). A criterion can require a number of valid pairs with `{"minimum_counts": {"confidence_outcome_pairs": 20}}`. |
 
 Each entry of `details.bins`:

@@ -42,13 +42,13 @@ Each Evaluator declares what it needs. The sweep reads two things from that.
 | Resource consistency | Nothing in particular. Every Attempt is timed, and the agent target reports the rest. |
 | Constraint compliance, conditional harm severity | Nothing in particular. The violation assessor belongs to the Task, so every Attempt at the Task is assessed the same way. |
 | Distributional and sequential trajectory consistency | Action evidence from one declared evidence source, read by one declared recorder. |
-| Brier-based score | A confidence follow-up after each completed Attempt. |
+| Calibration, strict confidence discrimination, Brier-based score | A confidence follow-up after each completed Attempt. |
 
 **Which experimental conditions it is calculated from.** Every Evaluator that exists today is calculated from Attempts under the baseline. An Attempt at a Task given without an experiment had no variation applied to it and is used as a baseline Attempt.
 
 ## When Attempts are shared
 
-Two Evaluators share Attempts when everything they both need the Attempts to be made with is the same. What only one of them needs is collected for that one and does not change what the other is scored from. A confidence follow-up, for example, comes after the task outcome, the violation assessments and the recorded actions of an Attempt have been taken, so the Brier-based score shares Attempts with any other Evaluator.
+Two Evaluators share Attempts when everything they both need the Attempts to be made with is the same. What only one of them needs is collected for that one and does not change what the other is scored from. A confidence follow-up, for example, comes after the task outcome, the violation assessments and the recorded actions of an Attempt have been taken, so calibration, strict confidence discrimination and the Brier-based score share Attempts with each other and with any other Evaluator. The agent is asked once per Attempt, however many of the three are selected.
 
 With one `action_evidence` declaration for the whole sweep, as above, nothing differs. All selected Evaluators are scored from the same Attempts, and each planned Attempt is made once.
 
