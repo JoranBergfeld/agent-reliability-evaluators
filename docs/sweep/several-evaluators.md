@@ -134,7 +134,7 @@ Every configured metric says which Attempts its Evaluator used:
 | `attempts_used.shared_with` | The other metrics whose Evaluators used any of the same Attempts, in scorecard order. Empty when no other Evaluator used them. |
 | `evidence.attempt_ids` | The Attempts the value rests on. Never more than `attempts_used.attempt_ids`, and fewer when an Attempt was left out, for the reasons given in `counts`. |
 
-Each Attempt appears once in the scorecard's `attempts`, however many Evaluators used it. Anything that adds up over Attempts, such as cost, should add up over `attempts` for the sweep, and treat a per-metric total as overlapping with the metrics in `shared_with`. An Attempt that no metric lists, such as one under a variation that no selected metric compares with the baseline, still counts for the sweep.
+Each Attempt appears once in the scorecard's `attempts`, however many Evaluators used it. The scorecard adds up what the Attempts used in tokens the same way, under `token_usage`: every Attempt is counted once in the sweep total, also one that no metric lists, such as one under a variation that no selected metric compares with the baseline. The total of an Evaluator covers the Attempts it was given, so the totals of Evaluators that share Attempts overlap. They are labelled overlapping and not additive: see [token usage](../token_usage/readme.md#per-evaluator).
 
 A metric that is not configured has no `attempts_used`. The human-readable report shows the field with every other field of a metric, and links each Attempt identity to that Attempt's evidence.
 

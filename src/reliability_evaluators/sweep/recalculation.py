@@ -24,14 +24,17 @@ from ..evidence import (
 )
 from ..scorecard import (
     SCHEMA_VERSION,
+    TOKEN_USAGE,
     AcceptanceCriterion,
     CutShort,
     ExecutionRecord,
+    PreparationUsage,
     ScorecardStatus,
     ScoredMetric,
     build_scorecard,
     criteria_by_metric,
     read_execution_record,
+    read_preparation_usage,
 )
 from .declaration import ActionEvidenceDeclaration, ConfiguredEvaluator, ExecutionLimits
 from .runner import _select, _SelectedEvaluator
@@ -45,7 +48,8 @@ _METRICS, _EXPERIMENTS, _ATTEMPTS, _SUPERSEDED_RESULTS = "metrics", "experiments
 _STATUS, _MISSING, _CONCURRENCY, _TASKS = "status", "missing", "concurrency", "tasks_without_experiment"
 # How the sweep was executed, and what that left missing. A correction concerns none of it:
 # these parts are read, have to be what the supplied evidence gives, and are carried over.
-_EXECUTION_RECORD = (_STATUS, _MISSING, _CONCURRENCY, _EXPERIMENTS, _TASKS)
+# So is what the sweep used: a recalculation makes no Attempt and scores by code, so it uses no tokens.
+_EXECUTION_RECORD = (_STATUS, _MISSING, _CONCURRENCY, _EXPERIMENTS, _TASKS, TOKEN_USAGE)
 _READ = {"schema_version", _METRICS, _ATTEMPTS, _SUPERSEDED_RESULTS, *_EXECUTION_RECORD}
 
 
@@ -86,7 +90,9 @@ def recalculate(
 
     A recalculation makes no Attempt, so how the sweep was executed stays as it was: the
     status of the scorecard, what it is missing, the execution limits and the record of
-    what was planned and made are carried over, and a partial scorecard stays partial. A
+    what was planned and made are carried over, and a partial scorecard stays partial. So
+    is the token usage: it is what the sweep used, the recalculation scores by code and
+    uses none, and what the customer declared for preparation is kept as it was reported. A
     retried Attempt and its retry stay two Attempts. A metric that had no result because
     its Attempts were cut short still has none: its entry is carried over as it was and is
     not scored from the corrected outcomes. Running the sweep again is what gives it one.
@@ -152,6 +158,7 @@ def _scorecard(
         executions=earlier.executions,
         max_concurrent_attempts=earlier.max_concurrent_attempts,
         acceptance_criteria=acceptance_criteria,
+        preparation_usage=earlier.preparation_usage,
     )
 
 
@@ -190,6 +197,8 @@ class _EarlierScorecard:
     max_concurrent_attempts: int
     # The results it had itself superseded, oldest first.
     superseded_results: list[Any]
+    # What the customer reported for preparing the variation of experiments, which no evidence gives again.
+    preparation_usage: tuple[PreparationUsage, ...]
 
 
 def _read(earlier_scorecard: Any) -> _EarlierScorecard:
@@ -236,6 +245,13 @@ def _read(earlier_scorecard: Any) -> _EarlierScorecard:
         )
     for experiment in experiments:
         _recorded_experiment(experiment)
+    token_usage = earlier_scorecard.get(TOKEN_USAGE)
+    if not isinstance(token_usage, Mapping):
+        raise EvidenceError(f"it does not report its token usage. Got {token_usage!r}")
+    try:
+        preparation_usage = read_preparation_usage(token_usage.get("shared_preparation"))
+    except ValueError as error:
+        raise EvidenceError(f"its token usage is not what this version reports: {error}") from error
     return _EarlierScorecard(
         supplied=earlier_scorecard,
         metrics=earlier_scorecard[_METRICS],
@@ -250,6 +266,7 @@ def _read(earlier_scorecard: Any) -> _EarlierScorecard:
         ),
         max_concurrent_attempts=allowed,
         superseded_results=superseded_results,
+        preparation_usage=preparation_usage,
     )
 
 
@@ -512,10 +529,11 @@ def _require_reproduced(earlier: _EarlierScorecard, reproduced: Mapping[str, Any
                 f"which differs in: {', '.join(differing)}"
             )
     for part in _EXECUTION_RECORD:
-        if not _same(reproduced[part], earlier.supplied[part]):
+        if part not in earlier.supplied or not _same(reproduced[part], earlier.supplied[part]):
             raise EvidenceError(
-                f"it does not reproduce the earlier {part!r}: the status of a scorecard, what it is missing "
-                "and how its sweep was executed follow from its attempt-level evidence and its execution records"
+                f"it does not reproduce the earlier {part!r}: the status of a scorecard, what it is missing, "
+                "how its sweep was executed and what that used follow from its attempt-level evidence and its "
+                "execution records"
             )
 
 

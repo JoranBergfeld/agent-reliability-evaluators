@@ -226,6 +226,8 @@ In your Foundry project, the runs of this path therefore show many rows of large
 
 The run's link to the Foundry portal is not recorded, because it embeds your subscription identifier. Find the run by its eval and run identifiers.
 
+**What the scoring used** is not in the metric's entry. It is reported under `token_usage`, with the usage of the Attempts: what Foundry reported for each managed run of the Evaluator, or that it reported none. A run of a code evaluator was observed, in the earlier prototypes, to report an empty list of per-model usage and no usage on its result. That is reported as missing and not as zero. See [token usage](../token_usage/readme.md#scoring).
+
 The human-readable report shows all of this, because it renders every field of the scorecard.
 
 ## When managed scoring gives no result
@@ -321,7 +323,7 @@ Like a [recalculation](../sweep/late-and-corrected-outcomes.md#you-supply-the-ea
 
 ### What the new scorecard holds
 
-The new scorecard is the earlier one with one addition per rescored metric: `customer_process_rescore`, inside the entry of that metric. Nothing else changes. The example is shortened.
+The new scorecard is the earlier one with one addition per rescored metric: `customer_process_rescore`, inside the entry of that metric. The [token usage](../token_usage/readme.md#recalculation-and-rescore) of that Evaluator gains an entry of the same name, which says that the rescore used no tokens. Nothing else changes. The example is shortened.
 
 ```json
 {
@@ -531,3 +533,4 @@ Observed in Sweden Central in one more disposable Foundry project with no model 
 - **A request that the live project refuses after the Attempts were made**, such as a rate limit. Exercised against the fake project only.
 - **Two pipelines registering at the same moment.** Both could register a version with the same code. Either is the derived code, so the result would be the same, but the project would hold a duplicate.
 - **What the Foundry portal shows** for the evaluator, the run or its result.
+- **What a managed run reports of the usage of its scoring.** The saved runs of code evaluators in the earlier prototypes reported none. What a run of a derived evaluator reports, and how per-model usage rows relate to each other, was not observed here.

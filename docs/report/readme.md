@@ -1,6 +1,6 @@
 # The human-readable report, and what is written where
 
-An Evaluator sweep returns the reliability scorecard as JSON-compatible data. Give it a directory and it also writes the scorecard, a human-readable report of it and the attempt-level evidence there:
+An Evaluator sweep returns the reliability scorecard as JSON-compatible data. Give it a directory and it also writes the scorecard, a human-readable report of it, the text of a CI job summary and the attempt-level evidence there:
 
 ```python
 from reliability_evaluators.scorecard import ReportingFailure
@@ -22,6 +22,7 @@ except ReportingFailure as failure:
 | --- | --- |
 | `scorecard.json` | The machine-readable scorecard. This is what a pipeline reads. |
 | `report.html` | The human-readable report, rendered from the scorecard. |
+| `summary.md` | The text of a CI job summary, in Markdown, rendered from the scorecard, for your pipeline to publish. See [the CI job summary](../token_usage/readme.md#the-ci-job-summary). |
 | `evidence.json` | The attempt-level evidence on its own: `{"schema_version": 1, "attempts": [...]}`, the same Attempts as in the scorecard. |
 | `reporting-failure.json` | Only after a reporting failure. See [Reporting failure](#reporting-failure). |
 
@@ -29,7 +30,7 @@ Choose a directory in the run or artifact context of the platform the sweep runs
 
 The sweep runs in your own process whichever scoring path a metric uses, so a metric scored by Foundry-managed scoring changes nothing about where the files go. What Foundry holds of such a run, and how to leave a reference to the scorecard there, is in [delivery alongside Foundry](delivery-alongside-foundry.md).
 
-Without `artifact_dir` nothing is written. `render_report(scorecard)` in `reliability_evaluators.scorecard` returns the report as a string for a scorecard you already have.
+Without `artifact_dir` nothing is written. `render_report(scorecard)` in `reliability_evaluators.scorecard` returns the report as a string for a scorecard you already have, and `render_summary(scorecard)` the summary.
 
 ## What the report shows
 
@@ -51,6 +52,7 @@ The report is one HTML file. It opens from disk or from a CI artifact view, with
 - **Complete or partial, at the top.** The status of the scorecard is the first thing in the report, marked and with its meaning: complete, or partial. A partial scorecard has a section `missing` that lists what was planned and is not in the scorecard, and why: the Attempts that were not made, the Attempts that did not complete with how their execution ended, and the metrics that have no result, whether their Attempts were cut short or Foundry-managed scoring gave none. See [execution limits and partial scorecards](../sweep/execution-limits.md#what-the-scorecard-says).
 - **Execution failure apart from all of those.** How the running of an Attempt ended is its execution status. It is shown in the attempt-level evidence and is not a metric state. An Attempt that did not complete is marked, shows its execution error, and has a dash where the scorecard records no task outcome for it: it is not shown as a failed Task. A metric that left it out says so in its counts, with the reason. A metric that has no result because its Attempts were cut short has a marking of its own, which is neither that of an unavailable measurement nor that of a state the report does not know. How the execution of a declared experiment, or of a Task given without one, ended is marked in the same way as the execution status of an Attempt whenever it is not `completed`, with the reason next to it.
 - **Declared experiments.** Every [controlled experiment](../sweep/controlled-experiments.md) in the scorecard is shown as the scorecard records it: its Task, agent configuration, starting-state policy, baseline and variation, the test resources it may change, and its execution with the Attempts planned and recorded.
+- **Token usage, apart from the metrics.** What the scorecard reports under `token_usage` has a section of its own, after the declared experiments and before the attempt-level evidence: the sweep total with its coverage, the total of each Evaluator with whether it overlaps with another, the shared preparation, and the usage of each Attempt with its execution status. A note says that it is not a reliability metric, that a missing count is never zero, and that overlapping totals are not additive. No metric block shows usage. See [token usage](../token_usage/readme.md).
 - **Attempt-level evidence.** Every Attempt in the scorecard has its own block with everything the scorecard records for it: today its identity, Task, execution status, execution error, task outcome with its source, the ordered action evidence with its source, the resource measurements with their units and boundaries, the confidence evidence (the rating, its normalized value, the original response, or the reason there is no rating), the operational constraints that applied and the violation assessments with their evidence and source, each with the severity rating of its violation (the label and the level it stands for) or a dash where there is no rating. An Attempt of an experiment also shows its experiment, its starting-state policy, the intended condition with its role, the observed condition with its source, and the customer controls that were invoked around it. Wherever a metric names an Attempt, in the evidence its value rests on, in the evidence it excluded or in a confidence/outcome pair, the identity links to that Attempt.
 
 - **A customer-process rescore.** A scorecard that holds a [customer-process rescore](../managed_scoring/readme.md#a-customer-process-rescore) says so at the top of its report. The rescore is shown in a block of its own directly below the metric it was requested for, laid out like a metric, with its own scoring path, fidelity and acceptance assessment, and marked as not being the Foundry-managed result. The block of the metric above it shows what Foundry-managed scoring gave, unchanged.
@@ -83,7 +85,7 @@ The scorecard holds a number that is not whole as a double-precision floating-po
 
 ## Reporting failure
 
-When `artifact_dir` is given, the sweep either delivers all three files or raises `ReportingFailure`. It never returns as if it had delivered.
+When `artifact_dir` is given, the sweep either delivers all four files or raises `ReportingFailure`. It never returns as if it had delivered.
 
 | What happened | What is raised | What is at the location |
 | --- | --- | --- |
@@ -93,13 +95,13 @@ When `artifact_dir` is given, the sweep either delivers all three files or raise
 | The sweep stops after Attempts were made, for example on a task-success rule that returns no task outcome | `ReportingFailure`, caused by the original error | `evidence.json` with the Attempts made until then, those of an experiment included, and `reporting-failure.json` |
 | The scorecard was produced, and one of the files cannot be produced or written | `ReportingFailure`, caused by the original error | The files written before the one that failed, and `reporting-failure.json` |
 
-- The files are written in the order evidence, scorecard, report, and writing stops at the first failure. A report is therefore never present without the scorecard it renders, and a reporting failure never leaves a report.
-- When the directory is opened, an `evidence.json`, `scorecard.json`, `report.html` or `reporting-failure.json` that an earlier run left in it is removed. What the directory holds afterwards is from this run, so an old report cannot be read as the result of a run that failed.
+- The files are written in the order evidence, scorecard, summary, report, and writing stops at the first failure. A report or a summary is therefore never present without the scorecard it renders, and a reporting failure never leaves a report.
+- When the directory is opened, an `evidence.json`, `scorecard.json`, `report.html`, `summary.md` or `reporting-failure.json` that an earlier run left in it is removed. What the directory holds afterwards is from this run, so an old report cannot be read as the result of a run that failed.
 - `reporting-failure.json` has `"status": "reporting_failed"`, the third scorecard status next to `complete` and `partial` and the only one that no scorecard carries, what could not be done (`failure`), the error (`error`) and the names of the files that were kept (`retained`).
 - The exception says the same in its message, in `retained`, and in the original error as its cause. It also carries `evidence`, the attempt-level evidence that existed, and `scorecard`, the scorecard if one was produced. When nothing could be written to the location, the exception is the only place they still are, and the caller can keep them another way.
 - Evidence is written to the location the caller chose or handed back on the exception. It is kept nowhere else.
 
-In CI, let `ReportingFailure` fail the job. A `reporting-failure.json` with no `report.html` next to it is a failed run, not a clean one.
+In CI, let `ReportingFailure` fail the job. A `reporting-failure.json` with no `report.html` next to it is a failed run, not a clean one. Do not publish a `summary.md` that has a `reporting-failure.json` next to it as the summary of a clean run.
 
 ## Assumptions
 
@@ -111,7 +113,7 @@ These are assumptions, not confirmed decisions.
 
 ## What is not there yet
 
-- Token usage is not in the scorecard yet. The report shows it once the scorecard records it, laid out by shape.
+- Token usage has a section and a note of its own in the report, and is laid out by shape inside that section.
 - The declared experiments, the conditions, the customer controls and the confidence evidence have no layout of their own in the report: they are laid out by shape. Only how an execution ended is marked.
 - Delivery has been exercised on a local file system only, which stood in for the artifact directory of a CI job. That includes a Foundry-managed run, a partial one among them: see [delivery alongside Foundry](delivery-alongside-foundry.md#observed-live). No sweep has run in a CI job, and no directory has been published as a build artifact.
 - The offering leaves no reference to the scorecard in Foundry. One can be left on the evaluation of a managed run, by you: see [leaving a reference in Foundry](delivery-alongside-foundry.md#leaving-a-reference-in-foundry).

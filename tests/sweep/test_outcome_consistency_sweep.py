@@ -158,6 +158,7 @@ def test_there_is_no_combined_score_and_no_built_in_threshold():
         "metrics",
         "experiments",
         "tasks_without_experiment",
+        "token_usage",
         "attempts",
     }
     assert set(metric(scorecard)) == {

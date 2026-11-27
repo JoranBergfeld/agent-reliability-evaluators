@@ -18,7 +18,15 @@ from typing import Any, Iterable, Mapping, Sequence
 from ..evaluators import Fidelity, MetricState, ScoringPath
 from ..evidence import EvidenceError
 from ..managed_scoring import DerivationError, submitted_evidence_sha256
-from ..scorecard import RESCORE, AcceptanceCriterion, ScoredMetric, criteria_by_metric, rescore_entry
+from ..scorecard import (
+    RESCORE,
+    TOKEN_USAGE,
+    AcceptanceCriterion,
+    ScoredMetric,
+    code_scoring_use,
+    criteria_by_metric,
+    rescore_entry,
+)
 from .declaration import ActionEvidenceDeclaration, ConfiguredEvaluator
 from .recalculation import _cut_short, _EarlierScorecard, _evidence, _read, _Rescoring, _validating_the_supplied_evidence
 from .runner import _select
@@ -59,7 +67,9 @@ def rescore_in_customer_process(
     with its limitation, the unavailable measurement with its reason, or the failure with its
     execution error. A scorecard that was
     partial stays partial and still lists the managed result as missing, and the acceptance
-    assessment of the managed result is not changed.
+    assessment of the managed result is not changed. The token usage of the Evaluator
+    gains the rescore as a scoring of its own, which is code in this process and used no
+    tokens. What the managed runs used stays as it was reported, and so do the totals.
 
     Where the earlier scorecard records the digest of the evidence that was submitted to
     Foundry, the supplied evidence has to give that digest. A rescore of other evidence is
@@ -120,7 +130,25 @@ def _rescore(
             cut_short=rescoring.cut_short,
         )
         entry[RESCORE] = rescore_entry(scored, _same_evidence(entry, evidence), criteria.get(metric_id))
+        with _validating_the_supplied_evidence():
+            # The rescore is a scoring of its own. It is code in this process, so it used no tokens,
+            # and what the managed runs used stays as it was reported.
+            _usage_of_the_evaluator(rescored, metric_id)[RESCORE] = code_scoring_use()
     return rescored
+
+
+def _usage_of_the_evaluator(scorecard: Mapping[str, Any], metric_id: str) -> dict[str, Any]:
+    """Where a scorecard reports the token usage of the Evaluator of one metric."""
+    usage = scorecard.get(TOKEN_USAGE)
+    evaluators = usage.get("evaluators") if isinstance(usage, Mapping) else None
+    reported = [
+        entry
+        for entry in (evaluators if isinstance(evaluators, list) else [])
+        if isinstance(entry, dict) and entry.get("metric_id") == metric_id
+    ]
+    if len(reported) != 1:
+        raise EvidenceError(f"it does not report the token usage of the Evaluator of {metric_id!r} once")
+    return reported[0]
 
 
 def _requested(metrics: Any) -> dict[str, str | ConfiguredEvaluator]:
