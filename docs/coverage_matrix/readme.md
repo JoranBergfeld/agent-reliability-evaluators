@@ -140,26 +140,26 @@ No synthetic evidence is put into a run. If, after its one run, a cell of these 
 
 | Evaluator | Prompt agent, customer code | Hosted agent, customer code | Prompt agent, cloud evaluation | Hosted agent, cloud evaluation |
 | --- | --- | --- | --- | --- |
-| Outcome consistency | [worked · worked](evidence/prompt-customer.json) | unverified: not run | unverified: not run | unverified: not run |
-| Distributional trajectory consistency | [worked · worked](evidence/prompt-customer.json) | unverified: not run | unverified: not run | unverified: not run |
-| Sequential trajectory consistency | [worked · worked](evidence/prompt-customer.json) | unverified: not run | unverified: not run | unverified: not run |
-| Resource consistency | [worked · worked](evidence/prompt-customer.json) | unverified: not run | unverified: not run | unverified: not run |
-| Fault robustness | [unsupported · unsupported](evidence/prompt-customer.json) | unverified: not run | unverified: not run | unverified: not run |
-| Environment robustness | [worked · worked](evidence/prompt-customer.json) | unverified: not run | unverified: not run | unverified: not run |
-| Prompt robustness | [worked · worked](evidence/prompt-customer.json) | unverified: not run | unverified: not run | unverified: not run |
-| Calibration | [worked · worked](evidence/prompt-customer.json) | unverified: not run | unverified: not run | unverified: not run |
-| Strict confidence discrimination | [worked · worked](evidence/prompt-customer.json) | unverified: not run | unverified: not run | unverified: not run |
-| Brier-based score | [worked · worked](evidence/prompt-customer.json) | unverified: not run | unverified: not run | unverified: not run |
-| Constraint compliance | [worked · worked](evidence/prompt-customer.json) | unverified: not run | unverified: not run | unverified: not run |
-| Conditional harm severity | [worked · worked](evidence/prompt-customer.json) | unverified: not run | unverified: not run | unverified: not run |
+| Outcome consistency | [worked · worked](evidence/prompt-customer.json) | [worked · worked](evidence/hosted-customer.json) | unverified: not run | unverified: not run |
+| Distributional trajectory consistency | [worked · worked](evidence/prompt-customer.json) | [worked · worked](evidence/hosted-customer.json) | unverified: not run | unverified: not run |
+| Sequential trajectory consistency | [worked · worked](evidence/prompt-customer.json) | [worked · worked](evidence/hosted-customer.json) | unverified: not run | unverified: not run |
+| Resource consistency | [worked · worked](evidence/prompt-customer.json) | [worked · worked](evidence/hosted-customer.json) | unverified: not run | unverified: not run |
+| Fault robustness | [unsupported · unsupported](evidence/prompt-customer.json) | [worked · worked](evidence/hosted-customer.json) | unverified: not run | unverified: not run |
+| Environment robustness | [worked · worked](evidence/prompt-customer.json) | [worked · worked](evidence/hosted-customer.json) | unverified: not run | unverified: not run |
+| Prompt robustness | [worked · worked](evidence/prompt-customer.json) | [worked · worked](evidence/hosted-customer.json) | unverified: not run | unverified: not run |
+| Calibration | [worked · worked](evidence/prompt-customer.json) | [unsupported · unsupported](evidence/hosted-customer.json) | unverified: not run | unverified: not run |
+| Strict confidence discrimination | [worked · worked](evidence/prompt-customer.json) | [unsupported · unsupported](evidence/hosted-customer.json) | unverified: not run | unverified: not run |
+| Brier-based score | [worked · worked](evidence/prompt-customer.json) | [unsupported · unsupported](evidence/hosted-customer.json) | unverified: not run | unverified: not run |
+| Constraint compliance | [worked · worked](evidence/prompt-customer.json) | [worked · worked](evidence/hosted-customer.json) | unverified: not run | unverified: not run |
+| Conditional harm severity | [worked · worked](evidence/prompt-customer.json) | [unverified · unverified](evidence/hosted-customer.json) | unverified: not run | unverified: not run |
 
 | Run | worked | unsupported | unverified | failed |
 | --- | --- | --- | --- | --- |
 | Prompt agent, customer code | 22 | 2 | 0 | 0 |
-| Hosted agent, customer code | 0 | 0 | 24 | 0 |
+| Hosted agent, customer code | 16 | 6 | 2 | 0 |
 | Prompt agent, cloud evaluation | 0 | 0 | 24 | 0 |
 | Hosted agent, cloud evaluation | 0 | 0 | 24 | 0 |
-| **All 96 cells** | **22** | **2** | **72** | **0** |
+| **All 96 cells** | **38** | **8** | **50** | **0** |
 
 ### Prompt agent, customer code
 
@@ -179,5 +179,24 @@ Agent `todo-prompt-notes` through `FoundryPromptAgentTarget`. Made from 2026-11-
 | Brier-based score | `1.0` | **worked**: `1.0` | **worked**: `1.0` |  |
 | Constraint compliance | `0.9090909090909091` (10/11) | **worked**: `0.9090909090909091` | **worked**: `0.9090909090909091` |  |
 | Conditional harm severity | `0.0` | **worked**: `0.0` | **worked**: `0.0` |  |
+
+### Hosted agent, customer code
+
+Agent `todo-hosted-notes` through `FoundryHostedAgentTarget`. Made from 2026-11-27T21:51:22+00:00 to 2026-11-27T22:15:29+00:00 (UTC), with the source at commit `5528f16`. 19 Attempts: the invocation returned for 19 and raised for 0. Of those that returned, 17 succeeded and 2 failed the strict rule, and 0 changed `unrelated`. 0 confidence requests were answered. The sweep took 1446 seconds, scoring in Foundry included, and its scorecard was `complete`. Record: [`evidence/hosted-customer.json`](evidence/hosted-customer.json).
+
+| Evaluator | Expected | Foundry-managed | Customer-process | Why, where a cell did not work |
+| --- | --- | --- | --- | --- |
+| Outcome consistency | `1.0` | **worked**: `1.0` | **worked**: `1.0` |  |
+| Distributional trajectory consistency | `1.0` | **worked**: `1.0` | **worked**: `1.0` |  |
+| Sequential trajectory consistency | `1.0` | **worked**: `1.0` | **worked**: `1.0` |  |
+| Resource consistency | `0.9810674575345409` | **worked**: `0.9810674575345409` | **worked**: `0.9810674575345409` |  |
+| Fault robustness | `0.0` | **worked**: `0.0` | **worked**: `0.0` |  |
+| Environment robustness | `1.0` | **worked**: `1.0` | **worked**: `1.0` |  |
+| Prompt robustness | `1.0` | **worked**: `1.0` | **worked**: `1.0` |  |
+| Calibration | No value | **unsupported**: unavailable | **unsupported**: unavailable | by decision, a hosted agent is not asked for a confidence rating (ADR 0009). As expected: no valid confidence/outcome pair |
+| Strict confidence discrimination | No value | **unsupported**: unavailable | **unsupported**: unavailable | by decision, a hosted agent is not asked for a confidence rating (ADR 0009). As expected: no valid confidence/outcome pair |
+| Brier-based score | No value | **unsupported**: unavailable | **unsupported**: unavailable | by decision, a hosted agent is not asked for a confidence rating (ADR 0009). As expected: no valid confidence/outcome pair |
+| Constraint compliance | `1.0` | **worked**: `1.0` | **worked**: `1.0` |  |
+| Conditional harm severity | No value | **unverified**: unavailable | **unverified**: unavailable | the live evidence gave the metric nothing to calculate from. The unavailable measurement is the expected one: no violation was observed |
 
 <!-- matrix: end -->
