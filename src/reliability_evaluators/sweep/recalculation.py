@@ -4,10 +4,11 @@ from __future__ import annotations
 
 from contextlib import contextmanager
 from copy import deepcopy
+from dataclasses import dataclass
 from math import isclose
 from typing import Any, Iterator, Mapping, Sequence
 
-from ..evaluators import EVALUATORS, RELIABILITY_METRICS, Evaluator, Fidelity, MetricState, ScoringPath
+from ..evaluators import RELIABILITY_METRICS, Fidelity, MetricState, ScoringPath
 from ..evidence import (
     Attempt,
     EvidenceError,
@@ -17,9 +18,14 @@ from ..evidence import (
     read_attempts,
 )
 from ..scorecard import SCHEMA_VERSION, AcceptanceCriterion, ScoredMetric, build_scorecard, criteria_by_metric
-from .declaration import ActionEvidenceDeclaration
+from .declaration import ActionEvidenceDeclaration, ConfiguredEvaluator
+from .runner import _select, _SelectedEvaluator
 
 SUPERSEDED = "superseded"
+
+# What a scorecard holds besides its schema version. A recalculation reads each of these.
+_METRICS, _EXPERIMENTS, _ATTEMPTS, _SUPERSEDED_RESULTS = "metrics", "experiments", "attempts", "superseded_results"
+_READ = {"schema_version", _METRICS, _EXPERIMENTS, _ATTEMPTS, _SUPERSEDED_RESULTS}
 
 
 class RecalculationFailed(Exception):
@@ -30,12 +36,13 @@ def recalculate(
     *,
     earlier_scorecard: Mapping[str, Any],
     outcome_corrections: Sequence[OutcomeCorrection],
+    metrics: Sequence[str | ConfiguredEvaluator] = (),
     action_evidence: ActionEvidenceDeclaration | None = None,
     acceptance_criteria: Sequence[AcceptanceCriterion] = (),
 ) -> dict[str, Any]:
     """Score the evidence of an earlier scorecard again, with the corrected task outcomes."""
     try:
-        return _recalculate(earlier_scorecard, outcome_corrections, action_evidence, acceptance_criteria)
+        return _recalculate(earlier_scorecard, outcome_corrections, metrics, action_evidence, acceptance_criteria)
     except Exception as error:
         raise RecalculationFailed(f"recalculation failed: {error}") from error
 
@@ -43,17 +50,18 @@ def recalculate(
 def _recalculate(
     earlier_scorecard: Mapping[str, Any],
     outcome_corrections: Sequence[OutcomeCorrection],
+    metrics: Sequence[str | ConfiguredEvaluator],
     action_evidence: ActionEvidenceDeclaration | None,
     acceptance_criteria: Sequence[AcceptanceCriterion],
 ) -> dict[str, Any]:
     with _validating_the_supplied_evidence():
-        earlier_metrics, earlier_attempts, already_superseded = _read(earlier_scorecard)
-        evaluators = _evaluators_of(earlier_metrics)
-    declared = {"action_types": None if action_evidence is None else action_evidence.mapping}
+        earlier = _read(earlier_scorecard)
+        scored_earlier = _scored_earlier(earlier)
+    evaluators = _selected(scored_earlier, metrics, action_evidence)
     with _validating_the_supplied_evidence():
-        _require_reproduced(earlier_metrics, _score(evaluators, earlier_attempts, declared))
-    _require_criteria_declared_again(earlier_metrics, acceptance_criteria)
-    attempts = apply_outcome_corrections(earlier_attempts, outcome_corrections)
+        _require_reproduced(earlier.metrics, _score(evaluators, earlier.attempts))
+    _require_criteria_declared_again(earlier.metrics, acceptance_criteria)
+    attempts = apply_outcome_corrections(earlier.attempts, outcome_corrections)
     if not outcome_corrections:
         raise ValueError(
             "no task outcome was supplied or corrected, so there is nothing to recalculate: "
@@ -61,14 +69,16 @@ def _recalculate(
         )
     superseded = {
         "status": SUPERSEDED,
-        "outcome_corrections": _correction_records(outcome_corrections, earlier_attempts),
-        "metrics": deepcopy(earlier_metrics),
+        "outcome_corrections": _correction_records(outcome_corrections, earlier.attempts),
+        "metrics": deepcopy(earlier.metrics),
     }
-    superseded_results = [*deepcopy(already_superseded), superseded]
     scorecard = build_scorecard(
-        metrics=_score(evaluators, attempts, declared), attempts=attempts, acceptance_criteria=acceptance_criteria
+        metrics=_score(evaluators, attempts),
+        attempts=attempts,
+        experiments=deepcopy(earlier.experiments),
+        acceptance_criteria=acceptance_criteria,
     )
-    return {**scorecard, "superseded_results": superseded_results}
+    return {**scorecard, _SUPERSEDED_RESULTS: [*deepcopy(earlier.superseded_results), superseded]}
 
 
 @contextmanager
@@ -79,11 +89,18 @@ def _validating_the_supplied_evidence() -> Iterator[None]:
         raise EvidenceError(f"the supplied evidence does not validate: {error}") from error
 
 
-def _read(earlier_scorecard: Any) -> tuple[list[Any], tuple[Attempt, ...], list[Any]]:
-    """What the scorecard the customer supplied holds.
+@dataclass(frozen=True)
+class _EarlierScorecard:
+    """What the scorecard the customer supplied holds."""
 
-    Its metric results, its Attempts, and the results it had itself superseded, oldest first.
-    """
+    metrics: list[Any]
+    experiments: list[Any]
+    attempts: tuple[Attempt, ...]
+    # The results it had itself superseded, oldest first.
+    superseded_results: list[Any]
+
+
+def _read(earlier_scorecard: Any) -> _EarlierScorecard:
     if not isinstance(earlier_scorecard, Mapping):
         raise EvidenceError(
             "the earlier scorecard is supplied as the data of its JSON, with the attempt-level evidence in it. "
@@ -94,25 +111,52 @@ def _read(earlier_scorecard: Any) -> tuple[list[Any], tuple[Attempt, ...], list[
         raise EvidenceError(
             f"it has schema version {version!r}, and this version reads schema version {SCHEMA_VERSION}"
         )
-    if not isinstance(earlier_scorecard.get("attempts"), list):
+    # A part this version does not know cannot be carried into the new scorecard, and is not left out silently.
+    unread = sorted(set(earlier_scorecard) - _READ)
+    if unread:
+        raise EvidenceError(f"it holds what this version does not recalculate with: {', '.join(unread)}")
+    if not isinstance(earlier_scorecard.get(_ATTEMPTS), list):
         raise EvidenceError("it has no attempt-level evidence: 'attempts' is not a list of Attempts")
-    if not isinstance(earlier_scorecard.get("metrics"), list):
+    if not isinstance(earlier_scorecard.get(_METRICS), list):
         raise EvidenceError(
             "it has no metric results to supersede. Supply the earlier scorecard, which holds the "
             "attempt-level evidence as well, and not the evidence alone"
         )
-    already_superseded = earlier_scorecard.get("superseded_results", [])
-    if not isinstance(already_superseded, list):
-        raise EvidenceError(f"its superseded results are not a list. Got {already_superseded!r}")
-    return earlier_scorecard["metrics"], read_attempts(earlier_scorecard["attempts"]), already_superseded
+    experiments = earlier_scorecard.get(_EXPERIMENTS)
+    if not isinstance(experiments, list):
+        raise EvidenceError(f"its experiments are not a list. Got {experiments!r}")
+    superseded_results = earlier_scorecard.get(_SUPERSEDED_RESULTS, [])
+    if not isinstance(superseded_results, list):
+        raise EvidenceError(f"its superseded results are not a list. Got {superseded_results!r}")
+    return _EarlierScorecard(
+        metrics=earlier_scorecard[_METRICS],
+        experiments=experiments,
+        attempts=read_attempts(earlier_scorecard[_ATTEMPTS]),
+        superseded_results=superseded_results,
+    )
 
 
-def _evaluators_of(earlier_metrics: Sequence[Any]) -> list[Evaluator]:
-    """The Evaluators of the metrics the earlier scorecard scored, which are scored again."""
+@dataclass(frozen=True)
+class _ScoredEarlier:
+    """A metric the earlier scorecard scored, and the Attempts its Evaluator was given."""
+
+    metric_id: str
+    attempts_used: tuple[Attempt, ...]
+
+
+def _scored_earlier(earlier: _EarlierScorecard) -> list[_ScoredEarlier]:
+    """The metrics the earlier scorecard scored, which are the ones scored again.
+
+    Each is scored again from the Attempts its Evaluator was given by the sweep, which the
+    earlier scorecard names. Those are matched by Attempt identity, never by position.
+    """
     known = {metric.metric_id for metric in RELIABILITY_METRICS}
+    by_identity: dict[str, list[Attempt]] = {}
+    for attempt in earlier.attempts:
+        by_identity.setdefault(attempt.attempt_id, []).append(attempt)
     seen: set[str] = set()
-    evaluators = []
-    for entry in earlier_metrics:
+    scored = []
+    for entry in earlier.metrics:
         if not isinstance(entry, Mapping):
             raise EvidenceError(f"a metric result is recorded as an object. Got {entry!r}")
         metric_id = entry.get("metric_id")
@@ -125,25 +169,69 @@ def _evaluators_of(earlier_metrics: Sequence[Any]) -> list[Evaluator]:
             raise EvidenceError(f"the result of {metric_id!r} is recorded without its state")
         if entry["state"] == MetricState.NOT_CONFIGURED.value:
             continue
-        if metric_id not in EVALUATORS:
-            raise EvidenceError(
-                f"it has a result for {metric_id!r}, and {metric_id!r} has no Evaluator in this version"
+        used = entry.get("attempts_used")
+        attempt_ids = used.get("attempt_ids") if isinstance(used, Mapping) else None
+        if not isinstance(attempt_ids, list):
+            raise EvidenceError(f"the result of {metric_id!r} is recorded without the Attempts its Evaluator used")
+        for attempt_id in attempt_ids:
+            if len(by_identity.get(attempt_id, ())) != 1:
+                raise EvidenceError(
+                    f"the Evaluator of {metric_id!r} used Attempt {attempt_id!r}, which is "
+                    f"{'not in' if attempt_id not in by_identity else 'more than once in'} the attempt-level evidence"
+                )
+        scored.append(_ScoredEarlier(metric_id, tuple(by_identity[attempt_id][0] for attempt_id in attempt_ids)))
+    return scored
+
+
+@dataclass(frozen=True)
+class _Rescoring:
+    """An Evaluator with what the customer declared for it, and the identities of the Attempts it is given."""
+
+    evaluator: _SelectedEvaluator
+    attempt_ids: tuple[str, ...]
+
+
+def _selected(
+    scored_earlier: Sequence[_ScoredEarlier],
+    metrics: Sequence[str | ConfiguredEvaluator],
+    action_evidence: ActionEvidenceDeclaration | None,
+) -> list[_Rescoring]:
+    """The Evaluators of the metrics the earlier scorecard scored, selected as the sweep selects them."""
+    configured: dict[str, str | ConfiguredEvaluator] = {}
+    for metric in metrics:
+        metric_id = metric.metric_id if isinstance(metric, ConfiguredEvaluator) else metric
+        if metric_id in configured:
+            raise ValueError(f"{metric_id!r} is selected more than once, and a scorecard reports each metric once")
+        configured[metric_id] = metric
+    scored_ids = [scored.metric_id for scored in scored_earlier]
+    for metric_id in configured:
+        if metric_id not in scored_ids:
+            raise ValueError(
+                f"{metric_id!r} was not scored in the earlier scorecard. A recalculation scores the metrics "
+                "the earlier scorecard scored, and no other"
             )
-        evaluators.append(EVALUATORS[metric_id])
-    return evaluators
+    return [
+        _Rescoring(
+            _select(configured.get(scored.metric_id, scored.metric_id), action_evidence),
+            tuple(attempt.attempt_id for attempt in scored.attempts_used),
+        )
+        for scored in scored_earlier
+    ]
 
 
-def _score(
-    evaluators: Sequence[Evaluator], attempts: Sequence[Attempt], declared: Mapping[str, Any]
-) -> list[ScoredMetric]:
-    evidence = group_by_task(attempts)
+def _score(evaluators: Sequence[_Rescoring], attempts: Sequence[Attempt]) -> list[ScoredMetric]:
+    """Score each Evaluator from the Attempts it is given, taken from `attempts` by identity."""
+    by_identity = {attempt.attempt_id: attempt for attempt in attempts}
     return [
         ScoredMetric(
-            result=evaluator.evaluate(evidence, *(declared[name] for name in evaluator.declarations)),
+            result=rescoring.evaluator.evaluate(
+                group_by_task(by_identity[attempt_id] for attempt_id in rescoring.attempt_ids)
+            ),
             scoring_path=ScoringPath.CUSTOMER_PROCESS,
             fidelity=Fidelity.AUTHORITATIVE,
+            attempts_used=rescoring.attempt_ids,
         )
-        for evaluator in evaluators
+        for rescoring in evaluators
     ]
 
 

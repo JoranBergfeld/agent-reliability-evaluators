@@ -538,7 +538,14 @@ def with_metric(of, /, **result):
         (with_metric("outcome_consistency", metric_id="overall_reliability"), "'overall_reliability' is not a reliability metric"),
         (with_metric("calibration", metric_id="outcome_consistency"), "more than one result for 'outcome_consistency'"),
         (changed(lambda scorecard: metric(scorecard, "outcome_consistency").pop("state")), "the result of 'outcome_consistency' is recorded without its state"),
-        (with_metric("calibration", state="available", value=0.5), "'calibration' has no Evaluator in this version"),
+        (
+            with_metric("calibration", state="available", value=0.5),
+            "the result of 'calibration' is recorded without the Attempts its Evaluator used",
+        ),
+        (
+            with_metric("outcome_consistency", attempts_used={"attempt_ids": ["close/attempt-9"], "shared_with": []}),
+            "the Evaluator of 'outcome_consistency' used Attempt 'close/attempt-9', which is not in the attempt-level",
+        ),
     ],
 )
 def test_earlier_metric_results_that_cannot_be_read_fail_the_recalculation(supply, problem):
@@ -580,7 +587,7 @@ def test_a_metric_that_needs_a_declaration_is_not_recalculated_without_it():
 
     with pytest.raises(
         RecalculationFailed,
-        match="recalculation failed: the trajectory metrics need a declared ActionTypeMapping",
+        match="recalculation failed: 'distributional_trajectory_consistency' needs action evidence to be declared",
     ):
         recalculate(earlier_scorecard=earlier, outcome_corrections=[corrected("close/attempt-3", success=True)])
 
@@ -668,7 +675,7 @@ def test_the_supplied_scorecard_is_left_as_it_was_and_the_new_scorecard_is_json_
 
     assert earlier == as_supplied
     assert json.loads(to_json(recalculated)) == recalculated
-    assert set(recalculated) == {"schema_version", "metrics", "attempts", "superseded_results"}
+    assert set(recalculated) == {"schema_version", "metrics", "experiments", "attempts", "superseded_results"}
     recalculated["superseded_results"][0]["metrics"][0]["value"] = 1
     recalculated["attempts"][0]["task_outcome"]["success"] = False
     assert earlier == as_supplied
