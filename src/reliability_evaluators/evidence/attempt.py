@@ -297,6 +297,9 @@ class Attempt:
     invocation: Mapping[str, Any] | None = None
     # None when the agent was not asked for a confidence rating for this Attempt.
     confidence: ConfidenceRating | ConfidenceUnavailable | None = None
+    # What was recorded of the confidence request that followed the Attempt, in the form `invocation`
+    # has. It is a request of its own, so it is kept apart from the invocation. None: no request was sent.
+    confidence_invocation: Mapping[str, Any] | None = None
     # The operational constraints that apply to this Attempt, and the assessments made of them.
     operational_constraints: tuple[OperationalConstraint, ...] = ()
     violation_assessments: tuple[ViolationAssessment, ...] = ()
@@ -342,14 +345,13 @@ class Attempt:
                 f"action evidence is an ActionEvidence with its source. Got {self.action_evidence!r}"
             )
         self._require_one_measurement_per_resource_type()
-        if self.invocation is not None:
-            if not isinstance(self.invocation, Mapping):
-                raise EvidenceError(
-                    f"what an agent target records of an invocation is a mapping. Got {self.invocation!r}"
-                )
-            object.__setattr__(
-                self, "invocation", json_data(self.invocation, f"the invocation of Attempt {self.attempt_id!r}")
-            )
+        for name, of in (("invocation", "an invocation"), ("confidence_invocation", "a confidence request")):
+            recorded = getattr(self, name)
+            if recorded is None:
+                continue
+            if not isinstance(recorded, Mapping):
+                raise EvidenceError(f"what an agent target records of {of} is a mapping. Got {recorded!r}")
+            object.__setattr__(self, name, json_data(recorded, f"the {name} of Attempt {self.attempt_id!r}"))
         confidence = self.confidence
         if confidence is not None and not isinstance(confidence, (ConfidenceRating, ConfidenceUnavailable)):
             raise EvidenceError(
@@ -488,6 +490,7 @@ class Attempt:
             "resource_measurements": [measurement.to_dict() for measurement in self.resource_measurements],
             "invocation": self.invocation,
             "confidence": None if self.confidence is None else self.confidence.to_dict(),
+            "confidence_invocation": self.confidence_invocation,
             "operational_constraints": [constraint.to_dict() for constraint in self.operational_constraints],
             "violation_assessments": [assessment.to_dict() for assessment in self.violation_assessments],
             "experiment_id": self.experiment_id,

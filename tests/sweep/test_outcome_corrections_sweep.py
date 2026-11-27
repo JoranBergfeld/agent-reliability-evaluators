@@ -618,8 +618,17 @@ def condition_of_kind(kind):
             "'close/attempt-3'.*met",
         ),
         (
-            changed(lambda scorecard: scorecard.update(token_usage={"total": 12})),
-            "it holds what this version does not recalculate with: token_usage",
+            changed(lambda scorecard: scorecard.update(cost_estimate={"total": 12})),
+            "it holds what this version does not recalculate with: cost_estimate",
+        ),
+        (without("token_usage"), "it does not report its token usage"),
+        (
+            changed(lambda scorecard: scorecard["token_usage"].update(shared_preparation=[{"preparation_id": "x"}])),
+            "its token usage is not what this version reports: a shared preparation is reported without its description",
+        ),
+        (
+            changed(lambda scorecard: scorecard["token_usage"].pop("shared_preparation")),
+            "its token usage is not what this version reports: shared preparation is reported as a list",
         ),
     ],
 )
@@ -805,6 +814,7 @@ def test_the_supplied_scorecard_is_left_as_it_was_and_the_new_scorecard_is_json_
         "metrics",
         "experiments",
         "tasks_without_experiment",
+        "token_usage",
         "attempts",
         "superseded_results",
     }
@@ -1231,7 +1241,7 @@ def test_a_recalculated_scorecard_is_delivered_to_a_location_of_its_own_and_the_
     # The customer supplies the earlier scorecard from where their platform kept it.
     sweep({"close": HALF}, artifact_dir=tmp_path / "run")
     kept = {file.name: file.read_bytes() for file in (tmp_path / "run").iterdir()}
-    assert sorted(kept) == ["evidence.json", "report.html", "scorecard.json"]
+    assert sorted(kept) == ["evidence.json", "report.html", "scorecard.json", "summary.md"]
     earlier = json.loads(kept["scorecard.json"])
 
     recalculated = recalculate(

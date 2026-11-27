@@ -18,8 +18,11 @@ from ..evaluators import (
 )
 from ..evidence import Attempt, EvidenceError, ExperimentStatus
 from .acceptance import AcceptanceCriterion, assess, criteria_by_metric
+from .usage import EvaluatorUse, PreparationUsage, code_scoring_use, managed_scoring_uses, sweep_token_usage
 
 SCHEMA_VERSION = 1
+# Where a scorecard reports token usage. It is metadata, apart from the metrics and their acceptance.
+TOKEN_USAGE = "token_usage"
 
 
 class ScorecardStatus(str, Enum):
@@ -170,6 +173,8 @@ class ScoredMetric:
     # What Foundry-managed scoring recorded about the result: the evaluator and the run it
     # came from, and what the platform added to it. JSON-compatible data.
     managed_scoring: Mapping[str, Any] | None = None
+    # What Foundry reported of the token usage of each managed run. It is reported as usage, not with the metric.
+    reported_usage: Sequence[Mapping[str, Any]] = ()
 
     def __post_init__(self) -> None:
         if self.fidelity is Fidelity.UNVERIFIED and not (self.limitation or "").strip():
@@ -197,6 +202,8 @@ class MissingResult:
     cut_short: CutShort = CutShort()
     # What Foundry-managed scoring recorded about the run that failed. JSON-compatible data.
     managed_scoring: Mapping[str, Any] | None = None
+    # What Foundry reported of the token usage of each managed run that was made. Empty: no run is known.
+    reported_usage: Sequence[Mapping[str, Any]] = ()
     scoring_path = ScoringPath.FOUNDRY_MANAGED
 
     def __post_init__(self) -> None:
@@ -211,6 +218,7 @@ def build_scorecard(
     executions: Sequence[ExecutionRecord],
     max_concurrent_attempts: int,
     acceptance_criteria: Sequence[AcceptanceCriterion] = (),
+    preparation_usage: Sequence[PreparationUsage] = (),
 ) -> dict[str, Any]:
     """Assemble the scorecard as JSON-compatible data.
 
@@ -234,6 +242,11 @@ def build_scorecard(
 
     `max_concurrent_attempts` is how many Attempts of Tasks given without an experiment
     the sweep allowed in flight at once; 1 means they ran one after another.
+
+    `token_usage` reports what the Attempts, their confidence follow-ups, the scoring of
+    each selected metric and the preparation in `preparation_usage` used, in tokens. It is
+    metadata, apart from the metrics: no metric entry and no acceptance assessment holds or
+    reads any of it.
     """
     scored_by_id = {scored.definition.metric.metric_id: scored for scored in metrics}
     criteria = criteria_by_metric(acceptance_criteria)
@@ -270,8 +283,35 @@ def build_scorecard(
         "tasks_without_experiment": [
             execution.to_dict() for execution in executions if execution.experiment_id is None
         ],
+        TOKEN_USAGE: sweep_token_usage(
+            attempts,
+            [
+                EvaluatorUse(
+                    metric_id=metric.metric_id,
+                    attempt_ids=tuple(scored_by_id[metric.metric_id].attempts_used),
+                    scoring=_scoring_uses(scored_by_id[metric.metric_id]),
+                )
+                for metric in RELIABILITY_METRICS
+                if metric.metric_id in scored_by_id
+            ],
+            preparation_usage,
+        ),
         "attempts": [attempt.to_dict() for attempt in attempts],
     }
+
+
+def _scoring_uses(scored: ScoredMetric | MissingResult) -> list[dict[str, Any]]:
+    """The uses that scoring a metric was, on the scoring path the metric is attributed to."""
+    if scored.scoring_path is ScoringPath.CUSTOMER_PROCESS:
+        return [code_scoring_use()]
+    reported = []
+    for of_run in scored.reported_usage or ():
+        try:
+            reported.append(json.loads(json.dumps(of_run, allow_nan=False)))
+        except (TypeError, ValueError):
+            # What cannot be written to a scorecard is kept as text, and is then not read as a count.
+            reported.append(repr(of_run))
+    return managed_scoring_uses(reported, scored.managed_scoring)
 
 
 MANAGED_SCORING_GAVE_NO_RESULT = (

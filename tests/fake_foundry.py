@@ -22,10 +22,14 @@ live project was observed to behave (docs/managed_scoring/readme.md, "Observed l
 - An evaluator that raises on one of several items leaves the run completed. The result for that
   item has the status `error`, no score, and the error under its own `sample`. The item itself
   carries no error.
+- A run of a code evaluator reports an empty list of per-model usage, and no usage on its results
+  (seen in the saved runs of the earlier prototypes, decision ticket #24).
 
 A test scripts what a live project could do to a run: alter the submitted item or the score
 of a row, report an error on a completed item or on one of its results, refuse every request or only
-the making of a run, or never finish.
+the making of a run, or never finish. It can also script the usage a run reports: the rows of
+its per-model usage, and the usage on the result of a row, as a run whose criterion used a
+model was observed to report them.
 """
 
 from __future__ import annotations
@@ -60,7 +64,13 @@ class FakeFoundryProject:
         refuses_evals: FoundryRequestError | None = None,
         polls_until_finished: int = 0,
         never_finishes: bool = False,
+        # The per-model usage every run reports, or a function of the number of a run that gives that of the run.
+        per_model_usage: Any = (),
+        # The usage on every result, or a function of the item of a row that gives that of its result or None.
+        result_usage: dict | Callable[[dict], dict | None] | None = None,
     ):
+        self._per_model_usage = per_model_usage
+        self._result_usage = result_usage
         self._alter_item = alter_item
         self._alter_score = alter_score
         self._sample_error = sample_error
@@ -167,10 +177,15 @@ class FakeFoundryProject:
             "error": error,
             "report_url": f"https://ai.azure.com/nextgen/r/encoded-subscription-identifier/{eval_id}/{run_id}",
             "result_counts": {"total": len(items)},
+            "per_model_usage": self._usage_of_run(len(self.runs) + 1),
         }
         self._output_items[run_id] = items
         self._polls[run_id] = 0
         return {**self.runs[run_id], "status": "queued", "error": None}
+
+    def _usage_of_run(self, number: int) -> Any:
+        usage = self._per_model_usage(number) if callable(self._per_model_usage) else self._per_model_usage
+        return list(usage) if isinstance(usage, tuple) else usage
 
     def _poll_run(self, eval_id, run_id, **_):
         self._polls[run_id] += 1
@@ -259,6 +274,7 @@ class FakeFoundryProject:
                 "status": "error",
                 "sample": {"input": [], "output": [], "usage": None, "error": result_error},
             }
+        usage = self._result_usage(item) if callable(self._result_usage) else self._result_usage
         return {
             "type": "azure_ai_evaluator",
             "name": name,
@@ -269,6 +285,7 @@ class FakeFoundryProject:
             "threshold": 0.5,
             "passed": score >= 0.5,
             "status": "completed",
+            **({"sample": {"usage": usage}} if usage is not None else {}),
         }
 
 
