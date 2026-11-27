@@ -111,6 +111,12 @@ def attempt(scorecard, attempt_id):
     return entry
 
 
+METRICS_FROM_TASK_OUTCOMES = (
+    "outcome_consistency",
+    "calibration",
+    "strict_confidence_discrimination",
+    "brier_based_score",
+)
 HALF = ["success", "success", "failure", "failure"]
 RATINGS = {"close/attempt-1": "75", "close/attempt-2": "75", "close/attempt-3": "75", "close/attempt-4": "25"}
 
@@ -133,11 +139,24 @@ def test_recalculating_with_a_corrected_task_outcome_gives_a_new_scorecard_that_
 
 
 def test_the_corrected_outcome_is_used_in_every_metric_that_is_calculated_from_task_outcomes():
+    # Outcomes 1, 1, 0, 0 with confidences 0.75, 0.75, 0.75, 0.25. The third outcome is corrected to 1.
+    #
     # Brier-based score, earlier: squared errors 0.0625, 0.0625, (0.75 - 0)^2 = 0.5625 and 0.0625.
     # Mean 0.75 / 4 = 0.1875, score 0.8125.
     # Corrected: the third becomes (0.75 - 1)^2 = 0.0625. Mean 0.25 / 4 = 0.0625, score 0.9375.
-    earlier = sweep({"close": HALF}, metrics=["outcome_consistency", "brier_based_score"], ratings=RATINGS)
+    #
+    # Calibration, earlier: the bin from 0.7 holds three pairs, confidence 0.75, success frequency 2/3,
+    # gap 1/12. The bin from 0.2 holds one, confidence 0.25, frequency 0, gap 0.25.
+    # Expected calibration error 3/4 * 1/12 + 1/4 * 0.25 = 0.125, value 0.875.
+    # Corrected: the frequency of the first bin is 1, gap 0.25. Error 3/4 * 0.25 + 1/4 * 0.25 = 0.25, value 0.75.
+    #
+    # Strict confidence discrimination, earlier: two successes at 0.75 against failures at 0.75 and 0.25.
+    # The two pairs with the failure at 0.25 are strictly ordered and the two ties are not: 2/4 = 0.5.
+    # Corrected: three successes at 0.75 against one failure at 0.25, all strictly ordered: 3/3 = 1.
+    earlier = sweep({"close": HALF}, metrics=METRICS_FROM_TASK_OUTCOMES, ratings=RATINGS)
     assert metric(earlier, "brier_based_score")["value"] == 0.8125
+    assert metric(earlier, "calibration")["value"] == pytest.approx(0.875, abs=1e-12)
+    assert metric(earlier, "strict_confidence_discrimination")["value"] == 0.5
 
     recalculated = recalculate(
         earlier_scorecard=earlier, outcome_corrections=[corrected("close/attempt-3", success=True)]
@@ -157,6 +176,8 @@ def test_the_corrected_outcome_is_used_in_every_metric_that_is_calculated_from_t
     }
     assert brier["counts"] == {"confidence_outcome_pairs": {"total": 4, "valid": 4, "missing": [], "excluded": []}}
     assert metric(recalculated, "outcome_consistency")["value"] == 0.25
+    assert metric(recalculated, "calibration")["value"] == pytest.approx(0.75, abs=1e-12)
+    assert metric(recalculated, "strict_confidence_discrimination")["value"] == 1
 
 
 def test_the_attempt_carries_the_corrected_outcome_and_retains_the_record_it_replaced_with_the_provenance():
@@ -204,7 +225,6 @@ def test_the_new_scorecard_marks_the_earlier_result_as_superseded_and_says_what_
     assert "superseded_results" not in earlier
 
 
-OUTCOME_METRICS = ("outcome_consistency", "brier_based_score")
 OTHER_METRICS = (
     "distributional_trajectory_consistency",
     "sequential_trajectory_consistency",
@@ -219,7 +239,7 @@ LEAVE_UNRELATED = OperationalConstraint(
 
 
 def sweep_with_every_kind_of_evidence():
-    """One Task with four Attempts, scored on seven metrics, with every kind of evidence an Attempt carries.
+    """One Task with four Attempts, scored on nine metrics, with every kind of evidence an Attempt carries.
 
     Returns the scorecard and the action evidence declaration the sweep was given. Task
     outcomes and confidence ratings are those of `HALF` and `RATINGS`. The second Attempt
@@ -264,7 +284,7 @@ def sweep_with_every_kind_of_evidence():
     scorecard = run_sweep(
         tasks=[task],
         agent_target=target,
-        metrics=[*OUTCOME_METRICS, *OTHER_METRICS],
+        metrics=[*METRICS_FROM_TASK_OUTCOMES, *OTHER_METRICS],
         action_evidence=declared,
         clock=target.clock,
     )
@@ -280,8 +300,10 @@ def test_a_correction_changes_nothing_but_the_task_outcome_it_names_and_the_metr
         action_evidence=declared,
     )
 
-    # The outcomes and ratings are those of the tests above: 0 becomes 0.25 and 0.8125 becomes 0.9375.
+    # The outcomes and ratings are those of the tests above, and so are the values.
     assert metric(recalculated, "outcome_consistency")["value"] == 0.25
+    assert metric(recalculated, "calibration")["value"] == pytest.approx(0.75, abs=1e-12)
+    assert metric(recalculated, "strict_confidence_discrimination")["value"] == 1
     assert metric(recalculated, "brier_based_score")["value"] == 0.9375
     for metric_id in OTHER_METRICS:
         assert metric(earlier, metric_id)["state"] == "available"
