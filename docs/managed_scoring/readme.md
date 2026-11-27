@@ -312,7 +312,7 @@ An unavailable measurement has no value to compare. Its state, its reason and it
 
 ## When managed scoring gives no result
 
-A project that cannot be used stops the sweep before any Attempt is made, with `ManagedScoringFailure` or a `ValueError`. Nothing was collected, so there is nothing to keep.
+A project that cannot be used stops the sweep before any Attempt is made, with `ManagedScoringFailure` or a `ValueError`. Nothing was collected, so there is nothing to keep. With `artifact_dir` it is raised as a [`ReportingFailure`](../report/readme.md#reporting-failure) that has that error as its cause.
 
 After the Attempts, the sweep does not stop. It returns a scorecard that is **partial**:
 
@@ -349,7 +349,7 @@ After the Attempts, the sweep does not stop. It returns a scorecard that is **pa
 
 `execution_failure` is the field a metric without a result always has. Its `experiment_ids` and `task_ids` are empty here, because no Attempt was cut short: it is the scoring that failed. A metric whose [Attempts were cut short](../sweep/execution-limits.md#metrics-in-a-partial-scorecard) has no `managed_scoring.error`.
 
-With `artifact_dir`, the partial scorecard, its report and the evidence are delivered as for any sweep.
+With `artifact_dir`, the partial scorecard, its report and the evidence are delivered as for any sweep: see [delivery alongside Foundry](../report/delivery-alongside-foundry.md#partial-and-failed-managed-runs).
 
 | Situation | What you get |
 | --- | --- |
@@ -461,6 +461,8 @@ Rescore with the commit or tag of the offering that made the scorecard. Another 
 ## What stays in your project
 
 Each sweep creates one evaluation and two runs in your project for every metric on this path, more runs when a part is asked for again, and evaluator versions as described above. Every row of every run holds the submitted evidence. The offering does not delete them. Your project governs access to them, their retention and their deletion.
+
+The run keeps the evidence it was sent, also when it failed. The scorecard, the report and the complete attempt-level evidence are not in your project: they are delivered to the directory you chose. What the run holds, how to leave a reference to the scorecard on its evaluation, and what deleting a run did when observed are in [delivery alongside Foundry](../report/delivery-alongside-foundry.md).
 
 ## Assumptions
 
@@ -673,8 +675,8 @@ The eight encoded results were 219 to 303 bytes and came back in 345 parts. Each
 - **Token renewal.** A new token is asked for every five minutes and once more after an HTTP 401. No run was long enough to need it.
 - **The sandbox limits.** Microsoft documents no network access, code under 256 KB, 120 seconds per call and 2 GB of memory. Only the refused `socket` and `sys` imports were seen. The size limit was not approached.
 - **Twelve derived evaluators, each in a run of its own.** Twelve runs at once were seen only with a test-only evaluator and a one-word item. Whether a project limits how many runs it accepts at once is not known. A run that is refused leaves its metric without a result and the others as they are.
-- **Evidence near the size limit.**
-- **A managed run that does not end in time.** The cancellation of such a run was exercised against the fake project only.
+- **Evidence near the size limit, with a derived evaluator.** A test-only evaluator was given items of up to 1,900,000 characters whole: see [delivery alongside Foundry](../report/delivery-alongside-foundry.md#probes). Real evidence of that size was not submitted to a derived evaluator.
+- **A managed run that does not end in time, other than at once.** A run that was cancelled while it was still `queued`, with a time limit of 0 seconds, was `canceled` afterwards and left a partial scorecard: see [delivery alongside Foundry](../report/delivery-alongside-foundry.md#the-live-check). A run that is cancelled after it has started was exercised against the fake project only.
 - **A completed run whose only item has a result in the status `error`.** Seen only in runs with several items, and once with an integer that no double holds.
 - **A request that the live project refuses after the Attempts were made**, such as a rate limit. Exercised against the fake project only.
 - **Two pipelines registering at the same moment.** Both could register a version with the same code. Either is the derived code, so the result would be the same, but the project would hold a duplicate.

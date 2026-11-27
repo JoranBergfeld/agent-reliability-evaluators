@@ -37,7 +37,7 @@ Every scorecard lists all twelve, and a metric that was not selected appears as 
 
 A task outcome can be supplied or corrected after the run. Recalculating from the earlier scorecard, which you supply, gives a new scorecard that uses the corrected outcome and marks the earlier result as superseded: see [`docs/sweep/late-and-corrected-outcomes.md`](docs/sweep/late-and-corrected-outcomes.md).
 
-The sweep returns the machine-readable scorecard. Given a directory, it also writes the scorecard, a human-readable report rendered from it, the text of a CI job summary and the attempt-level evidence there, or raises an explicit reporting failure: see [`docs/report/readme.md`](docs/report/readme.md).
+The sweep returns the machine-readable scorecard. Given a directory, it also writes the scorecard, a human-readable report rendered from it, the text of a CI job summary and the attempt-level evidence there, or raises an explicit reporting failure: see [`docs/report/readme.md`](docs/report/readme.md). The files go to that directory on both scoring paths. What Foundry holds of a managed run, and how to leave a reference to the scorecard there, is in [`docs/report/delivery-alongside-foundry.md`](docs/report/delivery-alongside-foundry.md).
 
 After a run, the scorecard reports the token usage that was measured, for each Attempt, for each Evaluator and for the sweep, with overlaps and gaps stated. It is metadata: it is not a metric and takes no part in acceptance. There is no estimate, no currency and no cap. The same usage is in the report and in the summary text that your pipeline publishes, and a standalone Evaluator reports it without a scorecard: see [`docs/token_usage/readme.md`](docs/token_usage/readme.md).
 
