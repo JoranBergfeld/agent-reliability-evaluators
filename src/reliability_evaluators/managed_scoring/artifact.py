@@ -163,7 +163,11 @@ def derive_artifact(metric_id: str) -> ManagedArtifact:
     for name in ("DEFINITION", "evaluate"):
         if name not in modules.defined_in(canonical):
             raise DerivationError(f"{canonical} does not define {name}, which `grade` calls")
-    code_text = modules.joined() + "\n\n" + _GRADE
+    header = (
+        f"# Foundry code evaluator for the reliability metric {metric_id}, derived from its canonical\n"
+        f"# definition, version {evaluator.definition.version}. Do not edit it: derive and register a new version.\n\n"
+    )
+    code_text = header + modules.joined() + "\n\n\n" + _GRADE
     _require_sandbox_fit(metric_id, code_text)
     return ManagedArtifact(definition=evaluator.definition, code_text=code_text, attempt_evidence=attempt_evidence)
 

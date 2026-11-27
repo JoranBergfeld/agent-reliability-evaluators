@@ -6,7 +6,7 @@ Vocabulary is defined in [`GLOSSARY.md`](GLOSSARY.md). Decisions that are hard t
 
 ## What exists today
 
-Ten metrics, end to end, scored in your own process:
+Ten metrics, end to end, scored in your own process. One of them, outcome consistency, can also be scored in your Foundry project:
 
 | Metric | Documentation |
 | --- | --- |
@@ -29,7 +29,9 @@ The Evaluator sweep can also run controlled experiments, with your own controls 
 
 Several metrics can be selected in one sweep. Evaluators share Attempts only where that is valid, and the scorecard shows which Attempts each one used: see [`docs/sweep/several-evaluators.md`](docs/sweep/several-evaluators.md).
 
-The other two metrics have no Evaluator yet. Every scorecard lists all twelve, and a metric that was not selected appears as not configured. No Foundry agent target and no Foundry-managed scoring exists yet; the agent target is an interface that you implement.
+Outcome consistency can be scored as a custom evaluator in your own Foundry project instead of in your own process. The evaluator is derived from the same definition, registered under your identity, and its value is reported as an unverified result, which cannot be met or not met by an acceptance criterion: see [`docs/managed_scoring/readme.md`](docs/managed_scoring/readme.md). The other metrics are scored in your own process only.
+
+The other two metrics have no Evaluator yet. Every scorecard lists all twelve, and a metric that was not selected appears as not configured. No Foundry agent target exists yet; the agent target is an interface that you implement.
 
 The sweep returns the machine-readable scorecard. Given a directory, it also writes the scorecard, a human-readable report rendered from it and the attempt-level evidence there, or raises an explicit reporting failure: see [`docs/report/readme.md`](docs/report/readme.md).
 
@@ -37,7 +39,7 @@ The sweep returns the machine-readable scorecard. Given a directory, it also wri
 
 There is no published package. Copy the directory [`src/reliability_evaluators/`](src/reliability_evaluators/) into your project and record the commit or tag you copied it from.
 
-- It needs Python 3.10 or later and nothing outside the standard library.
+- It needs Python 3.10 or later and nothing outside the standard library. Foundry-managed scoring also needs a bearer token for your project, by default from the Azure CLI.
 - Nothing else in this repository is needed at run time. `pyproject.toml`, `uv.lock` and `tests/` are development tooling.
 
 ```python
@@ -75,9 +77,9 @@ The copyable source has one directory per module of the specification.
 | Evaluator sweep | `src/reliability_evaluators/sweep/` | What a customer declares (`declaration.py`), the public entry point `run_sweep` (`runner.py`), the customer controls invoked around each Attempt of an experiment (`lifecycle.py`), the confidence-only request that follows an Attempt (`confidence.py`) and the rule for which Evaluators share Attempts (`reuse.py`). |
 | Agent target | `src/reliability_evaluators/agent_target/` | The interface the sweep invokes an agent through, for an Attempt and for the confidence follow-up, with the target's declaration of whether that follow-up is isolated. |
 | Scorecard | `src/reliability_evaluators/scorecard/` | Assembly of the machine-readable scorecard (JSON, `assemble.py`), the assessment of customer acceptance criteria (`acceptance.py`), the human-readable report rendered from the scorecard (self-contained HTML, `report.py`), and their delivery with the evidence to a directory the caller chooses, with the reporting failure (`delivery.py`). |
-| Foundry-managed scoring | not built yet | |
+| Foundry-managed scoring | `src/reliability_evaluators/managed_scoring/` | The derivation of the Foundry evaluator from a canonical definition (`artifact.py`), what that evaluator runs around the definition and the evidence encoding it reads (`grader.py`), your Foundry project reached as your own identity (`foundry.py`), and registration, submission and recovery of the result (`scoring.py`). Outcome consistency only. |
 
-`evaluators/` and `evidence/` are pure: standard library only, no I/O, no network and no Foundry dependency. The Foundry-managed evaluators are to be derived from them, so they may import only what the Foundry code-evaluator sandbox provides.
+`evaluators/` and `evidence/` are pure: standard library only, no I/O, no network and no Foundry dependency. So is `managed_scoring/grader.py`. The Foundry-managed evaluators are derived from their source, so they may use only what the Foundry code-evaluator sandbox accepts: [the list](docs/managed_scoring/readme.md#how-the-evaluator-is-derived) names the modules, and the calls it refuses, `re.compile` among them.
 
 Each Evaluator has its documentation, with a worked example and graphics, in `docs/<metric identity>/readme.md`.
 
@@ -91,12 +93,12 @@ Development tooling is managed with [uv](https://docs.astral.sh/uv/). Customers 
 | Default test run | `uv run pytest` |
 | Opt-in live Foundry checks | `uv run pytest -m live` |
 
-The default test run excludes tests marked `live`. Live checks create billable Azure resources: they stand up the disposable fixture in [`live_fixture/`](live_fixture/README.md) (a to-do service, a Foundry prompt agent and a Foundry hosted agent) and tear it down again. The only live check so far verifies that fixture itself.
+The default test run excludes tests marked `live`. Live checks create billable Azure resources and tear them down again. The check of the fixture itself stands up the disposable fixture in [`live_fixture/`](live_fixture/README.md) (a to-do service, a Foundry prompt agent and a Foundry hosted agent). The check of Foundry-managed scoring (`tests/live/`) stands up only an empty Foundry project.
 
 Tests are written at three seams only:
 
-- **Evaluator seam** (`tests/evaluators/`): an Evaluator's public interface, called with grouped Attempt evidence.
-- **Evaluator sweep seam** (`tests/sweep/`): `run_sweep` with the fake agent targets and the fake customer controls in `tests/fakes.py`, asserting on the machine-readable scorecard only. The human-readable report is tested only as a rendering of that scorecard: `tests/report_reader.py` reads a report back and compares it with the scorecard value by value. Delivery and reporting failure are asserted on what the caller finds in the directory it chose and on the failure it is given.
+- **Evaluator seam** (`tests/evaluators/`): an Evaluator's public interface, called with grouped Attempt evidence. The same vectors are run against the Foundry evaluator derived from it, which `tests/managed_artifact.py` runs on this machine the way Foundry calls it.
+- **Evaluator sweep seam** (`tests/sweep/`): `run_sweep` with the fake agent targets and the fake customer controls in `tests/fakes.py`, and for Foundry-managed scoring the fake Foundry project in `tests/fake_foundry.py`, asserting on the machine-readable scorecard only. The human-readable report is tested only as a rendering of that scorecard: `tests/report_reader.py` reads a report back and compares it with the scorecard value by value. Delivery and reporting failure are asserted on what the caller finds in the directory it chose and on the failure it is given.
 - **Live Foundry verification**: opt-in, marked `live`. The fixture these checks run on is test infrastructure, so it is also checked without Azure in `tests/fixture/`: its to-do service and its task-success rule run on the local machine, through the interface the live checks use.
 
 Expected values are calculated by hand, never by the code under test.

@@ -33,7 +33,7 @@ Without `artifact_dir` nothing is written. `render_report(scorecard)` in `reliab
 
 The report is one HTML file. It opens from disk or from a CI artifact view, with no server, no scripts and no external resources.
 
-- **Each metric on its own.** All twelve metrics are listed, in the order of the scorecard, each with its state, its value or the reason there is none, its definition (version, what it measures, calculation, fidelity conventions, scale, interpretation), its counts and denominators, its scoring path, its fidelity, and the assessment of your acceptance criterion for it if you declared one. There is no combined score and no threshold of the offering's own.
+- **Each metric on its own.** All twelve metrics are listed, in the order of the scorecard, each with its state, its value or the reason there is none, its definition (version, what it measures, calculation, fidelity conventions, scale, interpretation), its counts and denominators, its scoring path, its fidelity, the limitation of an unverified result and what Foundry-managed scoring recorded about it, and the assessment of your acceptance criterion for it if you declared one. There is no combined score and no threshold of the offering's own.
 - **States that cannot be mistaken for each other.** A metric shows the state the scorecard records for it, with its meaning next to it. Each state has its own colour and outline.
 
   | State in the scorecard | Shown with |

@@ -181,9 +181,10 @@ class FoundryManagedScoring:
             run = self.project.request("GET", run_path)
         if run["status"] != "completed":
             error = run.get("error") or {}
+            reported = f"{error.get('code')}: {error.get('message')}".rstrip(". ")
             raise ManagedScoringFailure(
-                f"the Foundry-managed run {run['id']} of {eval_id} ended as {run['status']}: "
-                f"{error.get('code')}: {error.get('message')}. {RAISED_IN_FOUNDRY}"
+                f"the Foundry-managed run {run['id']} of {eval_id} ended as {run['status']}: {reported}. "
+                f"{RAISED_IN_FOUNDRY}"
             )
         return eval_id, run
 
@@ -247,6 +248,7 @@ def _recover(
         raise ManagedScoringFailure(
             f"{where} has a score for {metric_id!r} that is not a value of the metric: {error}. It is not reported"
         ) from None
+    # The run's link to the Foundry portal is left out: it embeds the customer's subscription identifier.
     provenance = {
         "evaluator": {
             "name": evaluator.name,
@@ -256,7 +258,6 @@ def _recover(
         "eval_id": eval_id,
         "run_id": run["id"],
         "output_item_id": output_item.get("id"),
-        "report_url": run.get("report_url"),
         "platform_diagnostics": {
             "meaning": PLATFORM_DIAGNOSTICS_MEANING,
             "threshold": returned.get("threshold"),

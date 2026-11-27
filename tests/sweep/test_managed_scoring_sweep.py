@@ -126,7 +126,8 @@ def test_the_scorecard_says_which_evaluator_and_which_run_the_value_came_from():
     assert managed_scoring["evaluator"]["code_sha256"] == sha256(registered["definition"]["code_text"])
     assert (managed_scoring["eval_id"], managed_scoring["run_id"]) == ("eval_1", "evalrun_1")
     assert managed_scoring["output_item_id"] == "1"
-    assert managed_scoring["report_url"] == "https://ai.azure.com/fake/eval_1/evalrun_1"
+    # The run's portal link embeds the subscription identifier, so the scorecard does not repeat it.
+    assert set(managed_scoring) == {"evaluator", "eval_id", "run_id", "output_item_id", "platform_diagnostics"}
 
 
 def test_the_platform_threshold_and_label_are_diagnostics_and_not_an_acceptance_verdict():
@@ -214,6 +215,20 @@ def test_an_evaluator_of_the_same_name_with_other_code_is_not_run_in_its_place()
     assert first["managed_scoring"]["evaluator"]["version"] == "2"
     assert second["managed_scoring"]["evaluator"]["version"] == "2"
     assert len(foundry.evaluators[EVALUATOR_NAME]) == 3
+
+
+def test_registration_is_idempotent_when_the_derived_version_is_not_on_the_first_page_of_versions():
+    foundry = FakeFoundryProject()
+    sweep(TWO_TASKS, foundry)
+    # The project lists ten versions to a page, newest first. Twelve newer ones push the derived one to the second.
+    for number in range(12):
+        foundry.register_other_code(EVALUATOR_NAME, f"def grade(sample, item):\n    return 0.{number}\n")
+
+    outcome_consistency = metric(sweep(TWO_TASKS, foundry))
+
+    assert outcome_consistency["managed_scoring"]["evaluator"]["version"] == "1"
+    assert outcome_consistency["value"] == pytest.approx(0.68, abs=1e-12)
+    assert len(foundry.evaluators[EVALUATOR_NAME]) == 13
 
 
 def test_a_project_that_refuses_the_customers_identity_stops_the_sweep_before_any_attempt():

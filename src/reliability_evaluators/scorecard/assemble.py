@@ -32,8 +32,6 @@ class ScoredMetric:
     def __post_init__(self) -> None:
         if self.fidelity is Fidelity.UNVERIFIED and not (self.limitation or "").strip():
             raise ValueError("an unverified result is reported with its limitation")
-        if self.fidelity is Fidelity.AUTHORITATIVE and self.limitation is not None:
-            raise ValueError("an authoritative result has no fidelity limitation to report")
 
 
 def build_scorecard(

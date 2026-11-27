@@ -6,6 +6,8 @@ so the two scoring paths cannot give different values without a test failing her
 """
 
 import ast
+import hashlib
+import json
 
 import pytest
 
@@ -149,6 +151,46 @@ def test_the_derived_artifact_validates_what_it_is_given(item, problem):
 
     with pytest.raises(Exception, match=problem) as rejection:
         grader({}, item)
+    assert type(rejection.value).__name__ == "EvidenceError"
+
+
+def transported(evidence):
+    """Evidence as it travels, written here by hand and not by the offering's encoder."""
+    payload = json.dumps(evidence)
+    return {"outcome_consistency_evidence": hashlib.sha256(payload.encode("utf-8")).hexdigest() + ":" + payload}
+
+
+def one_task(*attempts_of_task):
+    return {"encoding": 1, "tasks": [{"task_id": "task", "attempts": list(attempts_of_task)}]}
+
+
+def attempt(number, **evidence):
+    recorded = {"execution_status": "completed", "task_outcome": {"success": True, "source": SOURCE}, **evidence}
+    return {"attempt_id": f"task/attempt-{number}", "task_id": "task", **recorded}
+
+
+def test_the_derived_artifact_reads_evidence_that_arrives_intact():
+    # Two successes: p = 2/2 and the value is 1.
+    grader = managed_artifact.load_grader(derive_artifact("outcome_consistency").code_text)
+
+    assert grader({}, transported(one_task(attempt(1), attempt(2)))) == 1
+
+
+@pytest.mark.parametrize(
+    ("evidence", "problem"),
+    [
+        (one_task(attempt(1), attempt(2, task_outcome={"success": 0.5, "source": SOURCE})), "binary"),
+        (one_task(attempt(1), attempt(2, task_outcome={"success": True, "source": ""})), "source"),
+        (one_task(attempt(1), attempt(2, execution_status="finished")), "not an execution status"),
+        (one_task(attempt(1), attempt(2, confidence={"rating": "90"})), "cannot be read back"),
+        ({**one_task(attempt(1), attempt(2)), "encoding": 2}, "encoding"),
+    ],
+)
+def test_the_derived_artifact_rejects_intact_evidence_that_the_evidence_model_does_not_accept(evidence, problem):
+    grader = managed_artifact.load_grader(derive_artifact("outcome_consistency").code_text)
+
+    with pytest.raises(Exception, match=problem) as rejection:
+        grader({}, transported(evidence))
     assert type(rejection.value).__name__ == "EvidenceError"
 
 

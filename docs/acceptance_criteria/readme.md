@@ -188,4 +188,6 @@ Choices made within that assumption:
 
 Tests drive `run_sweep` and assert on the scorecard. They cover met, not met, every comparison at its boundary, minimum counts, unsupported criteria, customer-supplied assessments, and the unavailable and not configured states.
 
-No Evaluator returns "not applicable" yet and no scoring path produces an unverified result yet, so those two rows of the table above are implemented and **not exercised by a test**. Both fall under the same rule as the tested states: anything other than an available metric with an authoritative value is not assessed.
+A value from [Foundry-managed scoring](../managed_scoring/readme.md) is an unverified result, and a sweep test shows that a criterion on it is not assessed.
+
+No Evaluator returns "not applicable" yet, so that row of the table above is implemented and **not exercised by a test**. It falls under the same rule as the tested states: anything other than an available metric with an authoritative value is not assessed.

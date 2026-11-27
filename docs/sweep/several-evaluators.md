@@ -108,6 +108,8 @@ The agent is asked for its confidence only after the Attempts of a set in which 
 
 `ConfiguredEvaluator(action_evidence=...)` is rejected for an Evaluator that does not use action evidence. The declaration would have no effect, and the sweep does not accept one silently.
 
+`ConfiguredEvaluator(scoring_path="foundry_managed")` has that Evaluator's calculation run in your Foundry project instead of in your own process: see [Foundry-managed scoring](../managed_scoring/readme.md). Where an Evaluator is scored does not change which Attempts it needs, so it shares Attempts as it otherwise would.
+
 ## What the scorecard shows
 
 Every configured metric says which Attempts its Evaluator used:

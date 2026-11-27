@@ -6,7 +6,10 @@ live project was observed to behave (docs/managed_scoring/readme.md, "Observed l
 
 - Registering an evaluator always adds a version, also when the same code is registered again.
   It needs the preview header.
-- A criterion that names a version runs that version. Without one it runs the newest.
+- The versions of an evaluator are listed newest first, ten to a page, with a link to the next page.
+- A criterion that names a version runs that version. Without one it runs the newest. An eval
+  whose criterion names an evaluator or a version the project does not hold is refused.
+- A run is queued, then in progress, then completed, failed or canceled.
 - The sandbox refuses a source that calls `compile`, `eval`, `exec`, `globals` or `__import__`,
   as a function or as a method, before it runs anything.
 - An evaluator that raises, or returns something other than a number, fails the whole run with
@@ -30,6 +33,8 @@ from reliability_evaluators.managed_scoring import FoundryRequestError
 from tests.managed_artifact import load_grader
 
 REFUSED_CALLS = {"compile", "eval", "exec", "globals", "__import__"}
+ENDPOINT = "https://fake.services.ai.azure.com/api/projects/fake"
+VERSIONS_PAGE = 10
 ALL_FAILED = "All examples failed due to invalid user input; please check the individual sample outputs for details."
 
 
@@ -63,11 +68,13 @@ class FakeFoundryProject:
         return self._register(name, {"name": name, "definition": {"type": "code", "code_text": code_text}})["version"]
 
     def request(self, method: str, path: str, body: Any = None, headers: dict[str, str] | None = None) -> Any:
+        # A link the project returned is requested as it is.
+        path = path.removeprefix(ENDPOINT)
         self.requests.append((method, path))
         if self._refuses is not None:
             raise self._refuses
         routes = (
-            ("GET", r"/evaluators/([^/]+)/versions\?api-version=v1", self._list_versions),
+            ("GET", r"/evaluators/([^/]+)/versions\?api-version=v1(?:&continuationToken=(\d+))?", self._list_versions),
             ("POST", r"/evaluators/([^/]+)/versions\?api-version=v1", self._register_with_preview),
             ("POST", r"/openai/v1/evals", self._create_eval),
             ("POST", r"/openai/v1/evals/([^/]+)/runs", self._create_run),
@@ -81,8 +88,16 @@ class FakeFoundryProject:
                 return copy.deepcopy(handler(*matched.groups(), body=body, headers=headers or {}))
         raise FoundryRequestError(method, path, 404, "")
 
-    def _list_versions(self, name, **_):
-        return {"value": list(reversed(self.evaluators.get(name, []))), "nextLink": ""}
+    def _list_versions(self, name, continuation, **_):
+        newest_first = list(reversed(self.evaluators.get(name, [])))
+        start = int(continuation or 0)
+        following = start + VERSIONS_PAGE
+        next_link = (
+            f"{ENDPOINT}/evaluators/{name}/versions?api-version=v1&continuationToken={following}"
+            if following < len(newest_first)
+            else ""
+        )
+        return {"value": newest_first[start:following], "nextLink": next_link}
 
     def _register_with_preview(self, name, *, body, headers):
         if headers.get("Foundry-Features") != "Evaluations=V1Preview":
@@ -104,6 +119,12 @@ class FakeFoundryProject:
         return versions[-1]
 
     def _create_eval(self, *, body, **_):
+        for criterion in body["testing_criteria"]:
+            held = [version["version"] for version in self.evaluators.get(criterion["evaluator_name"], [])]
+            if not held or criterion.get("evaluator_version", held[-1]) not in held:
+                raise FoundryRequestError(
+                    "POST", "/openai/v1/evals", 404, f"The evaluator {criterion['evaluator_name']} was not found."
+                )
         eval_id = f"eval_{len(self.evals) + 1}"
         criteria = [
             {**criterion, "evaluator_version": criterion.get("evaluator_version", ""), "data_mapping": {}}
@@ -121,7 +142,7 @@ class FakeFoundryProject:
             "eval_id": eval_id,
             "status": "failed" if error else "completed",
             "error": error,
-            "report_url": f"https://ai.azure.com/fake/{eval_id}/{run_id}",
+            "report_url": f"https://ai.azure.com/nextgen/r/encoded-subscription-identifier/{eval_id}/{run_id}",
             "result_counts": {"total": len(items)},
         }
         self._output_items[run_id] = items
