@@ -26,6 +26,7 @@ from reliability_evaluators.sweep import (
     NO_TASK_OUTCOME_YET,
     ActionEvidenceDeclaration,
     Condition,
+    ConfiguredEvaluator,
     Experiment,
     RecalculationFailed,
     Task,
@@ -784,3 +785,102 @@ def test_a_correction_in_an_experiment_keeps_what_every_attempt_records_about_it
         "verify_condition",
         "clean_up",
     ]
+
+
+DISTRIBUTIONAL = "distributional_trajectory_consistency"
+SEQUENTIAL = "sequential_trajectory_consistency"
+
+
+def sweep_with_an_evaluator_configured_on_its_own():
+    """One Task, attempted twice for each of two sources of action evidence.
+
+    Outcome consistency and sequential trajectory consistency are scored from the first two
+    Attempts, recorded from native tool calls: a success that reads then updates and a
+    failure that updates then reads. Outcome consistency: p = 1/2, value 0. Sequential: one
+    pair at distance 2 / 2 = 1, value 0.
+    Distributional trajectory consistency is configured with service-side effects, which
+    leave reading out, so two more Attempts are made for it. Both only update: value 1.
+
+    Returns the scorecard and the two declarations.
+    """
+    target = FakeActingAgentTarget(
+        {"close": ["success", "failure", "success", "success"]},
+        {"close": [["get_item", "update_item"], ["update_item", "get_item"], ["get_item", "update_item"], ["update_item"]]},
+    )
+
+    def item_is_done(attempt, response):
+        return TaskOutcome(success=target.service_state[attempt.attempt_id] == "done", source=SOURCE)
+
+    def every_call(attempt, response):
+        return [ActionEvent(**call) for call in target.service_log[attempt.attempt_id]]
+
+    def calls_that_change_an_item(attempt, response):
+        return [call for call in every_call(attempt, response) if call.tool_name != "get_item"]
+
+    native = ActionEvidenceDeclaration(evidence_source="native tool calls", record=every_call, action_types=ACTION_TYPES)
+    effects = ActionEvidenceDeclaration(
+        evidence_source="service-side effects", record=calls_that_change_an_item, action_types=ACTION_TYPES
+    )
+    scorecard = run_sweep(
+        tasks=[Task(task_id="close", prompt="Close the item.", success_rule=item_is_done, attempts=2)],
+        agent_target=target,
+        metrics=["outcome_consistency", SEQUENTIAL, ConfiguredEvaluator(metric_id=DISTRIBUTIONAL, action_evidence=effects)],
+        action_evidence=native,
+    )
+    return supplied(scorecard), native, effects
+
+
+def test_each_metric_is_recalculated_from_the_attempts_and_with_the_declaration_its_evaluator_had():
+    # The failure among the first two Attempts is corrected to a success: p = 2/2, value 1.
+    earlier, native, effects = sweep_with_an_evaluator_configured_on_its_own()
+    assert [metric(earlier, metric_id)["value"] for metric_id in ("outcome_consistency", SEQUENTIAL, DISTRIBUTIONAL)] == [0, 0, 1]
+
+    recalculated = recalculate(
+        earlier_scorecard=earlier,
+        outcome_corrections=[corrected("close/attempt-2", success=True)],
+        metrics=[ConfiguredEvaluator(metric_id=DISTRIBUTIONAL, action_evidence=effects)],
+        action_evidence=native,
+    )
+
+    assert metric(recalculated, "outcome_consistency")["value"] == 1
+    assert metric(recalculated, "outcome_consistency")["attempts_used"]["attempt_ids"] == [
+        "close/attempt-1",
+        "close/attempt-2",
+    ]
+    assert metric(recalculated, SEQUENTIAL) == metric(earlier, SEQUENTIAL)
+    assert metric(recalculated, DISTRIBUTIONAL) == metric(earlier, DISTRIBUTIONAL)
+    assert metric(recalculated, DISTRIBUTIONAL)["attempts_used"] == {
+        "attempt_ids": ["close/set-2/attempt-1", "close/set-2/attempt-2"],
+        "shared_with": [],
+    }
+    assert attempt(recalculated, "close/set-2/attempt-2") == attempt(earlier, "close/set-2/attempt-2")
+
+
+def test_an_evaluator_that_is_not_given_the_declaration_it_was_configured_with_fails_the_recalculation():
+    earlier, native, effects = sweep_with_an_evaluator_configured_on_its_own()
+
+    with pytest.raises(RecalculationFailed, match=f"it does not reproduce the earlier result of '{DISTRIBUTIONAL}'"):
+        recalculate(
+            earlier_scorecard=earlier,
+            outcome_corrections=[corrected("close/attempt-2", success=True)],
+            action_evidence=native,
+        )
+
+
+@pytest.mark.parametrize(
+    ("metrics", "problem"),
+    [
+        (["brier_based_score"], "'brier_based_score' was not scored in the earlier scorecard"),
+        (["outcome_consistency", "outcome_consistency"], "'outcome_consistency' is selected more than once"),
+        (["overall_reliability"], "'overall_reliability' was not scored in the earlier scorecard"),
+    ],
+)
+def test_a_recalculation_scores_the_metrics_of_the_earlier_scorecard_and_no_other(metrics, problem):
+    earlier = sweep({"close": HALF})
+
+    with pytest.raises(RecalculationFailed, match=problem):
+        recalculate(
+            earlier_scorecard=earlier,
+            outcome_corrections=[corrected("close/attempt-3", success=True)],
+            metrics=metrics,
+        )
