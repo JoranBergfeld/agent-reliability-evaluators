@@ -1232,7 +1232,7 @@ def test_a_recalculated_scorecard_is_delivered_to_a_location_of_its_own_and_the_
     # The customer supplies the earlier scorecard from where their platform kept it.
     sweep({"close": HALF}, artifact_dir=tmp_path / "run")
     kept = {file.name: file.read_bytes() for file in (tmp_path / "run").iterdir()}
-    assert sorted(kept) == ["evidence.json", "report.html", "scorecard.json"]
+    assert sorted(kept) == ["evidence.json", "report.html", "scorecard.json", "summary.md"]
     earlier = json.loads(kept["scorecard.json"])
 
     recalculated = recalculate(

@@ -13,10 +13,13 @@ from typing import Any, Callable
 
 from .assemble import SCHEMA_VERSION, ScorecardStatus, to_json
 from .report import render_report
+from .summary import render_summary
 
 EVIDENCE_FILE = "evidence.json"
 SCORECARD_FILE = "scorecard.json"
 REPORT_FILE = "report.html"
+# The text for the customer's pipeline to publish as its job summary.
+SUMMARY_FILE = "summary.md"
 REPORTING_FAILURE_FILE = "reporting-failure.json"
 
 
@@ -43,7 +46,7 @@ class ReportingFailure(Exception):
 
 
 class ArtifactLocation:
-    """A directory that receives `evidence.json`, `scorecard.json` and `report.html`.
+    """A directory that receives `evidence.json`, `scorecard.json`, `report.html` and `summary.md`.
 
     Opening it removes those files, and the record of a reporting failure, when an earlier
     run left them there: what the location holds afterwards is from this run. A reporting
@@ -55,7 +58,7 @@ class ArtifactLocation:
         self._retained: list[str] = []
         try:
             self._directory.mkdir(parents=True, exist_ok=True)
-            for name in (EVIDENCE_FILE, SCORECARD_FILE, REPORT_FILE, REPORTING_FAILURE_FILE):
+            for name in (EVIDENCE_FILE, SCORECARD_FILE, REPORT_FILE, SUMMARY_FILE, REPORTING_FAILURE_FILE):
                 (self._directory / name).unlink(missing_ok=True)
         except OSError as error:
             raise ReportingFailure(
@@ -64,7 +67,7 @@ class ArtifactLocation:
             ) from error
 
     def deliver(self, scorecard: dict[str, Any]) -> None:
-        """Write the evidence, then the scorecard, then the report rendered from it.
+        """Write the evidence, then the scorecard, then the report and the CI job summary rendered from it.
 
         The first one that cannot be produced or written is a ReportingFailure, and what
         comes after it is not written.
@@ -73,6 +76,7 @@ class ArtifactLocation:
             (EVIDENCE_FILE, lambda: _evidence_json(scorecard["attempts"])),
             (SCORECARD_FILE, lambda: to_json(scorecard)),
             (REPORT_FILE, lambda: render_report(scorecard)),
+            (SUMMARY_FILE, lambda: render_summary(scorecard)),
         )
         for name, produce in artifacts:
             try:

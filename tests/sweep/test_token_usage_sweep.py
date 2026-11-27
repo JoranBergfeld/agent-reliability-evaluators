@@ -10,7 +10,7 @@ import pytest
 
 from reliability_evaluators.agent_target import AgentResponse, ConfidenceResponse, InvocationFailed
 from reliability_evaluators.evidence import ActionEvent, OutcomeCorrection, TaskOutcome
-from reliability_evaluators.scorecard import AcceptanceCriterion, PreparationUsage, to_json
+from reliability_evaluators.scorecard import AcceptanceCriterion, PreparationUsage, render_report, to_json
 from reliability_evaluators.sweep import (
     ActionEvidenceDeclaration,
     Condition,
@@ -32,6 +32,7 @@ from tests.fakes import (
     taking,
     todo_list,
 )
+from tests.report_reader import assert_faithful_rendering
 
 SOURCE = "final state of the fake service"
 OUTCOME = "outcome_consistency"
@@ -660,3 +661,23 @@ def test_usage_that_the_supplied_evidence_does_not_give_fails_the_recalculation(
 
     with pytest.raises(RecalculationFailed, match="does not reproduce the earlier 'token_usage'"):
         recalculate(earlier_scorecard=earlier, outcome_corrections=[correction])
+
+
+def test_the_report_shows_token_usage_in_a_section_of_its_own_and_not_among_the_metrics():
+    # 790 tokens for the first Attempt. The second reported nothing: the sweep total is a partial sum.
+    scorecard = sweep({"close": ["success", "success"]}, invocations={"close/attempt-1": reported(790, "resp_1")})
+
+    report = assert_faithful_rendering(render_report(scorecard), scorecard)
+
+    assert report.value("/token_usage/sweep/coverage") == "partial"
+    assert report.value("/token_usage/sweep/total_tokens") == "790"
+    assert report.value("/token_usage/attempts/1/invocation/reason") == (
+        "the agent target recorded nothing of the invocation"
+    )
+    shown_in = report.inside["/token_usage/sweep/total_tokens"]
+    assert shown_in == ["token-usage"]
+    assert "It is not a reliability metric" in report.wording
+    assert "never counted as zero" in report.wording
+    # No metric shows usage, and an Attempt in the usage links to its attempt-level evidence.
+    assert all("token" not in wording.lower() for wording in report.article_wording.values())
+    assert report.links["/token_usage/attempts/1/attempt_id"] == "#attempt-1"
