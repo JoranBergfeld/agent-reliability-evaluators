@@ -13,6 +13,7 @@ SEED = {
     "unrelated": {"id": "unrelated", "title": "Synthetic unrelated", "done": False},
 }
 TOOLS = {"POST": "create", "GET": "read", "PATCH": "update", "DELETE": "delete"}
+READ_PRESENTATIONS = ("direct", "wrapped")
 
 
 def make_server(host, port, api_key, admin_key):
@@ -61,6 +62,8 @@ def make_server(host, port, api_key, admin_key):
                 attempts[attempt_id] = {
                     "attempt_id": attempt_id,
                     "failing_tool": None,
+                    "read_presentation": "direct",
+                    "note_on_target": None,
                     "before": copy.deepcopy(SEED),
                     "after": copy.deepcopy(SEED),
                     "events": [],
@@ -71,7 +74,14 @@ def make_server(host, port, api_key, admin_key):
             if self.command == "PATCH":
                 if body.get("failing_tool") not in (None, *TOOLS.values()):
                     return 400, {"error": "failing_tool must be create, read, update, delete or null"}
-                attempts[attempt_id]["failing_tool"] = body.get("failing_tool")
+                if body.get("read_presentation", "direct") not in READ_PRESENTATIONS:
+                    return 400, {"error": "read_presentation must be direct or wrapped"}
+                if not isinstance(body.get("note_on_target"), (str, type(None))):
+                    return 400, {"error": "note_on_target must be text or null"}
+                # Only the settings that are named change.
+                for setting in ("failing_tool", "read_presentation", "note_on_target"):
+                    if setting in body:
+                        attempts[attempt_id][setting] = body[setting]
             elif self.command == "DELETE":
                 return 200, attempts.pop(attempt_id)
             return 200, attempts[attempt_id]
@@ -108,12 +118,22 @@ def make_server(host, port, api_key, admin_key):
                     status, result = 200, todos[todo_id]
             else:
                 status, result = 200, todos.pop(todo_id)
+            # What is returned. Only a successful read is presented differently: the item is the same.
+            response = copy.deepcopy(result)
+            read = tool == "read" and status == 200
+            note_presented = read and todo_id == "target" and attempt["note_on_target"] is not None
+            if note_presented:
+                response["note"] = attempt["note_on_target"]
+            wrapped = read and attempt["read_presentation"] == "wrapped"
+            if wrapped:
+                response = {"todo": response}
             attempt["events"].append({
                 "sequence": len(attempt["events"]) + 1, "tool": tool, "todo_id": todo_id,
                 "arguments": body, "status": status, "result": copy.deepcopy(result),
-                "fault_injected": fault,
+                "fault_injected": fault, "response": copy.deepcopy(response),
+                "wrapped": wrapped, "note_presented": note_presented,
             })
-            return status, result
+            return status, response
 
         do_GET = do_PUT = do_POST = do_PATCH = do_DELETE = handle_request
 
