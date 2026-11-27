@@ -90,12 +90,12 @@ Development tooling is managed with [uv](https://docs.astral.sh/uv/). Customers 
 | Default test run | `uv run pytest` |
 | Opt-in live Foundry checks | `uv run pytest -m live` |
 
-The default test run excludes tests marked `live`. Live checks need a disposable Foundry project and incur charges. None exists yet.
+The default test run excludes tests marked `live`. Live checks create billable Azure resources: they stand up the disposable fixture in [`live_fixture/`](live_fixture/README.md) (a to-do service, a Foundry prompt agent and a Foundry hosted agent) and tear it down again. The only live check so far verifies that fixture itself.
 
 Tests are written at three seams only:
 
 - **Evaluator seam** (`tests/evaluators/`): an Evaluator's public interface, called with grouped Attempt evidence.
 - **Evaluator sweep seam** (`tests/sweep/`): `run_sweep` with the fake agent targets and the fake customer controls in `tests/fakes.py`, asserting on the machine-readable scorecard only. The human-readable report is tested only as a rendering of that scorecard: `tests/report_reader.py` reads a report back and compares it with the scorecard value by value. Delivery and reporting failure are asserted on what the caller finds in the directory it chose and on the failure it is given.
-- **Live Foundry verification**: opt-in, marked `live`.
+- **Live Foundry verification**: opt-in, marked `live`. The fixture these checks run on is test infrastructure, so it is also checked without Azure in `tests/fixture/`: its to-do service and its task-success rule run on the local machine, through the interface the live checks use.
 
 Expected values are calculated by hand, never by the code under test.
