@@ -29,6 +29,7 @@ from .experiment import (
     VariationKind,
     json_data,
 )
+from .platform_evidence import PlatformEvidence
 from .grouping import TaskEvidence, group_by_task, require_unambiguous
 
 __all__ = [
@@ -47,6 +48,7 @@ __all__ = [
     "LifecycleStep",
     "ObservedCondition",
     "OperationalConstraint",
+    "PlatformEvidence",
     "ResourceMeasurement",
     "ResourceType",
     "SeverityLevel",

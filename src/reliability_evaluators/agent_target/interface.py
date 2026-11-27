@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol
 
-from ..evidence import ResourceMeasurement
+from ..evidence import PlatformEvidence, ResourceMeasurement
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -23,10 +23,28 @@ class AgentResponse:
 
     `resource_measurements` is what the agent target measured of the Attempt's resource
     use, such as its tool-call count. A measurement it could not make is left out.
+
+    `platform_evidence` is what the platform returned about the invocation: its
+    identifiers, its token usage and the tool calls it exposed. The sweep keeps it on the
+    Attempt. None means the agent target captured nothing.
     """
 
     output: str
     resource_measurements: tuple[ResourceMeasurement, ...] = ()
+    platform_evidence: PlatformEvidence | None = None
+
+
+class InvocationError(Exception):
+    """An invocation that failed, with what the platform returned about it.
+
+    An agent target raises it instead of any other exception when the platform returned
+    something about the failed invocation, such as the identity of the request. The sweep
+    keeps that on the Attempt, whose execution failed. The Attempt has no task outcome.
+    """
+
+    def __init__(self, message: str, *, platform_evidence: PlatformEvidence | None = None):
+        super().__init__(message)
+        self.platform_evidence = platform_evidence
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -67,7 +85,8 @@ class ConfidenceResponse:
 
 
 class AgentTarget(Protocol):
-    """An agent the sweep can invoke. An invocation that fails raises.
+    """An agent the sweep can invoke. An invocation that fails raises, an InvocationError
+    when the platform returned something about it.
 
     `isolated_follow_up` is the target's declaration of whether `elicit_confidence` can be
     answered in isolation. A target that does not support it need not implement

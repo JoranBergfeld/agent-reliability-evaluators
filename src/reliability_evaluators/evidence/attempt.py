@@ -11,6 +11,7 @@ from .actions import ActionEvidence
 from .confidence import ConfidenceRating, ConfidenceUnavailable
 from .errors import EvidenceError
 from .experiment import Condition, ConditionRole, LifecycleStep, ObservedCondition, StartingStatePolicy
+from .platform_evidence import PlatformEvidence
 
 
 def _require_text(owner: str, **fields: Any) -> None:
@@ -245,6 +246,9 @@ class Attempt:
     action_evidence: ActionEvidence | None = None
     # At most one measurement per resource type.
     resource_measurements: tuple[ResourceMeasurement, ...] = ()
+    # What the platform returned about the invocation: its identifiers, token usage and tool calls.
+    # None means the agent target captured nothing, also when the agent was not invoked.
+    platform_evidence: PlatformEvidence | None = None
     # None when the agent was not asked for a confidence rating for this Attempt.
     confidence: ConfidenceRating | ConfidenceUnavailable | None = None
     # The operational constraints that apply to this Attempt, and the assessments made of them.
@@ -280,6 +284,10 @@ class Attempt:
                 f"action evidence is an ActionEvidence with its source. Got {self.action_evidence!r}"
             )
         self._require_one_measurement_per_resource_type()
+        if self.platform_evidence is not None and not isinstance(self.platform_evidence, PlatformEvidence):
+            raise EvidenceError(
+                f"platform evidence is a PlatformEvidence with its source. Got {self.platform_evidence!r}"
+            )
         confidence = self.confidence
         if confidence is not None and not isinstance(confidence, (ConfidenceRating, ConfidenceUnavailable)):
             raise EvidenceError(
@@ -379,6 +387,7 @@ class Attempt:
             "task_outcome": None if self.task_outcome is None else self.task_outcome.to_dict(),
             "action_evidence": None if self.action_evidence is None else self.action_evidence.to_dict(),
             "resource_measurements": [measurement.to_dict() for measurement in self.resource_measurements],
+            "platform_evidence": None if self.platform_evidence is None else self.platform_evidence.to_dict(),
             "confidence": None if self.confidence is None else self.confidence.to_dict(),
             "operational_constraints": [constraint.to_dict() for constraint in self.operational_constraints],
             "violation_assessments": [assessment.to_dict() for assessment in self.violation_assessments],

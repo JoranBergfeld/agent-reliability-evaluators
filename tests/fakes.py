@@ -41,6 +41,10 @@ class FakeAgentTarget:
     is an elapsed time the agent reports itself. An Attempt with no entry takes no time
     and reports nothing.
 
+    `platform_evidence` gives, by Attempt identity, what the platform returned about the
+    invocation. The agent returns it with its response. Without it the agent returns none.
+    `invocation_errors` gives, by Attempt identity, the error an "error" Attempt fails with.
+
     `confidence` gives the agent's answer to the confidence request, by Attempt identity.
     An answer is one of:
 
@@ -62,6 +66,8 @@ class FakeAgentTarget:
         resources: dict[str, list[dict]] | None = None,
         *,
         confidence: dict[str, object] | None = None,
+        platform_evidence: dict[str, object] | None = None,
+        invocation_errors: dict[str, Exception] | None = None,
         isolated_follow_up: IsolatedFollowUp | None = IsolatedFollowUp(supported=True),
         output: str = "Done.",
     ):
@@ -69,6 +75,8 @@ class FakeAgentTarget:
         self._resources = {task_id: list(used) for task_id, used in (resources or {}).items()}
         self._now = 0.0
         self._confidence = dict(confidence or {})
+        self._platform_evidence = dict(platform_evidence or {})
+        self._invocation_errors = dict(invocation_errors or {})
         self._output = output
         if isolated_follow_up is not None:
             self.isolated_follow_up = isolated_follow_up
@@ -84,7 +92,9 @@ class FakeAgentTarget:
         used = scripted.pop(0) if scripted else {}
         self._now += used.get("seconds", 0.0)
         if behaviour == "error":
-            raise ConnectionError("the agent endpoint returned 503")
+            raise self._invocation_errors.get(
+                request.attempt_id, ConnectionError("the agent endpoint returned 503")
+            )
         self.service_state[request.attempt_id] = "done" if behaviour == "success" else "open"
         self.unrelated_item[request.attempt_id] = "deleted" if side_effect == "deletes unrelated" else "unchanged"
         measurements = []
@@ -103,7 +113,11 @@ class FakeAgentTarget:
                     resource_type="tool_calls", value=used["tool_calls"], unit="calls", boundary=TOOL_CALL_BOUNDARY
                 )
             )
-        return AgentResponse(output=self._output, resource_measurements=tuple(measurements))
+        return AgentResponse(
+            output=self._output,
+            resource_measurements=tuple(measurements),
+            platform_evidence=self._platform_evidence.get(request.attempt_id),
+        )
 
     def elicit_confidence(self, request: ConfidenceRequest) -> ConfidenceResponse:
         attempt_id = request.attempt.attempt_id
