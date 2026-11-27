@@ -1,8 +1,10 @@
 """The human-readable report: one self-contained HTML rendering of the machine-readable scorecard.
 
-The report is generic on purpose. It knows that a scorecard lists `metrics` and `attempts`,
-and it describes the four metric states. Every other field is laid out by its shape, so a
-field or a state that the scorecard gains is shown without a change here.
+The report is generic on purpose. It knows that a scorecard lists `metrics` and `attempts`
+and says in `status` and `missing` whether it is complete. It describes the four metric
+states, the execution failure that leaves a metric without one, and the scorecard statuses.
+Every other field is laid out by its shape, so a field or a state that the scorecard gains
+is shown without a change here.
 """
 
 from __future__ import annotations
@@ -24,6 +26,18 @@ _STATES = {
     "not_configured": "Not configured: the metric was not selected, so it was not measured.",
 }
 _UNDESCRIBED_STATE = "This report has no description of this state. It is shown as the scorecard records it."
+# A metric that records no state and an execution failure instead has no result.
+_EXECUTION_FAILURE = (
+    "Execution failure: this metric has no result, because the Attempts that supply its evidence were cut "
+    "short. Nothing was measured, and no Task failed because of it."
+)
+
+_STATUSES = {
+    "complete": "Complete: every planned Attempt completed and every selected metric has a result.",
+    "partial": "Partial: something that was planned is not in this scorecard. What is missing, and why, "
+    "is listed under missing. The metrics that could still be calculated are shown.",
+}
+_UNDESCRIBED_STATUS = "This report has no description of this status. It is shown as the scorecard records it."
 
 _IDENTIFIER = re.compile(r"[a-z][a-z0-9_]{0,39}")
 
@@ -60,9 +74,15 @@ class _Report:
 
     def page(self) -> str:
         summary = {key: value for key, value in self._scorecard.items() if not _is_filled(value)}
+        status = ""
+        if "status" in summary:
+            recorded = summary.pop("status")
+            description = _STATUSES.get(recorded, _UNDESCRIBED_STATUS) if isinstance(recorded, str) else ""
+            status = f'<p class="status">{self._value(recorded, _child("", "status"))} {escape(description)}</p>'
         sections = [self._section(key, value) for key, value in self._scorecard.items() if _is_filled(value)]
         return _PAGE.format(
             style=_STYLE,
+            status=status,
             summary=self._fields(summary, "") if summary else "",
             sections="\n".join(sections),
         )
@@ -79,6 +99,11 @@ class _Report:
                 self._attempt(entry, _child(pointer, position), position) for position, entry in enumerate(value)
             )
             return f'<section id="attempts">\n<h2>Attempt-level evidence</h2>\n{_ATTEMPTS_NOTE}\n{attempts}\n</section>'
+        if key == "missing" and _is_records(value):
+            return (
+                f'<section id="missing">\n<h2 data-key="missing">missing</h2>\n{_MISSING_NOTE}\n'
+                f"{self._render(value, pointer)}\n</section>"
+            )
         return f'<section>\n<h2 data-key="{escape(key)}">{escape(key)}</h2>\n{self._render(value, pointer)}\n</section>'
 
     def _metric(self, entry: dict[str, Any], pointer: str, position: int) -> str:
@@ -88,8 +113,12 @@ class _Report:
         if "state" in promoted:
             recorded = entry["state"]
             described = isinstance(recorded, str) and recorded in _STATES
-            css += f" state-{recorded}" if described else " state-other"
-            description = _STATES[recorded] if described else _UNDESCRIBED_STATE
+            if recorded is None and _is_filled(entry.get("execution_failure"), dict):
+                css += " execution-failure"
+                description = _EXECUTION_FAILURE
+            else:
+                css += f" state-{recorded}" if described else " state-other"
+                description = _STATES[recorded] if described else _UNDESCRIBED_STATE
             state = f'<p class="state">{self._value(recorded, _child(pointer, "state"))} {escape(description)}</p>'
         rest = {key: value for key, value in entry.items() if key not in promoted}
         fields = self._fields(rest, pointer, css="fields of-metric") if rest else ""
@@ -193,6 +222,12 @@ _METRICS_NOTE = (
     "excluded is evidence that exists and was deliberately not used.</p>"
 )
 
+_MISSING_NOTE = (
+    '<p class="note">What was planned and is not in this scorecard, and why. Planned Attempts that were not made '
+    "do not appear as Attempts. A planned Attempt that was made and did not complete is named here with how its "
+    "execution ended, and is not a failed Task.</p>"
+)
+
 _ATTEMPTS_NOTE = (
     '<p class="note">The scorecard\'s evidence for each Attempt. The execution status says how the running of an '
     "Attempt ended. It is not the task outcome: an Attempt that did not complete has no task outcome and is not "
@@ -238,9 +273,15 @@ color:var(--alert);font-weight:600}
 .state-not_configured h3{color:var(--muted)}
 .state-not_configured .state .v{border:2px dotted var(--muted);color:var(--muted)}
 .of-metric>tbody>tr>th[data-key=value]+td>.v{font-size:1.75rem;font-weight:600}
-[data-scorecard$="/execution_status"]{padding:0 .5rem;border:1px solid var(--alert);border-radius:1rem;
-color:var(--alert)}
-.is-completed[data-scorecard$="/execution_status"]{border-color:var(--line);color:inherit}
+.execution-failure .state .v{border:2px solid var(--alert);background:var(--alert);color:var(--page)}
+[data-scorecard$="/execution_status"],[data-scorecard$="/execution/status"]{padding:0 .5rem;
+border:1px solid var(--alert);border-radius:1rem;color:var(--alert)}
+.is-completed[data-scorecard$="/execution_status"],.is-completed[data-scorecard$="/execution/status"]{
+border-color:var(--line);color:inherit}
+.status .v{display:inline-block;margin-right:.4rem;padding:0 .6rem;border:2px double var(--alert);
+border-radius:1rem;color:var(--alert);font-weight:600}
+.status .is-complete{border:2px solid var(--ok);color:var(--ok)}
+.status .is-partial{border:2px solid var(--warn);background:var(--warn);color:var(--page)}
 """
 
 _PAGE = """<!doctype html>
@@ -256,6 +297,7 @@ _PAGE = """<!doctype html>
 <h1>Reliability scorecard</h1>
 <p>Each reliability metric is reported on its own. There is no combined score and no built-in threshold. \
 A higher value is not always better: read the interpretation of each metric.</p>
+{status}
 {summary}
 </header>
 <main>

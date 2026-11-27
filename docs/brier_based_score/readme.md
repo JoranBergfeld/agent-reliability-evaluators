@@ -185,7 +185,8 @@ The rating says how likely the agent thinks the task **succeeded**. It is not ho
 | The agent target has no `isolated_follow_up` declaration | `the agent target does not declare whether it supports an isolated follow-up` |
 | The agent target declares `IsolatedFollowUp(supported=False, reason=...)` | `the agent target does not support an isolated follow-up`, followed by the target's reason |
 | The Task has no `shareable_success_rule` | `the Task's success rule cannot be shared with the agent` |
-| The Attempt did not complete | `the Attempt did not complete, so no confidence request was sent` |
+| The Attempt did not complete, which includes one that timed out, answered after its time limit or was cancelled | `the Attempt did not complete, so no confidence request was sent` |
+| The sweep was cancelled while the Attempt was in flight, and the Attempt completed | `the sweep was cancelled, so no confidence request was sent` |
 | No selected metric uses confidence | nothing: `confidence` is `null` |
 
 Isolated means two things: the agent answers in the conversation of that one completed Attempt, and it cannot take any action while it answers. A target that cannot ensure both must declare `supported=False`. There is no fallback. A rating that the agent wrote inside its task response is never read.
