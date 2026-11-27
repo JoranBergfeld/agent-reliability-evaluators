@@ -29,6 +29,11 @@ import pytest
 
 from live_fixture import teardown
 from live_fixture.project_only import connect_project, provision_project
+from reliability_evaluators.evaluators import outcome_consistency
+from reliability_evaluators.managed_scoring import FoundryManagedScoring, FoundryProject, azure_cli_token, derive_artifact
+from reliability_evaluators.managed_scoring.grader import decode_result, result_parts
+from reliability_evaluators.scorecard import AcceptanceCriterion
+from tests.live.test_managed_outcome_consistency import sweep_on_the_fixture, synthetic_evidence
 
 pytestmark = pytest.mark.live
 
@@ -142,6 +147,37 @@ def live():
 
 
 @pytest.fixture(scope="module")
+def scoring(live):
+    """Managed scoring as a customer sets it up: the project endpoint and the Azure CLI's identity."""
+    return FoundryManagedScoring(project=FoundryProject(live.project_endpoint, token=azure_cli_token))
+
+
+def evaluation(live, name, evaluator_name, evaluator_version, fields):
+    """Make an evaluation that runs exactly one version of one evaluator on items with the given text fields."""
+    return live.project_request(
+        "POST",
+        "/openai/v1/evals",
+        {
+            "name": f"Reliability Evaluators live check: {name}",
+            "data_source_config": {
+                "type": "custom",
+                "item_schema": {"type": "object", "properties": {field: {"type": "string"} for field in fields}},
+                "include_sample_schema": True,
+            },
+            "testing_criteria": [
+                {
+                    "type": "azure_ai_evaluator",
+                    "name": "probe",
+                    "evaluator_name": evaluator_name,
+                    "evaluator_version": evaluator_version,
+                    "initialization_parameters": {},
+                }
+            ],
+        },
+    )["id"]
+
+
+@pytest.fixture(scope="module")
 def probe_eval(live):
     """Register the probe evaluator, and make an evaluation that runs exactly that version."""
     properties = {"compute": {"type": "string"}, "channel": {"type": "string"}}
@@ -170,37 +206,18 @@ def probe_eval(live):
         },
         {"Foundry-Features": "Evaluations=V1Preview"},
     )
-    return live.project_request(
-        "POST",
-        "/openai/v1/evals",
-        {
-            "name": "Reliability Evaluators live check: fidelity probe",
-            "data_source_config": {
-                "type": "custom",
-                "item_schema": {"type": "object", "properties": properties},
-                "include_sample_schema": True,
-            },
-            "testing_criteria": [
-                {
-                    "type": "azure_ai_evaluator",
-                    "name": "probe",
-                    "evaluator_name": PROBE_EVALUATOR,
-                    "evaluator_version": str(created["version"]),
-                    "initialization_parameters": {},
-                }
-            ],
-        },
-    )["id"]
+    return evaluation(live, "fidelity probe", PROBE_EVALUATOR, str(created["version"]), properties)
 
 
 def returned_scores(live, eval_id, rows):
-    """What the project returns as the score of each row, as the JSON of its answer reads.
+    """What the project returns as the score of each row, as the JSON of its answer reads, and how many rows it took.
 
     The rows go in runs that are all started before the first is waited for. A row that the
     project did not grade is asked for again, as the sweep does.
     """
     scores = {}
     asked = list(range(len(rows)))
+    submitted = 0
     for _ in range(TIMES_ASKED):
         runs = []
         for start in range(0, len(asked), ROWS_IN_A_RUN):
@@ -217,6 +234,7 @@ def returned_scores(live, eval_id, rows):
                 },
             )
             runs.append((run["id"], batch))
+            submitted += len(batch)
         for run_id, batch in runs:
             path = f"/openai/v1/evals/{eval_id}/runs/{run_id}"
             deadline = time.monotonic() + 3600
@@ -241,7 +259,7 @@ def returned_scores(live, eval_id, rows):
         if not asked:
             break
     assert not asked, f"{len(asked)} rows were not graded in {TIMES_ASKED} runs"
-    return [scores[row] for row in range(len(rows))]
+    return [scores[row] for row in range(len(rows))], submitted - len(rows)
 
 
 def as_bytes(double):
@@ -254,7 +272,7 @@ def test_a_double_computed_in_the_evaluator_is_the_double_received_on_both_chann
     rows = [{"compute": compute, "channel": channel} for compute in cases for channel in channels]
     started = time.monotonic()
 
-    scores = returned_scores(live, probe_eval, rows)
+    scores, asked_again = returned_scores(live, probe_eval, rows)
 
     returned = {(row["compute"], row["channel"]): score for row, score in zip(rows, scores)}
     # The encoded channel: two whole numbers that are the bytes of the double the evaluator computed.
@@ -278,6 +296,7 @@ def test_a_double_computed_in_the_evaluator_is_the_double_received_on_both_chann
     print(json.dumps({"seconds": round(time.monotonic() - started), "fidelity_probe": {
         "doubles": len(cases),
         "rows": len(rows),
+        "rows_asked_for_again": asked_again,
         "encoded_channel_altered": encoded_parts_altered,
         "numeric_channel_other_bits": numeric_differs,
         "numeric_channel_other_number": numeric_unequal,
@@ -299,7 +318,90 @@ def test_a_double_computed_in_the_evaluator_is_the_double_received_on_both_chann
 def test_whole_numbers_of_up_to_six_bytes_come_back_unchanged(live, probe_eval):
     rows = [{"compute": f"whole:{number}", "channel": "numeric"} for number in WHOLE_NUMBERS]
 
-    scores = returned_scores(live, probe_eval, rows)
+    scores, _ = returned_scores(live, probe_eval, rows)
 
     print(json.dumps({"whole_numbers": {str(number): json.dumps(score) for number, score in zip(WHOLE_NUMBERS, scores)}}))
     assert [(score, float(score).is_integer()) for score in scores] == [(number, True) for number in WHOLE_NUMBERS]
+
+
+def successes(succeeded, attempts):
+    return [True] * succeeded + [False] * (attempts - succeeded)
+
+
+# Evidence whose outcome consistency is a long decimal, with the value calculated by hand as a fraction.
+# A Task with s successes in n Attempts has the value (2s - n)^2 / n^2, and the metric is the mean over the Tasks.
+LONG_DECIMALS = {
+    "2 of 3": ({"a": successes(2, 3)}, 1 / 9),
+    "5 of 7": ({"a": successes(5, 7)}, 9 / 49),
+    "7 of 9": ({"a": successes(7, 9)}, 25 / 81),
+    "9 of 11": ({"a": successes(9, 11)}, 49 / 121),
+    "7 of 13": ({"a": successes(7, 13)}, 1 / 169),
+    # (1/9 + 9/49) / 2 = 130/882 = 65/441.
+    "2 of 3 and 5 of 7": ({"a": successes(2, 3), "b": successes(5, 7)}, 65 / 441),
+    # (1/9 + 9/49 + 9/25) / 3 = (1225 + 2025 + 3969) / 11025 / 3 = 7219/33075.
+    "2 of 3, 5 of 7 and 4 of 5": ({"a": successes(2, 3), "b": successes(5, 7), "c": successes(4, 5)}, 7219 / 33075),
+    # (9/25 + 1) / 2 = 0.68, which came back as 0.6799999999999999 in the earlier checks.
+    "4 of 5 and 0 of 3": ({"a": successes(4, 5), "b": successes(0, 3)}, 0.68),
+}
+
+
+def test_the_plain_value_of_the_derived_evaluator_is_the_value_in_its_encoded_result(live, scoring):
+    artifact = derive_artifact("outcome_consistency")
+    version = scoring.register(["outcome_consistency"])["outcome_consistency"].version
+    eval_id = evaluation(
+        live, "plain and encoded value", artifact.evaluator_name, version, (artifact.evidence_field, "result_part")
+    )
+    evidence = {name: artifact.item(synthetic_evidence(outcomes)) for name, (outcomes, _) in LONG_DECIMALS.items()}
+    started = time.monotonic()
+
+    def asked(rows):
+        scores, _ = returned_scores(live, eval_id, [{**evidence[name], "result_part": part} for name, part in rows])
+        return dict(zip(rows, scores))
+
+    plain = asked([(name, part) for name in evidence for part in ("value", "size")])
+    part_rows = [(name, str(number)) for name in evidence for number in range(1, result_parts(plain[name, "size"]) + 1)]
+    parts = asked(part_rows)
+
+    encoded = {
+        name: decode_result(
+            outcome_consistency.DEFINITION,
+            evidence[name][artifact.evidence_field],
+            plain[name, "size"],
+            [parts[row] for row in part_rows if row[0] == name],
+        )
+        for name in evidence
+    }
+    print(json.dumps({"seconds": round(time.monotonic() - started), "plain_and_encoded": {
+        name: {"plain": repr(plain[name, "value"]), "encoded": repr(encoded[name].value), "parts": result_parts(plain[name, "size"])}
+        for name in evidence
+    }}))
+    for name, (_, by_hand) in LONG_DECIMALS.items():
+        assert encoded[name].value == pytest.approx(by_hand, abs=1e-12), name
+        # Exactly the same number on both channels: nothing is compared to a tolerance.
+        assert plain[name, "value"] == encoded[name].value, name
+
+
+def test_an_authoritative_value_from_the_live_project_supports_an_acceptance_verdict(live, scoring, monkeypatch):
+    # close: 2 of 3, 1/9. archive: 5 of 7, 9/49. reopen: 4 of 5, 9/25. Outcome consistency: 7219/33075, about 0.2183.
+    script = {
+        "close": ["success"] * 2 + ["failure"],
+        "archive": ["success"] * 5 + ["failure"] * 2,
+        "reopen": ["success"] * 4 + ["failure"],
+    }
+    criterion = AcceptanceCriterion(metric_id="outcome_consistency", condition={"value": {"at_most": 0.25}})
+
+    scorecard = sweep_on_the_fixture(script, scoring, monkeypatch, acceptance_criteria=[criterion])
+
+    (entry,) = [entry for entry in scorecard["metrics"] if entry["metric_id"] == "outcome_consistency"]
+    print(json.dumps({"authoritative_value": {
+        key: entry[key] for key in ("state", "value", "scoring_path", "fidelity", "acceptance")
+    }, "fidelity_check": {key: entry["managed_scoring"]["fidelity_check"][key] for key in ("outcome", "plain_value", "encoded_value")}}))
+    assert entry["value"] == pytest.approx(7219 / 33075, abs=1e-12)
+    assert (entry["scoring_path"], entry["fidelity"]) == ("foundry_managed", "authoritative")
+    check = entry["managed_scoring"]["fidelity_check"]
+    assert (check["outcome"], check["plain_value"], check["encoded_value"]) == ("passed", entry["value"], entry["value"])
+    # The value is at most 0.25, and it is the offering that says so: the criterion is assessed on a managed value.
+    assert (entry["acceptance"]["status"], entry["acceptance"]["assessed_by"]) == ("met", "offering")
+    assert entry["acceptance"]["checks"] == [
+        {"subject": "value", "comparison": "at_most", "threshold": 0.25, "observed": entry["value"], "met": True}
+    ]

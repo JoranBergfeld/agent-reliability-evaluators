@@ -247,3 +247,16 @@ def test_a_managed_value_that_was_not_checked_is_an_unverified_result():
         "cannot be met or not met by an acceptance criterion."
     )
     assert outcome_consistency["acceptance"]["status"] == "not_assessed"
+
+
+def test_the_report_shows_what_made_a_managed_result_authoritative():
+    scorecard = sweep(ONE_TASK, FakeFoundryProject())
+    position = [entry["metric_id"] for entry in scorecard["metrics"]].index("outcome_consistency")
+
+    report = assert_faithful_rendering(render_report(scorecard), scorecard)
+
+    assert report.value(f"/metrics/{position}/scoring_path") == "foundry_managed"
+    assert report.value(f"/metrics/{position}/fidelity") == "authoritative"
+    check = metric(scorecard)["managed_scoring"]["fidelity_check"]
+    assert report.value(f"/metrics/{position}/managed_scoring/fidelity_check/outcome") == "passed"
+    assert report.value(f"/metrics/{position}/managed_scoring/fidelity_check/meaning") == check["meaning"]

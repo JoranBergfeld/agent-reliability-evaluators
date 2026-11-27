@@ -72,8 +72,10 @@ def run_sweep(
     the scoring path "foundry_managed". Their derived evaluators are registered in that
     project before any Attempt is made, and after the Attempts the project calculates their
     results from the grouped evidence, each Evaluator in managed runs of its own. A value it
-    returns is reported as Foundry returned it, attributed to that scoring path, as an
-    unverified result. An unavailable measurement it returns is reported as one, with its
+    returns is reported as Foundry returned it, attributed to that scoring path. It is
+    authoritative when it passed the fidelity check it was recovered with: the number Foundry
+    returned equals the value in the encoded result the Evaluator returned with it. Otherwise
+    it is an unverified result. An unavailable measurement it returns is reported as one, with its
     reason and counts. A project that cannot be used stops the sweep with
     ManagedScoringFailure before any Attempt. After the Attempts, an Evaluator whose managed
     run gives no result has none: the scorecard is partial, names the missing result with its

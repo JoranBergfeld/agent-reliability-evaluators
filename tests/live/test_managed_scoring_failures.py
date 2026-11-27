@@ -187,7 +187,7 @@ def test_a_managed_run_whose_evaluator_fails_leaves_a_partial_scorecard_and_can_
     assert (rescored["status"], rescored["missing"]) == ("partial", delivered["missing"])
 
 
-def test_a_rescore_stands_beside_the_unverified_value_that_the_live_project_returned(live, project, monkeypatch):
+def test_a_rescore_stands_beside_the_value_that_the_live_project_returned(live, project, monkeypatch):
     scorecard = json.loads(to_json(sweep_on_the_fixture(project, monkeypatch)))
 
     rescored = rescore_in_customer_process(earlier_scorecard=scorecard, metrics=["outcome_consistency"])
@@ -197,8 +197,9 @@ def test_a_rescore_stands_beside_the_unverified_value_that_the_live_project_retu
     print(json.dumps({"managed": {key: outcome_consistency[key] for key in ("value", "scoring_path", "fidelity")},
                       "rescore": {key: rescore[key] for key in ("value", "scoring_path", "fidelity")}}))
     assert outcome_consistency["value"] == pytest.approx(0.68, abs=1e-12)
-    assert (outcome_consistency["scoring_path"], outcome_consistency["fidelity"]) == ("foundry_managed", "unverified")
-    assert "has not been established" in outcome_consistency["limitation"]
+    # The managed value passed its fidelity check. The rescore is still a result of its own, beside it.
+    assert (outcome_consistency["scoring_path"], outcome_consistency["fidelity"]) == ("foundry_managed", "authoritative")
+    assert outcome_consistency["managed_scoring"]["fidelity_check"]["outcome"] == "passed"
     assert rescore["value"] == pytest.approx(0.68, abs=1e-12)
     assert (rescore["scoring_path"], rescore["fidelity"]) == ("customer_process", "authoritative")
     assert rescore["evidence_sha256"] == outcome_consistency["managed_scoring"]["evidence_sha256"]
@@ -228,7 +229,7 @@ def test_one_managed_run_that_fails_does_not_take_the_result_of_another_managed_
                       "failed": resource_consistency["managed_scoring"]}))
     assert outcome_consistency["state"] == "available"
     assert outcome_consistency["value"] == pytest.approx(0.68, abs=1e-12)
-    assert (outcome_consistency["scoring_path"], outcome_consistency["fidelity"]) == ("foundry_managed", "unverified")
+    assert (outcome_consistency["scoring_path"], outcome_consistency["fidelity"]) == ("foundry_managed", "authoritative")
     assert (resource_consistency["state"], resource_consistency["value"]) == (None, None)
     assert "ended as failed" in resource_consistency["managed_scoring"]["error"]
     assert outcome_consistency["managed_scoring"]["run_id"] != resource_consistency["managed_scoring"]["run_id"]

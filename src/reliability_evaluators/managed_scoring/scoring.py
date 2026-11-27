@@ -8,7 +8,8 @@ one that fails takes no other metric's result with it.
 A code evaluator returns one number for each submitted row, so a result is asked for in
 parts, one row a part. A first run returns the plain metric value and the size of the encoded
 result. A second run returns the encoded result, which carries the state of the metric, its
-reason, its counts and its details, and the value as the Evaluator computed it.
+reason, its counts and its details, and the value as the Evaluator computed it. The two are
+compared when the result is recovered: see `fidelity`.
 """
 
 from __future__ import annotations

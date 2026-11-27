@@ -1,9 +1,19 @@
 """The fidelity rule: when a result recovered from Foundry-managed scoring is authoritative.
 
-A managed result comes back on two channels. The plain channel is the number Foundry returns as
-the score of the row that asks for the metric value. The encoded channel is the encoded result,
-which the Evaluator writes in Foundry and which holds that value exactly, behind a digest.
-The check compares the two, for one result at a time.
+A managed result comes back on two channels, from separate calls of the same evaluator on the
+same evidence:
+
+- the plain channel: the number Foundry returns as the score of the row that asks for the
+  metric value. It is what the customer's Foundry project shows as the metric.
+- the encoded channel: the encoded result, in whole numbers of six bytes behind a digest. It
+  holds the value as the Evaluator computed it, written so that it reads back to the same double.
+
+The rule is applied to one result at a time. A result whose two channels agree is
+authoritative. Any other is an unverified result. The reported value is always the plain one.
+
+Agreement shows that the reported number is the one the Evaluator returned in Foundry. It does
+not show that the calculation is right, and no calculation in the customer's own process takes
+part in it. docs/managed_scoring/readme.md says what the rule rests on.
 """
 
 from __future__ import annotations
@@ -82,10 +92,18 @@ NOT_CHECKED = (
 
 
 def check_value(score: Any, encoded_value: float) -> FidelityCheck:
-    """Compare the number Foundry returned as the score with the value the encoded result holds."""
+    """Compare the number Foundry returned as the score with the value the encoded result holds.
+
+    They are compared as numbers, exactly: nothing is rounded, and adjacent doubles differ. A
+    whole number that came back without a fraction equals itself, and so does a zero that
+    came back without its sign, which is how Foundry returned both when observed.
+    """
     return FidelityCheck(passed=score == encoded_value, plain_value=float(score), encoded_value=encoded_value)
 
 
 def no_value_on_either_channel() -> FidelityCheck:
-    """The check of a result without a value: the score was the marker for that, and the encoded result has none."""
+    """The check of a result without a value: the score was the marker for that, and the encoded result has none.
+
+    A result whose channels disagree on whether there is a value is not recovered at all.
+    """
     return FidelityCheck(passed=True, plain_value=None, encoded_value=None)
