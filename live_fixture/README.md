@@ -49,15 +49,18 @@ uv run python -m live_fixture teardown rg-are-42-<8 hex>
 ```
 
 The live check is marked `live`, which the default run excludes, so `uv run pytest` never touches
-Azure. When observed, provisioning took about 11 minutes, teardown about 30, and the self-contained live check 43 minutes end to end.
+Azure. When observed, provisioning took about 11 minutes, teardown about 30, and the self-contained
+live check 43 minutes end to end.
 
 `teardown` deletes the resource group, confirms its absence with a separate `az group exists`
 query and fails if the group is still there. Group deletion only soft-deletes the Foundry account,
 so `teardown` also purges it and reports whether that worked. If a run is killed before it tears
 down, run `teardown` with the group name it printed.
 
-No key, token or subscription identifier is written to disk. The service keys are generated per
-fixture, live in the container app's settings, and are read back from Azure by `connect`.
+No key, token or subscription identifier is written to your disk. The two service keys are
+generated per fixture and live only in that resource group: in the container app's settings, from
+which `connect` reads them back, and, for the agents' key, in the project connection and the hosted
+agent's settings.
 
 ## Interface for live checks
 
