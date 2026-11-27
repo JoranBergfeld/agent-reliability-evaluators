@@ -6,7 +6,9 @@ shapes observed on the live fixture (see docs/foundry_hosted_agent/readme.md):
 - `GET /agents/{name}?api-version=v1`: what the project says about the agent;
 - `POST /agents/{name}/endpoint/protocols/openai/responses?api-version=v1`: one invocation.
 
-Every request must carry the bearer token in `FakeFoundryProject.token`.
+Every request must carry the bearer token in `FakeFoundryProject.token`. Every answer carries
+the request identifiers `synthetic-request-N` and `synthetic-apim-N`, N being the number of
+the request among all the project received.
 """
 
 from __future__ import annotations
@@ -37,7 +39,11 @@ Respond = Callable[[dict], "tuple[int, Any]"]
 
 @dataclass
 class FakeHostedAgent:
-    """A hosted agent in the fake project: what the project says about it, and how it answers."""
+    """An agent in the fake project: what the project says about it, and how it answers.
+
+    `kind` is "hosted" unless told otherwise. The project reports the protocols of a prompt
+    agent's endpoint as well, as the live project did.
+    """
 
     respond: Respond
     kind: str = "hosted"
@@ -52,6 +58,8 @@ class FakeHostedAgent:
             definition["protocol_versions"] = [
                 {"protocol": protocol, "version": "2.0.0"} for protocol in self.protocols
             ]
+            # The live project returned the hosted agent's settings with its details, secrets included.
+            definition["environment_variables"] = {"SYNTHETIC_SERVICE_KEY": "synthetic-secret"}
         return {
             "object": "agent",
             "id": name,
@@ -66,7 +74,15 @@ class FakeHostedAgent:
                     "definition": definition,
                 }
             },
-            "agent_endpoint": {"protocols": list(self.protocols)} if self.kind == "hosted" else None,
+            "agent_endpoint": {
+                "version_selector": {
+                    "version_selection_rules": [
+                        {"type": "FixedRatio", "agent_version": self.version, "traffic_percentage": 100}
+                    ]
+                },
+                "protocols": list(self.protocols),
+                "protocol_configuration": {protocol: {} for protocol in self.protocols},
+            },
         }
 
 
@@ -81,6 +97,8 @@ class FakeFoundryProject:
 def fake_foundry_project(agents: dict[str, FakeHostedAgent]) -> Iterator[FakeFoundryProject]:
     """Serve `agents`, by name, until the block ends."""
     token = "synthetic-bearer-token"
+    # Every request received, in order. A request is numbered by its position, from 1.
+    requests: list[str] = []
 
     class Handler(BaseHTTPRequestHandler):
         def log_message(self, *_: Any) -> None:
@@ -91,11 +109,15 @@ def fake_foundry_project(agents: dict[str, FakeHostedAgent]) -> Iterator[FakeFou
             self.send_response(status)
             self.send_header("Content-Type", "application/json")
             self.send_header("Content-Length", str(len(data)))
-            self.send_header("x-request-id", f"synthetic-request-{sum(len(a.invocations) for a in agents.values())}")
+            self.send_header("x-request-id", f"synthetic-request-{len(requests)}")
+            self.send_header("apim-request-id", f"synthetic-apim-{len(requests)}")
             self.end_headers()
-            self.wfile.write(data)
+            # A caller that stopped waiting has closed the connection.
+            with contextlib.suppress(ConnectionError):
+                self.wfile.write(data)
 
         def handle_request(self) -> None:
+            requests.append(self.path)
             url = urlsplit(self.path)
             length = int(self.headers.get("Content-Length", "0"))
             content = self.rfile.read(length) if length else b""
@@ -186,7 +208,11 @@ class FakeTodoHostedAgent:
         attempt_id = request["input"].split("Use attempt_id ", 1)[1].split(". ", 1)[0]
         self._responses += 1
         calls = [self._call(attempt_id, tool, todo_id) for tool, todo_id in TASK_STEPS]
-        return 200, completed_response(self._name, self._responses, calls, self.ANSWER, self._usage)
+        response = completed_response(self._name, self._responses, calls, self.ANSWER, self._usage)
+        if "metadata" in request:
+            # The live hosted agent returned the metadata it was sent.
+            response["metadata"] = request["metadata"]
+        return 200, response
 
     def _call(self, attempt_id: str, tool: str, todo_id: str) -> tuple[str, dict, str]:
         arguments: dict[str, Any] = {"attempt_id": attempt_id, "todo_id": todo_id}

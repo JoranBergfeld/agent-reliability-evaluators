@@ -13,7 +13,7 @@ from time import perf_counter
 from typing import Any, Callable
 
 from ..evidence import ActionEvent, ResourceMeasurement, ResourceType
-from .interface import AgentResponse, AttemptRequest, InvocationFailed
+from .interface import AgentResponse, AttemptRequest, InvocationFailed, IsolatedFollowUp
 
 API_VERSION = "v1"
 AGENT_TARGET = "foundry_hosted_agent"
@@ -21,6 +21,7 @@ RESPONSES_PROTOCOL = "responses"
 # The evidence source to declare when `native_tool_calls` records the action evidence.
 NATIVE_TOOL_CALLS = "tool calls in the response of the Foundry hosted agent"
 NO_USAGE = "the response of the hosted agent carried no usage"
+REQUEST_ID_HEADERS = ("x-request-id", "apim-request-id")
 # How much of an answer's body is quoted in an error.
 _SHOWN_BODY = 2000
 ELAPSED_TIME_BOUNDARY = (
@@ -33,6 +34,10 @@ TOOL_CALL_BOUNDARY = (
 )
 
 
+class UnsupportedAgent(Exception):
+    """The agent is not one this target supports. It was not invoked, and nothing was tried instead."""
+
+
 class FoundryHostedAgentTarget:
     """Invokes one hosted agent of one Foundry project, once per Attempt.
 
@@ -43,8 +48,19 @@ class FoundryHostedAgentTarget:
     `compose_input` gives what the agent is sent for an Attempt. Without it the agent is
     sent the Task's prompt as it is.
 
+    `timeout_seconds` is how long the target waits for the agent's answer to one request.
     `clock` gives seconds and never runs backwards. The target times its own request on it.
+
+    The target does not ask the agent for a confidence rating: see `isolated_follow_up`.
     """
+
+    isolated_follow_up = IsolatedFollowUp(
+        supported=False,
+        reason=(
+            "a follow-up in which a Foundry hosted agent answers in the conversation of the Attempt "
+            "and cannot act has not been verified"
+        ),
+    )
 
     def __init__(
         self,
@@ -53,18 +69,32 @@ class FoundryHostedAgentTarget:
         agent_name: str,
         credential: Callable[[], str],
         compose_input: Callable[[AttemptRequest], str] | None = None,
+        timeout_seconds: float = 300.0,
         clock: Callable[[], float] = perf_counter,
     ):
-        self._agent_url = f"{project_endpoint.rstrip('/')}/agents/{agent_name}"
+        self._project_endpoint = project_endpoint.rstrip("/")
+        self._agent_name = agent_name
+        self._agent_url = f"{self._project_endpoint}/agents/{agent_name}"
+        # What the project said about the agent, once it has been looked up.
+        self._agent: dict[str, Any] | None = None
         self._credential = credential
         self._compose_input = compose_input or (lambda request: request.prompt)
+        self._timeout_seconds = timeout_seconds
         self._clock = clock
 
     def invoke(self, request: AttemptRequest) -> AgentResponse:
-        body = {"input": self._compose_input(request), "stream": False}
+        body = {
+            "input": self._compose_input(request),
+            "stream": False,
+            # Identifies the Attempt on the platform. The response returns it.
+            "metadata": {"attempt_id": request.attempt_id, "task_id": request.task_id},
+        }
         token = self._credential()
+        self._require_supported_agent(token)
         started = self._clock()
-        answer = _send("POST", f"{self._agent_url}/endpoint/protocols/openai/responses", token, body)
+        answer = _send(
+            "POST", f"{self._agent_url}/endpoint/protocols/openai/responses", token, self._timeout_seconds, body
+        )
         elapsed = self._clock() - started
         if answer.status != 200:
             raise InvocationFailed(
@@ -89,12 +119,60 @@ class FoundryHostedAgentTarget:
         )
 
 
+    def agent_configuration(self) -> dict[str, Any]:
+        """What identifies the agent, as the project reports it, to declare as an experiment's agent configuration.
+
+        Raises UnsupportedAgent for an agent this target does not support, before any Attempt
+        is made. The project does not report the model of a hosted agent. Its settings, which
+        the project returns with its details, are not copied: they can hold secrets.
+        """
+        agent = self._require_supported_agent(self._credential())
+        endpoint = agent["agent_endpoint"]
+        return {
+            "agent_target": AGENT_TARGET,
+            "project_endpoint": self._project_endpoint,
+            "agent": self._agent_name,
+            "kind": "hosted",
+            "protocols": endpoint["protocols"],
+            "latest_version": agent["versions"]["latest"].get("version"),
+            "version_selection_rules": (endpoint.get("version_selector") or {}).get("version_selection_rules"),
+        }
+
+    def _require_supported_agent(self, token: str) -> dict[str, Any]:
+        """What the project says about the agent, when it is a hosted agent that serves the Responses protocol.
+
+        Raises otherwise. The agent is looked up once. An agent that is not supported is never sent a request.
+        """
+        if self._agent is None:
+            answer = _send("GET", self._agent_url, token, self._timeout_seconds)
+            if answer.status != 200 or not isinstance(answer.json, dict):
+                raise InvocationFailed(
+                    f"agent {self._agent_name!r} could not be looked up in the Foundry project: "
+                    f"HTTP {answer.status}: {answer.text[:_SHOWN_BODY]}"
+                )
+            self._agent = answer.json
+        kind = ((self._agent.get("versions") or {}).get("latest") or {}).get("definition", {}).get("kind")
+        if kind != "hosted":
+            raise UnsupportedAgent(
+                f"agent {self._agent_name!r} is of kind {kind!r} and not a hosted agent, so it was not invoked"
+            )
+        protocols = (self._agent.get("agent_endpoint") or {}).get("protocols") or []
+        if RESPONSES_PROTOCOL not in protocols:
+            raise UnsupportedAgent(
+                f"hosted agent {self._agent_name!r} serves the protocols {protocols} and not the Responses "
+                "protocol. Only hosted agents that serve the Responses protocol are supported, so it was not invoked"
+            )
+        return self._agent
+
+
 @dataclass(frozen=True)
 class _Answer:
     """An HTTP answer from the project, whatever its status."""
 
     status: int
     text: str
+    # The headers that identify the request on the platform, where the answer carried them.
+    request_ids: dict[str, str]
 
     @property
     def json(self) -> Any:
@@ -105,7 +183,7 @@ class _Answer:
             return None
 
 
-def _send(method: str, url: str, token: str, body: dict[str, Any] | None = None) -> _Answer:
+def _send(method: str, url: str, token: str, timeout_seconds: float, body: dict[str, Any] | None = None) -> _Answer:
     """Send one request to the project. It is sent once: a request that may have reached the agent is not repeated."""
     request = urllib.request.Request(
         f"{url}?api-version={API_VERSION}",
@@ -114,14 +192,21 @@ def _send(method: str, url: str, token: str, body: dict[str, Any] | None = None)
         headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
     )
     try:
-        with urllib.request.urlopen(request) as answered:
-            return _Answer(answered.status, answered.read().decode(errors="replace"))
+        with urllib.request.urlopen(request, timeout=timeout_seconds) as answered:
+            return _answer(answered.status, answered)
     except urllib.error.HTTPError as error:
-        return _Answer(error.code, error.read().decode(errors="replace"))
+        return _answer(error.code, error)
     except OSError as error:
         # URLError is an OSError. No answer came back, so nothing is known about what the agent did.
         reason = getattr(error, "reason", error)
+        if isinstance(reason, TimeoutError):
+            raise InvocationFailed(f"the hosted agent did not answer within {timeout_seconds:g} seconds") from error
         raise InvocationFailed(f"the Foundry project could not be reached: {reason}") from error
+
+
+def _answer(status: int, answered: Any) -> _Answer:
+    request_ids = {name: answered.headers[name] for name in REQUEST_ID_HEADERS if answered.headers.get(name)}
+    return _Answer(status, answered.read().decode(errors="replace"), request_ids)
 
 
 def _invocation(answer: _Answer, response: dict[str, Any]) -> dict[str, Any]:
@@ -135,10 +220,12 @@ def _invocation(answer: _Answer, response: dict[str, Any]) -> dict[str, Any]:
         "protocol": RESPONSES_PROTOCOL,
         "api_version": API_VERSION,
         "http_status": answer.status,
+        "request_ids": answer.request_ids,
         "agent": response.get("agent_reference"),
         "response_id": response.get("id"),
         "agent_session_id": response.get("agent_session_id"),
         "status": response.get("status"),
+        "metadata": response.get("metadata"),
         "error": response.get("error") if response else _error_of(answer),
         # As the platform reported it. Usage that was not reported is missing, never zero.
         "token_usage": usage,

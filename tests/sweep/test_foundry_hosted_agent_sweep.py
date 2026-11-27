@@ -6,6 +6,8 @@ the fixture's to-do service, also on this machine. Every assertion is on the
 machine-readable scorecard. Expected values are calculated by hand.
 """
 
+import time
+
 import pytest
 
 from live_fixture import local_service
@@ -13,6 +15,7 @@ from live_fixture.hosted_agent import todo_tools
 from reliability_evaluators.agent_target.foundry_hosted import (
     NATIVE_TOOL_CALLS,
     FoundryHostedAgentTarget,
+    UnsupportedAgent,
     native_tool_calls,
 )
 from reliability_evaluators.sweep import ActionEvidenceDeclaration, run_sweep
@@ -107,6 +110,25 @@ def test_each_attempt_records_the_identifiers_the_platform_returned_for_its_invo
     }
     assert second["invocation"]["response_id"] == "caresp_synthetic2"
     assert second["invocation"]["agent_session_id"] == "session-synthetic2"
+    # The project's first request was the look-up of the agent, and the Attempts were its second and third.
+    assert first["invocation"]["request_ids"] == {
+        "x-request-id": "synthetic-request-2",
+        "apim-request-id": "synthetic-apim-2",
+    }
+    assert second["invocation"]["request_ids"]["x-request-id"] == "synthetic-request-3"
+
+
+def test_the_agent_is_sent_the_identity_of_the_attempt_and_the_response_returns_it(project, setup):
+    scorecard = run_sweep(
+        experiments=[setup.experiment("todo", 2, ALL_TOOLS_WORK, AGENT)],
+        agent_target=hosted_agent(project, setup),
+        metrics=["outcome_consistency"],
+    )
+
+    assert [attempt["invocation"]["metadata"] for attempt in scorecard["attempts"]] == [
+        {"attempt_id": "todo/all-tools-work/attempt-1", "task_id": "todo"},
+        {"attempt_id": "todo/all-tools-work/attempt-2", "task_id": "todo"},
+    ]
 
 
 ON_SERVICE = "offline.todo-flaky-update.update-fails-intermittently.attempt-1"
@@ -263,6 +285,11 @@ def test_an_http_error_from_the_agent_endpoint_is_an_execution_failure_and_not_a
         '{"error": {"code": "server_error", "message": "The agent container did not respond."}}'
     )
     assert failed["invocation"]["http_status"] == 500
+    # The look-up of the agent, the first Attempt, then this one: the project's third request.
+    assert failed["invocation"]["request_ids"] == {
+        "x-request-id": "synthetic-request-3",
+        "apim-request-id": "synthetic-apim-3",
+    }
     assert failed["invocation"]["error"] == {"code": "server_error", "message": "The agent container did not respond."}
     assert failed["invocation"]["response_id"] is None
     outcome_consistency = metric(scorecard)
@@ -340,3 +367,124 @@ def test_an_endpoint_that_cannot_be_reached_is_an_execution_failure(setup):
         assert attempt["execution_error"].startswith("InvocationFailed: the Foundry project could not be reached: ")
         assert attempt["task_outcome"] is None
     assert metric(scorecard)["state"] == "unavailable"
+
+
+def test_a_hosted_agent_is_not_asked_for_a_confidence_rating(project, setup):
+    attempt = one_attempt_with_a_failed_update(project, setup, metrics=["brier_based_score"])
+
+    assert attempt["confidence"] == {
+        "rating": None,
+        "normalized": None,
+        "original_response": None,
+        "unavailable_reason": (
+            "the agent target does not support an isolated follow-up: a follow-up in which a Foundry hosted "
+            "agent answers in the conversation of the Attempt and cannot act has not been verified"
+        ),
+    }
+    # The one request the agent received was the Attempt itself.
+    assert len(project.agents["todo-hosted"].invocations) == 1
+
+
+def test_an_agent_that_does_not_answer_within_the_time_limit_is_an_execution_failure(setup):
+    def answers_after_a_second(request):
+        time.sleep(1.0)
+        return 200, completed_response("todo-hosted", 1, [], "Done.")
+
+    with fake_foundry_project({"todo-hosted": FakeHostedAgent(answers_after_a_second)}) as project:
+        target = FoundryHostedAgentTarget(
+            project_endpoint=project.endpoint,
+            agent_name="todo-hosted",
+            credential=lambda: project.token,
+            compose_input=setup.instruction,
+            timeout_seconds=0.2,
+        )
+        (attempt,) = run_sweep(
+            experiments=[setup.experiment("todo", 1, ALL_TOOLS_WORK, AGENT)],
+            agent_target=target,
+            metrics=["outcome_consistency"],
+        )["attempts"]
+
+    assert attempt["execution_status"] == "failed"
+    assert attempt["execution_error"] == "InvocationFailed: the hosted agent did not answer within 0.2 seconds"
+    assert attempt["task_outcome"] is None
+
+
+def test_a_hosted_agent_that_does_not_serve_the_responses_protocol_is_reported_as_unsupported_and_not_invoked(setup):
+    agent = FakeHostedAgent(FakeTodoHostedAgent(todo_tools), protocols=("invocations",))
+    with fake_foundry_project({"todo-hosted": agent}) as project:
+        scorecard = run_sweep(
+            experiments=[setup.experiment("todo", 2, ALL_TOOLS_WORK, AGENT)],
+            agent_target=hosted_agent(project, setup),
+            metrics=["outcome_consistency"],
+        )
+
+    for attempt in scorecard["attempts"]:
+        assert attempt["execution_status"] == "failed"
+        assert attempt["execution_error"] == (
+            "UnsupportedAgent: hosted agent 'todo-hosted' serves the protocols ['invocations'] and not the "
+            "Responses protocol. Only hosted agents that serve the Responses protocol are supported, so it was "
+            "not invoked"
+        )
+        assert attempt["task_outcome"] is None
+    assert agent.invocations == []
+    assert [evidence["events"] for evidence in setup.evidence.values()] == [[], []]
+    assert metric(scorecard)["state"] == "unavailable"
+
+
+def test_an_agent_that_is_not_a_hosted_agent_is_reported_as_unsupported_and_not_invoked(setup):
+    agent = FakeHostedAgent(FakeTodoHostedAgent(todo_tools), kind="prompt")
+    with fake_foundry_project({"todo-prompt": agent}) as project:
+        (attempt,) = run_sweep(
+            experiments=[setup.experiment("todo", 1, ALL_TOOLS_WORK, AGENT)],
+            agent_target=hosted_agent(project, setup, agent_name="todo-prompt"),
+            metrics=["outcome_consistency"],
+        )["attempts"]
+
+    assert attempt["execution_status"] == "failed"
+    assert attempt["execution_error"] == (
+        "UnsupportedAgent: agent 'todo-prompt' is of kind 'prompt' and not a hosted agent, so it was not invoked"
+    )
+    assert agent.invocations == []
+
+
+def test_an_agent_the_project_does_not_have_is_an_execution_failure_that_says_so(project, setup):
+    (attempt,) = run_sweep(
+        experiments=[setup.experiment("todo", 1, ALL_TOOLS_WORK, AGENT)],
+        agent_target=hosted_agent(project, setup, agent_name="todo-hosed"),
+        metrics=["outcome_consistency"],
+    )["attempts"]
+
+    assert attempt["execution_status"] == "failed"
+    assert attempt["execution_error"] == (
+        "InvocationFailed: agent 'todo-hosed' could not be looked up in the Foundry project: HTTP 404: "
+        '{"error": {"code": "not_found", "message": "Agent todo-hosed was not found."}}'
+    )
+
+
+def test_an_experiment_can_declare_the_agent_configuration_the_project_reports(project, setup):
+    target = hosted_agent(project, setup)
+
+    scorecard = run_sweep(
+        experiments=[setup.experiment("todo", 1, ALL_TOOLS_WORK, target.agent_configuration())],
+        agent_target=target,
+        metrics=["outcome_consistency"],
+    )
+
+    # The hosted agent's settings, which the project returns with its details, are not copied.
+    assert scorecard["experiments"][0]["agent_configuration"] == {
+        "agent_target": "foundry_hosted_agent",
+        "project_endpoint": project.endpoint,
+        "agent": "todo-hosted",
+        "kind": "hosted",
+        "protocols": ["responses"],
+        "latest_version": "1",
+        "version_selection_rules": [{"type": "FixedRatio", "agent_version": "1", "traffic_percentage": 100}],
+    }
+    assert scorecard["attempts"][0]["execution_status"] == "completed"
+
+
+def test_the_configuration_of_an_unsupported_agent_is_refused_before_any_attempt(setup):
+    agent = FakeHostedAgent(FakeTodoHostedAgent(todo_tools), protocols=("invocations",))
+    with fake_foundry_project({"todo-hosted": agent}) as project:
+        with pytest.raises(UnsupportedAgent, match="serves the protocols \\['invocations'\\] and not the Responses"):
+            hosted_agent(project, setup).agent_configuration()
