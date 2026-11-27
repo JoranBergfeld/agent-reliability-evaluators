@@ -2,7 +2,7 @@
 and the Foundry agent targets that implement it.
 """
 
-from .foundry import FoundryProject
+from .foundry import AzureCliToken, FoundryProject
 from .foundry_prompt_agent import FoundryPromptAgentTarget
 from .interface import (
     AgentResponse,
@@ -16,6 +16,7 @@ from .interface import (
 )
 
 __all__ = [
+    "AzureCliToken",
     "AgentResponse",
     "AgentTarget",
     "AttemptRequest",

@@ -7,11 +7,14 @@ the caller's own identity. No Azure SDK is needed or used.
 from __future__ import annotations
 
 import json
+import shutil
 import socket
+import subprocess
+import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
-from typing import Any, Callable, Mapping
+from typing import Any, Callable, Mapping, Sequence
 
 from ..evidence import ActionEvent, PlatformEvidence, ResourceMeasurement, ResourceType
 from .interface import AgentResponse, InvocationError
@@ -26,6 +29,52 @@ TOOL_CALL_BOUNDARY = "tool calls in the output of the Foundry response, counted 
 
 # Returns a bearer token for FOUNDRY_TOKEN_RESOURCE. Called before every request.
 TokenProvider = Callable[[], str]
+
+
+def _run_azure_cli(arguments: Sequence[str]) -> str:
+    """Run `az` with the arguments and return what it printed, as JSON text."""
+    az = shutil.which("az")
+    if az is None:
+        raise RuntimeError("the Azure CLI (az) was not found. Install it and sign in, or give another token provider")
+    result = subprocess.run([az, *arguments, "--output", "json"], capture_output=True, text=True, timeout=120)
+    if result.returncode != 0:
+        raise RuntimeError(f"az {' '.join(arguments[:2])} failed: {result.stderr.strip()}")
+    return result.stdout
+
+
+class AzureCliToken:
+    """A token provider that asks the Azure CLI for a token of the identity signed in to it.
+
+    A token is reused until it is within `refresh_margin_seconds` of the expiry the CLI
+    gave for it, and then asked for again, so a sweep can outlast a token. A token the
+    CLI gives no expiry for is not reused. The token is held in memory only.
+
+    `run_cli` runs `az` with the arguments it is given and returns its JSON output. It
+    raises when the CLI gives no token. `clock` gives the time in seconds since the epoch.
+    """
+
+    def __init__(
+        self,
+        *,
+        resource: str = FOUNDRY_TOKEN_RESOURCE,
+        refresh_margin_seconds: float = 300.0,
+        run_cli: Callable[[Sequence[str]], str] = _run_azure_cli,
+        clock: Callable[[], float] = time.time,
+    ):
+        self._resource = resource
+        self._refresh_margin_seconds = refresh_margin_seconds
+        self._run_cli = run_cli
+        self._clock = clock
+        self._token: str | None = None
+        self._expires_on = 0.0
+
+    def __call__(self) -> str:
+        if self._token is None or self._clock() >= self._expires_on - self._refresh_margin_seconds:
+            issued = json.loads(self._run_cli(["account", "get-access-token", "--resource", self._resource]))
+            self._token = issued["accessToken"]
+            expires_on = issued.get("expires_on")
+            self._expires_on = float(expires_on) if isinstance(expires_on, (int, float)) else 0.0
+        return self._token
 
 
 @dataclass(frozen=True)
@@ -53,14 +102,15 @@ class FoundryProject:
 
     `endpoint` is the project endpoint, `https://<account>.services.ai.azure.com/api/projects/<project>`.
     `token` returns a bearer token for `https://ai.azure.com`. It is called before every
-    request, so it decides how long a token is reused.
+    request, so it decides how long a token is reused. Without one, the identity signed in
+    to the Azure CLI is used: see AzureCliToken.
     """
 
-    def __init__(self, endpoint: str, token: TokenProvider):
+    def __init__(self, endpoint: str, token: TokenProvider | None = None):
         if not isinstance(endpoint, str) or not endpoint.startswith(("https://", "http://")):
             raise ValueError(f"a Foundry project is identified by its endpoint, an https URL. Got {endpoint!r}")
         self.endpoint = endpoint.rstrip("/")
-        self._token = token
+        self._token = token if token is not None else AzureCliToken()
 
     def post(self, path: str, body: Mapping[str, Any], timeout_seconds: float) -> FoundryReply:
         """Send one request and return the reply, whatever its HTTP status. It is never sent twice.

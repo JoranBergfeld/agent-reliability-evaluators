@@ -11,7 +11,12 @@ import json
 import pytest
 
 from live_fixture import TASK_PROMPT, local_service, strict_task_outcome
-from reliability_evaluators.agent_target import FoundryProject, FoundryPromptAgentTarget, platform_tool_calls
+from reliability_evaluators.agent_target import (
+    AzureCliToken,
+    FoundryProject,
+    FoundryPromptAgentTarget,
+    platform_tool_calls,
+)
 from reliability_evaluators.evidence import TaskOutcome
 from reliability_evaluators.sweep import ActionEvidenceDeclaration, Task, run_sweep
 from tests.fake_foundry import fake_foundry_project
@@ -391,3 +396,106 @@ def test_an_agent_version_that_does_not_exist_is_an_execution_failure(todo_servi
     outcome_consistency = metric(scorecard, "outcome_consistency")
     assert outcome_consistency["state"] == "unavailable"
     assert outcome_consistency["value"] is None
+
+
+def test_an_invocation_that_outlasts_the_targets_time_limit_is_an_execution_failure(todo_service):
+    # The first response takes half a second and the target waits a tenth of one.
+    scorecard = sweep(todo_service, [0.5, "completes", "completes"], agent={"timeout_seconds": 0.1})
+
+    assert attempt_evidence(scorecard["attempts"][0], "platform_evidence") == {
+        "attempt_id": "todo/baseline/attempt-1",
+        "task_id": "todo",
+        "execution_status": "failed",
+        "execution_error": "TimeoutError: the Foundry project did not answer within 0.1 seconds",
+        "task_outcome": None,
+        "platform_evidence": None,
+    }
+    assert [attempt["execution_status"] for attempt in scorecard["attempts"][1:]] == ["completed", "completed"]
+    assert metric(scorecard, "outcome_consistency")["value"] == 1
+
+
+def test_an_invocation_the_project_refuses_for_its_token_is_an_execution_failure(todo_service):
+    scorecard = sweep(todo_service, ["completes", "completes"], token=lambda: "a-token-of-another-tenant")
+
+    assert attempt_evidence(scorecard["attempts"][0], "platform_evidence") == {
+        "attempt_id": "todo/baseline/attempt-1",
+        "task_id": "todo",
+        "execution_status": "failed",
+        "execution_error": (
+            "InvocationError: the Foundry project answered HTTP 401 401: "
+            "Access denied due to invalid subscription key."
+        ),
+        "task_outcome": None,
+        "platform_evidence": {
+            "source": PLATFORM_SOURCE,
+            "identifiers": {"http_status": 401, "error_code": "401", "apim_request_id": "apim_fake_1"},
+            "token_usage": None,
+            "token_usage_missing": "the Foundry project answered HTTP 401 and reported no usage",
+            "tool_calls": None,
+        },
+    }
+
+
+class FakeAzureCli:
+    """Stands in for `az account get-access-token`. Every token it issues is valid for an hour.
+
+    Issuing a token makes it the only one the fake project accepts. Each reading of `clock`
+    is 25 minutes after the one before.
+    """
+
+    def __init__(self, project, signed_in=True):
+        self._project = project
+        self._signed_in = signed_in
+        self._now = -1500.0
+        self.commands = []
+
+    def clock(self):
+        self._now += 1500.0
+        return self._now
+
+    def run(self, arguments):
+        self.commands.append(list(arguments))
+        if not self._signed_in:
+            raise RuntimeError("Please run 'az login' to setup account.")
+        token = f"cli-token-{len(self.commands)}"
+        self._project.valid_tokens = {token}
+        return json.dumps({"accessToken": token, "expires_on": int(self._now) + 3600, "tokenType": "Bearer"})
+
+
+def sweep_as_the_azure_cli_identity(todo_service, attempts, signed_in=True):
+    fixture = TodoFixtureSweep(todo_service, run_id="run-1")
+    with fake_foundry_project(todo_service, valid_tokens=()) as project:
+        cli = FakeAzureCli(project, signed_in)
+        target = FoundryPromptAgentTarget(
+            project=FoundryProject(project.endpoint, token=AzureCliToken(run_cli=cli.run, clock=cli.clock)),
+            agent_name="todo-prompt",
+            compose_input=fixture.compose_input,
+        )
+        scorecard = run_sweep(
+            experiments=[fixture.experiment(attempts=attempts)], agent_target=target, metrics=["outcome_consistency"]
+        )
+    return scorecard, cli
+
+
+def test_the_azure_cli_is_asked_for_a_token_again_only_when_the_one_it_gave_nears_its_expiry(todo_service):
+    # The Attempts are invoked at 0, 25, 50 and 75 minutes. The first token expires at 60 minutes and is
+    # reused while more than 5 minutes of it remain: at 25 and at 50 minutes, not at 75.
+    scorecard, cli = sweep_as_the_azure_cli_identity(todo_service, attempts=4)
+
+    assert [attempt["execution_status"] for attempt in scorecard["attempts"]] == ["completed"] * 4
+    assert cli.commands == [["account", "get-access-token", "--resource", "https://ai.azure.com"]] * 2
+
+
+def test_an_azure_cli_that_gives_no_token_is_an_execution_failure_with_its_reason(todo_service):
+    scorecard, _ = sweep_as_the_azure_cli_identity(todo_service, attempts=2, signed_in=False)
+
+    assert [attempt_evidence(attempt) for attempt in scorecard["attempts"]] == [
+        {
+            "attempt_id": f"todo/baseline/attempt-{number}",
+            "task_id": "todo",
+            "execution_status": "failed",
+            "execution_error": "RuntimeError: Please run 'az login' to setup account.",
+            "task_outcome": None,
+        }
+        for number in (1, 2)
+    ]

@@ -62,6 +62,8 @@ def fake_foundry_project(todo_service, script=(), valid_tokens=("fake-token",)):
     server = ThreadingHTTPServer(("127.0.0.1", 0), _Handler)
     project = FakeFoundryProject(f"http://127.0.0.1:{server.server_address[1]}{PROJECT_PATH}", script, valid_tokens)
     server.project, server.todo_service, server.lock = project, todo_service, threading.Lock()
+    # A caller that stopped waiting has closed its connection. That is not worth a traceback.
+    server.handle_error = lambda *_: None
     thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.05}, daemon=True)
     thread.start()
     try:
