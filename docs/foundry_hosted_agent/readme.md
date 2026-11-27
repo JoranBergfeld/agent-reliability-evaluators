@@ -196,7 +196,25 @@ experiment = Experiment(..., agent_configuration=target.agent_configuration(), .
 
 ## No confidence rating
 
-The target declares that it does not support an isolated follow-up. Whether a Foundry hosted agent can be asked a follow-up question in the conversation of a completed Attempt, without being able to act, has not been verified. Until it is, every Attempt made through this target has no confidence rating, with that reason, and calibration, strict confidence discrimination and the Brier-based score are unavailable. The agent is not asked, and a rating in its task response is not used.
+The target declares that it does not support an isolated follow-up. The agent is not asked for its confidence. Every Attempt made through this target has no confidence rating, with this reason, and calibration, strict confidence discrimination and the Brier-based score are unavailable:
+
+```text
+the agent target does not support an isolated follow-up: the code of a Foundry hosted agent decides what it does
+with a request, so a caller cannot ensure that the agent does not act while it answers a follow-up
+```
+
+A rating that the agent wrote in its task response is not used. There is no fallback.
+
+Isolated means that the agent answers in the conversation of its Attempt, and that it cannot act while it answers. For a hosted agent the first can be had. The second cannot be ensured by a caller.
+
+- **The conversation can be continued.** A request that named the Attempt's response in `previous_response_id` was answered with that conversation. Observed live, and Microsoft documents it for the Responses protocol.
+- **Nothing a caller sends decides whether the agent acts.** A hosted agent is your code in a container. The project hands the request to that code, and the code decides whether a tool is called. Observed live: the fixture's agent and a copy of it with one line of its own code changed were sent the same follow-up, with `tool_choice: none` and an instruction to create an item. The fixture's agent called nothing. The copy created the item. A caller cannot check afterwards either: the response of a hosted agent did not say which tool choice it ran under.
+
+This says nothing against your agent. The fixture's agent did honour the tool choice. But the target invokes any hosted agent, and from outside it cannot tell one that honours a tool choice from one that does not. So it declares the follow-up unsupported for all of them. The [Foundry prompt agent target](../foundry_prompt_agent/readme.md#the-confidence-rating) differs: for a prompt agent the project applies the tool choice itself.
+
+If you own the code of your hosted agent and can vouch that it cannot act in a follow-up, an agent target of your own can declare the isolated follow-up: see [running it through an Evaluator sweep](../brier_based_score/readme.md#running-it-through-an-evaluator-sweep). That declaration is then yours to stand behind.
+
+What was observed is under [the confidence follow-up](#the-confidence-follow-up).
 
 ## Limits
 
@@ -237,4 +255,37 @@ Also observed, by hand on the first fixture:
 - The three responses whose headers were inspected each reported a cold session start (`x-ms-debug-latency-session-start-type: cold`).
 - One request made in the first minutes after the first fixture was provisioned got no answer within 300 seconds. It was made by a throwaway script, not by the target, and which of its requests it was is not known. It did not happen again, also not on the first invocation after the second fixture was provisioned.
 
-Not verified here: an agent that really speaks the Invocations protocol, a response with a status other than `completed`, an HTTP error from the agent endpoint, a hosted agent built with anything but Agent Framework, authentication in CI or with `azure-identity`, more than one Attempt at a time and the confidence follow-up. Foundry cloud evaluation as the entry point has its own target and its own [live observations](../foundry_cloud_evaluation/readme.md#observed-live). The failure cases are covered by the default test run against a fake project that answers with the response shapes above.
+Not verified here: an agent that really speaks the Invocations protocol, a response with a status other than `completed`, an HTTP error from the agent endpoint, a hosted agent built with anything but Agent Framework, authentication in CI or with `azure-identity`, more than one Attempt at a time, and a conversation object in the place of `previous_response_id`. Foundry cloud evaluation as the entry point has its own target and its own [live observations](../foundry_cloud_evaluation/readme.md#observed-live). Nothing here says whether a confidence follow-up can be made when Foundry cloud evaluation makes the Attempts. The failure cases are covered by the default test run against a fake project that answers with the response shapes above.
+
+### The confidence follow-up
+
+Observed on 2026-11-27 in Sweden Central, on fixtures of the same kind. The requests went to `POST /agents/{name}/endpoint/protocols/openai/responses?api-version=v1`. The fixture's hosted agent runs `gpt-4.1-mini` (`2025-04-14`) through `agent-framework` 1.26.0, `agent-framework-foundry` 1.16.2 and `agent-framework-foundry-hosting` 1.0.0b261112. This records what happened. It is not a reliability result for any agent. Synthetic data only.
+
+Whether an agent acted was read from the to-do service: the calls it received, before and after each follow-up.
+
+`tests/live/test_confidence_follow_up_live.py` ran three times, each time on a fixture of its own: once on a fixture that was kept for the work, and twice self-contained. The first two runs were made before token usage reporting was merged into the sweep, and the third after it. The cloud evaluation target was merged after the third run. Neither merge changed what this target does or what the check sends to a hosted agent. Every run passed, with the same findings:
+
+- **Through the sweep, the agent was not asked.** Two Attempts in each run completed. The agent had been asked, in the composed input, to end its task response with a rating, and each of the six responses ended with a line such as `CONFIDENCE=100`. No Attempt had a rating: each recorded the target's reason, and no confidence request was sent. Calibration, strict confidence discrimination and the Brier-based score were unavailable with the reason `no valid confidence/outcome pair`.
+- **A follow-up that names the Attempt's response is answered with that conversation.** Sent by the check itself, not through the target: asked which identifier it had been told to use and which title the tool had returned, the agent answered with both, for both agents in every run.
+- **The separate confidence-only turn was answered.** Sent the confidence question with `tool_choice: none`, the fixture's agent answered `100` and the service received no call, in each of the three runs. That shows that no call occurred in those turns. It does not show that none can.
+- **Whether the agent acts is decided by its own code.** The check deploys the fixture's agent a second time with one line changed: `ResponsesHostServer(agent, prepare_options=lambda request, options: {})`, which makes the hosting package drop the options a caller sends. Both agents were then sent the same follow-up: an instruction to create an item, with `tool_choice: none`. The fixture's agent called nothing, 3 of 3. The copy called its create tool and the service recorded the new item, 3 of 3.
+- **The response does not say which tool choice applied.** The response to the confidence-only turn had no `tool_choice`, for either agent in any run.
+
+By hand on the first fixture of this verification, with a throwaway script, the fixture's agent:
+
+| What was sent | What happened |
+| --- | --- |
+| A question about the Attempt, with the Attempt's response as `previous_response_id` | Answered with the identifier and the title |
+| The same question with no `previous_response_id` | The agent answered that it had been told no identifier |
+| The same question with no `previous_response_id` and the `agent_session_id` of the Attempt | The same: the session alone did not carry the conversation |
+| An instruction to create an item, in the conversation, no tool choice | The agent created the item. Once |
+| The same instruction with `tool_choice: none` | Twenty messages in which the agent wrote that it was creating the item, and no call. Once |
+| The same instruction with `"tools": []` | The agent created the item. Once |
+
+By hand, the copy that drops the caller's options created the item under `tool_choice: none` 2 of 2 times.
+
+Read in the source of `agent-framework-foundry-hosting` 1.0.0b261112, and not run apart from the above: the package passes the fields of a request that it does not control itself, `tool_choice` among them, to the agent as options of the run. It offers the developer of an agent `prepare_options`, described there as a "developer hook to remove or replace caller model options". For an agent that does not accept run options it ignores them, with a warning by default.
+
+Documented by Microsoft, read on 2026-11-27, and not our observation: a hosted agent is a container that implements the protocol, to which the platform sends each request ([hosted agent runtime contract](https://learn.microsoft.com/en-us/azure/foundry/agents/concepts/hosted-agent-contract)). For the Responses protocol, "Conversation continuity comes from `previous_response_id` or a `conversation` ID—not from the session ID" ([manage hosted agent sessions](https://learn.microsoft.com/en-us/azure/foundry/agents/how-to/manage-hosted-sessions)). No documentation was found of a way for a caller to stop a hosted agent from calling a tool.
+
+The resource groups of this verification are listed with the [prompt agent target](../foundry_prompt_agent/readme.md#resources-of-this-verification).
