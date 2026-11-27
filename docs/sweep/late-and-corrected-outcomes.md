@@ -69,6 +69,8 @@ The earlier scorecard holds data and cannot hold your code. Declare again what t
 
 The metrics that are scored are those the earlier scorecard scored. A recalculation adds none and drops none.
 
+If you call an Evaluator on its own, without a sweep, `apply_outcome_corrections(attempts, corrections)` in `reliability_evaluators.evidence` gives you the corrected Attempts to call it with. Each keeps the record that was replaced.
+
 ## Leaving an outcome open during the sweep
 
 A task-success rule that cannot decide during the sweep returns `NO_TASK_OUTCOME_YET`:

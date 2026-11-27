@@ -28,7 +28,9 @@ from .runner import _select, _SelectedEvaluator
 
 SUPERSEDED = "superseded"
 
-# What a scorecard holds besides its schema version. A recalculation reads each of these.
+# What a scorecard holds besides its schema version. A recalculation reads each of these, and
+# refuses a scorecard that holds anything else: a part the scorecard gains is added here
+# together with what a recalculated scorecard does with it, so that it is never left out silently.
 _METRICS, _EXPERIMENTS, _ATTEMPTS, _SUPERSEDED_RESULTS = "metrics", "experiments", "attempts", "superseded_results"
 _READ = {"schema_version", _METRICS, _EXPERIMENTS, _ATTEMPTS, _SUPERSEDED_RESULTS}
 
