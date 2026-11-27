@@ -1,4 +1,4 @@
-"""The agent target interface: how the Evaluator sweep invokes an agent for an Attempt."""
+"""The agent target interface: how the Evaluator sweep invokes an agent, for an Attempt and its follow-up."""
 
 from __future__ import annotations
 

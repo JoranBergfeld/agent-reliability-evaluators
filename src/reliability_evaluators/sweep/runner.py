@@ -26,6 +26,9 @@ def run_sweep(*, tasks: Sequence[Task], agent_target: AgentTarget, metrics: Sequ
     after another, Task by Task, and scoring happens in this process. The result is the
     machine-readable reliability scorecard, as JSON-compatible data.
 
+    When a selected metric uses confidence, each completed Attempt is followed by one
+    separate confidence-only request through the agent target, before the next Attempt.
+
     A declaration that cannot be run is rejected before any Attempt is made. A task-success
     rule that does not return a sourced, binary TaskOutcome stops the sweep.
     """

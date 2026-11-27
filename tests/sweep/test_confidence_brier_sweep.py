@@ -187,6 +187,8 @@ def test_an_answer_that_is_one_number_from_0_to_100_is_accepted_and_normalized_t
         ("150", "the rating is outside 0 to 100"),
         ("100.01", "the rating is outside 0 to 100"),
         ("-5", "the rating is outside 0 to 100"),
+        ("9" * 5000, "the number in the confidence response is longer than 100 characters"),
+        ("50." + "0" * 5000, "the number in the confidence response is longer than 100 characters"),
     ],
 )
 def test_a_missing_unreadable_ambiguous_or_out_of_range_rating_is_unavailable_with_a_reason(response, reason):

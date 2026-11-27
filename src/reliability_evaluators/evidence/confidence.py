@@ -11,6 +11,8 @@ from .errors import EvidenceError
 
 # A number written in plain decimal digits. Nothing else is read as a rating.
 _NUMBER = re.compile(r"-?(?:[0-9]+(?:\.[0-9]+)?|\.[0-9]+)")
+# Far more digits than a rating has, and few enough to calculate with exactly.
+MAXIMUM_RATING_LENGTH = 100
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -34,6 +36,8 @@ class ConfidenceRating:
             raise EvidenceError(
                 f"a confidence rating is one number in plain decimal digits. Got {self.rating!r}"
             )
+        if len(self.rating) > MAXIMUM_RATING_LENGTH:
+            raise EvidenceError(f"a confidence rating is not longer than {MAXIMUM_RATING_LENGTH} characters")
         if not 0 <= Fraction(self.rating) <= 100:
             raise EvidenceError(f"the confidence rating {self.rating!r} is outside 0 to 100")
         if not isinstance(self.original_response, str):
@@ -87,6 +91,7 @@ EMPTY_RESPONSE = "the confidence response is empty"
 NO_NUMBER = "no number in the confidence response"
 SEVERAL_NUMBERS = "more than one number in the confidence response"
 OTHER_TEXT = "the confidence response has text besides one number"
+TOO_LONG = f"the number in the confidence response is longer than {MAXIMUM_RATING_LENGTH} characters"
 OUT_OF_RANGE = "the rating is outside 0 to 100"
 
 # The whole answer: one number, with nothing around it but whitespace and an optional percent sign.
@@ -100,6 +105,8 @@ def read_confidence_response(response: str) -> ConfidenceRating | ConfidenceUnav
     else is unavailable with a reason: a number is never clamped, guessed, chosen from
     several, or lifted out of surrounding text.
     """
+    if not isinstance(response, str):
+        raise EvidenceError(f"a confidence response is the agent's answer as text. Got {response!r}")
     if not response.strip():
         return ConfidenceUnavailable(reason=EMPTY_RESPONSE, original_response=response)
     numbers = _NUMBER.findall(response)
@@ -111,6 +118,8 @@ def read_confidence_response(response: str) -> ConfidenceRating | ConfidenceUnav
     if not only_a_number:
         return ConfidenceUnavailable(reason=OTHER_TEXT, original_response=response)
     number = only_a_number.group(1)
+    if len(number) > MAXIMUM_RATING_LENGTH:
+        return ConfidenceUnavailable(reason=TOO_LONG, original_response=response)
     if not 0 <= Fraction(number) <= 100:
         return ConfidenceUnavailable(reason=OUT_OF_RANGE, original_response=response)
     return ConfidenceRating(rating=number, original_response=response)

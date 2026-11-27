@@ -15,6 +15,7 @@ from reliability_evaluators.evidence import (
     ExecutionStatus,
     TaskOutcome,
     group_by_task,
+    read_confidence_response,
 )
 
 SOURCE = "synthetic customer test"
@@ -292,6 +293,19 @@ def test_a_rating_outside_0_to_100_is_rejected_and_never_clamped(rating):
 def test_a_rating_that_is_not_one_plain_number_is_rejected(rating):
     with pytest.raises(EvidenceError, match="one number"):
         ConfidenceRating(rating=rating, original_response=rating)
+
+
+def test_a_rating_too_long_to_be_a_rating_is_rejected():
+    with pytest.raises(EvidenceError, match="longer than 100 characters"):
+        ConfidenceRating(rating="50." + "0" * 98, original_response="50")
+
+    assert ConfidenceRating(rating="50." + "0" * 97, original_response="50").normalized == 0.5
+
+
+@pytest.mark.parametrize("response", [None, 85, b"85"])
+def test_a_confidence_response_that_is_not_text_is_rejected(response):
+    with pytest.raises(EvidenceError, match="text"):
+        read_confidence_response(response)
 
 
 @pytest.mark.parametrize("rating", [85, 85.5, None, True])
