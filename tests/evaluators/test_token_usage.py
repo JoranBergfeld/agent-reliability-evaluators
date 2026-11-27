@@ -4,7 +4,9 @@ It is called as an Evaluator is, with grouped Attempt evidence and without a sco
 Expected totals are added by hand.
 """
 
-from reliability_evaluators.evidence import Attempt, group_by_task
+import pytest
+
+from reliability_evaluators.evidence import Attempt, ResourceMeasurement, group_by_task
 from reliability_evaluators.scorecard import evaluator_token_usage
 
 
@@ -114,6 +116,55 @@ def test_when_no_usage_is_known_the_total_is_unavailable_and_not_zero():
         "reason": "the Evaluator is calculated by code in the customer's process, which uses no model",
         "scoring_path": "customer_process",
     }
+
+
+@pytest.mark.parametrize(
+    "recorded",
+    [
+        {"total_tokens": "790"},
+        {"total_tokens": 790.0},
+        {"total_tokens": True},
+        {"total_tokens": -5},
+        {"input_tokens": 700, "output_tokens": 90},
+        790,
+    ],
+)
+def test_a_recorded_usage_without_a_whole_number_total_is_missing_and_nothing_is_made_of_its_parts(recorded):
+    tasks = group_by_task([attempt("close/attempt-1", invocation={"response_id": "resp_1", "token_usage": recorded})])
+
+    usage = evaluator_token_usage(tasks)
+
+    assert usage["attempts"][0]["invocation"] == {
+        "basis": "missing",
+        "total_tokens": None,
+        "reason": "the token usage the agent target recorded for the invocation has no total_tokens that is a whole number",
+        "response_id": "resp_1",
+        "request_ids": {},
+    }
+    assert (usage["total"]["coverage"], usage["total"]["total_tokens"]) == ("unavailable", None)
+
+
+def test_a_resource_measurement_of_token_usage_is_evidence_for_a_metric_and_is_not_what_is_reported_as_usage():
+    # Resource consistency may be given token usage as a resource. The usage report reads what
+    # the agent target recorded of the invocation, and nothing else.
+    measured = ResourceMeasurement(
+        resource_type="token_usage",
+        value=5000,
+        unit="tokens",
+        boundary="all model calls of the Attempt, counted by the customer's gateway",
+        reliably_sourced=True,
+    )
+    tasks = group_by_task(
+        [
+            attempt("close/attempt-1", resource_measurements=[measured], invocation=reported(790)),
+            attempt("close/attempt-2", resource_measurements=[measured]),
+        ]
+    )
+
+    usage = evaluator_token_usage(tasks)
+
+    assert [entry["total_tokens"] for entry in usage["attempts"]] == [790, None]
+    assert (usage["total"]["coverage"], usage["total"]["total_tokens"]) == ("partial", 790)
 
 
 def test_failed_cancelled_and_retried_attempts_are_included_with_their_statuses_and_what_they_used():

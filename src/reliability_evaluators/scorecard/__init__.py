@@ -1,7 +1,8 @@
-"""Scorecard: assembles metric results, acceptance assessments and attempt-level evidence.
+"""Scorecard: assembles metric results, acceptance assessments, token usage and attempt-level evidence.
 
-The result is the machine-readable reliability scorecard. The human-readable report is
-rendered from it, and both are delivered with the evidence to a location the caller chooses.
+The result is the machine-readable reliability scorecard. The human-readable report and the
+text of a CI job summary are rendered from it, and they are delivered with the evidence to
+a location the caller chooses. Token usage is metadata, reported apart from the metrics.
 """
 
 from .acceptance import AcceptanceCriterion, CustomerAssessment, criteria_by_metric

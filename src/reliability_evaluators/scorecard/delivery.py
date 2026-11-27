@@ -67,16 +67,16 @@ class ArtifactLocation:
             ) from error
 
     def deliver(self, scorecard: dict[str, Any]) -> None:
-        """Write the evidence, then the scorecard, then the report and the CI job summary rendered from it.
+        """Write the evidence, then the scorecard, then the CI job summary and the report rendered from it.
 
         The first one that cannot be produced or written is a ReportingFailure, and what
-        comes after it is not written.
+        comes after it is not written. The report is last, so a reporting failure leaves none.
         """
         artifacts: tuple[tuple[str, Callable[[], str]], ...] = (
             (EVIDENCE_FILE, lambda: _evidence_json(scorecard["attempts"])),
             (SCORECARD_FILE, lambda: to_json(scorecard)),
-            (REPORT_FILE, lambda: render_report(scorecard)),
             (SUMMARY_FILE, lambda: render_summary(scorecard)),
+            (REPORT_FILE, lambda: render_report(scorecard)),
         )
         for name, produce in artifacts:
             try:

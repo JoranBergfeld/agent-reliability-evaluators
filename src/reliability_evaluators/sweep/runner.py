@@ -159,11 +159,12 @@ def run_sweep(
     violation assessor that does not return sourced violation assessments of the operational
     constraints its Task declares, and an action recording that is not a sequence of ActionEvent.
 
-    With `artifact_dir`, the attempt-level evidence, the scorecard and the human-readable
-    report rendered from it are also written to that directory. The caller chooses it in the
-    run or artifact context of the platform it runs on. The sweep then either delivers all
-    three or raises ReportingFailure: whatever stops it, a rejected declaration included, is
-    raised as that, and the evidence collected until then is kept at the location.
+    With `artifact_dir`, the attempt-level evidence, the scorecard, and the CI job summary
+    and the human-readable report rendered from it are also written to that directory. The
+    caller chooses it in the run or artifact context of the platform it runs on, and its
+    pipeline publishes the summary. The sweep then either delivers all four or raises
+    ReportingFailure: whatever stops it, a rejected declaration included, is raised as that,
+    and the evidence collected until then is kept at the location.
     """
     location = None if artifact_dir is None else ArtifactLocation(artifact_dir)
     attempts: list[Attempt] = []

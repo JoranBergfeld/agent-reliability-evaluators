@@ -66,7 +66,9 @@ def rescore_in_customer_process(
     entry of the metric still holds what Foundry-managed scoring gave: the unverified value
     with its limitation, or the failure with its execution error. A scorecard that was
     partial stays partial and still lists the managed result as missing, and the acceptance
-    assessment of the managed result is not changed.
+    assessment of the managed result is not changed. The token usage of the Evaluator
+    gains the rescore as a scoring of its own, which is code in this process and used no
+    tokens. What the managed run used stays as it was reported, and so do the totals.
 
     Where the earlier scorecard records the digest of the evidence that was submitted to
     Foundry, the supplied evidence has to give that digest. A rescore of other evidence is

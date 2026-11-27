@@ -21,7 +21,8 @@ live project was observed to behave (docs/managed_scoring/readme.md, "Observed l
 - An evaluator that raises on one of several items leaves the run completed. The result for that
   item has the status `error`, no score, and the error under its own `sample`. The item itself
   carries no error.
-- A run of a code evaluator reports an empty list of per-model usage, and no usage on its results.
+- A run of a code evaluator reports an empty list of per-model usage, and no usage on its results
+  (seen in the saved runs of the earlier prototypes, decision ticket #24).
 
 A test scripts what a live project could do to a run: alter the submitted item or the score,
 report an error on a completed item or on one of its results, refuse every request or only

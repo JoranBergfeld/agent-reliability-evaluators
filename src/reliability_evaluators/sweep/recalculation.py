@@ -90,7 +90,9 @@ def recalculate(
 
     A recalculation makes no Attempt, so how the sweep was executed stays as it was: the
     status of the scorecard, what it is missing, the execution limits and the record of
-    what was planned and made are carried over, and a partial scorecard stays partial. A
+    what was planned and made are carried over, and a partial scorecard stays partial. So
+    is the token usage: it is what the sweep used, the recalculation scores by code and
+    uses none, and what the customer declared for preparation is kept as it was reported. A
     retried Attempt and its retry stay two Attempts. A metric that had no result because
     its Attempts were cut short still has none: its entry is carried over as it was and is
     not scored from the corrected outcomes. Running the sweep again is what gives it one.

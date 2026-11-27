@@ -196,8 +196,9 @@ def sweep_token_usage(
     """
     by_identity = {attempt.attempt_id: attempt for attempt in attempts}
     used = {attempt_id: attempt_token_usage(attempt) for attempt_id, attempt in by_identity.items()}
+    given = {evaluator.metric_id: set(evaluator.attempt_ids) for evaluator in evaluators}
     for attempt_id, entry in used.items():
-        entry["used_by"] = [evaluator.metric_id for evaluator in evaluators if attempt_id in evaluator.attempt_ids]
+        entry["used_by"] = [metric_id for metric_id, attempt_ids in given.items() if attempt_id in attempt_ids]
     prepared_for = {
         evaluator.metric_id: [
             preparation.preparation_id
@@ -336,10 +337,13 @@ def managed_scoring_use(reported: Any, provenance: Mapping[str, Any] | None) -> 
     }
     if reported is None:
         return _missing(NO_MANAGED_RUN, **identifiers)
-    on_result = reported.get("result_sample_usage") if isinstance(reported, Mapping) else None
+    on_result, rows = (
+        (reported.get("result_sample_usage"), reported.get("per_model_usage"))
+        if isinstance(reported, Mapping)
+        else (None, reported)
+    )
     if isinstance(on_result, Mapping) and _is_count(on_result.get("total_tokens")):
         return _reported(on_result["total_tokens"], **{**identifiers, "source": ON_THE_RESULT})
-    rows = reported.get("per_model_usage") if isinstance(reported, Mapping) else reported
     if rows is None or rows == []:
         return _missing(NO_MANAGED_USAGE, **identifiers)
     if not isinstance(rows, list) or not all(
