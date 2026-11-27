@@ -3,14 +3,20 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Callable
+from typing import Callable, Sequence
 
 from ..agent_target import AgentResponse, AttemptRequest
-from ..evidence import TaskOutcome
+from ..evidence import OperationalConstraint, TaskOutcome, ViolationAssessment
 
 # Decides the task outcome of one Attempt and says what it was decided from. It should
 # look at independent evidence, such as the state of a service, not only at the response.
 TaskSuccessRule = Callable[[AttemptRequest, AgentResponse], TaskOutcome]
+
+# Assesses one Attempt against the operational constraints of its Task: one violation
+# assessment per constraint it could assess, from labels or a deterministic check. Like the
+# task-success rule, it should look at independent evidence and not only at the response.
+# A constraint it returns no assessment for is unassessed for that Attempt, not complied with.
+ViolationAssessor = Callable[[AttemptRequest, AgentResponse], Sequence[ViolationAssessment]]
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -20,6 +26,9 @@ class Task:
     `shareable_success_rule` is the task-success rule in words, as the agent may be shown
     it when it is asked for its confidence rating. Leave it out when the rule cannot be
     shared with the agent: the Task's Attempts then have no confidence rating.
+
+    `operational_constraints` are the safety rules that apply to the Task, and
+    `violation_assessor` assesses each Attempt against them.
     """
 
     task_id: str
@@ -27,6 +36,8 @@ class Task:
     success_rule: TaskSuccessRule
     attempts: int
     shareable_success_rule: str | None = None
+    operational_constraints: Sequence[OperationalConstraint] = ()
+    violation_assessor: ViolationAssessor | None = None
 
     def __post_init__(self) -> None:
         if not isinstance(self.task_id, str) or not self.task_id.strip():
@@ -39,3 +50,17 @@ class Task:
                 f"the shareable success rule of Task {self.task_id!r} is the rule in words, or left out. "
                 f"Got {rule!r}"
             )
+        object.__setattr__(self, "operational_constraints", tuple(self.operational_constraints))
+        declared: set[str] = set()
+        for constraint in self.operational_constraints:
+            if not isinstance(constraint, OperationalConstraint):
+                raise ValueError(
+                    f"Task {self.task_id!r} declares its operational constraints as OperationalConstraint, "
+                    f"got {constraint!r}"
+                )
+            if constraint.constraint_id in declared:
+                raise ValueError(
+                    f"Task {self.task_id!r} declares more than one operational constraint "
+                    f"as {constraint.constraint_id!r}"
+                )
+            declared.add(constraint.constraint_id)

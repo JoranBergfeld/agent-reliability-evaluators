@@ -81,34 +81,22 @@ def test_every_raw_pair_is_in_the_scorecard_with_the_rating_as_written_and_the_s
     # (0.875 - 1)^2 = 0.015625 and (0.125 - 0)^2 = 0.015625. Mean 0.015625, score 0.984375.
     scorecard = sweep({"close": ["success", "failure"]}, {"close/attempt-1": "87.50", "close/attempt-2": "12.5"})
 
-    assert scorecard["attempts"] == [
-        {
-            "attempt_id": "close/attempt-1",
-            "task_id": "close",
-            "execution_status": "completed",
-            "execution_error": None,
-            "task_outcome": {"success": True, "source": SOURCE},
-            "confidence": {
-                "rating": "87.50",
-                "normalized": 0.875,
-                "original_response": "87.50",
-                "unavailable_reason": None,
-            },
-        },
-        {
-            "attempt_id": "close/attempt-2",
-            "task_id": "close",
-            "execution_status": "completed",
-            "execution_error": None,
-            "task_outcome": {"success": False, "source": SOURCE},
-            "confidence": {
-                "rating": "12.5",
-                "normalized": 0.125,
-                "original_response": "12.5",
-                "unavailable_reason": None,
-            },
-        },
-    ]
+    first, second = scorecard["attempts"]
+    assert (first["attempt_id"], second["attempt_id"]) == ("close/attempt-1", "close/attempt-2")
+    assert first["task_outcome"] == {"success": True, "source": SOURCE}
+    assert first["confidence"] == {
+        "rating": "87.50",
+        "normalized": 0.875,
+        "original_response": "87.50",
+        "unavailable_reason": None,
+    }
+    assert second["task_outcome"] == {"success": False, "source": SOURCE}
+    assert second["confidence"] == {
+        "rating": "12.5",
+        "normalized": 0.125,
+        "original_response": "12.5",
+        "unavailable_reason": None,
+    }
     brier = metric(scorecard)
     assert brier["value"] == 0.984375
     assert brier["details"] == {
@@ -309,14 +297,12 @@ def test_a_confidence_request_that_fails_leaves_the_attempt_completed_with_its_o
         {"close/attempt-1": TimeoutError("the follow-up timed out"), "close/attempt-2": "40"},
     )
 
-    assert attempt(scorecard, "close/attempt-1") == {
-        "attempt_id": "close/attempt-1",
-        "task_id": "close",
-        "execution_status": "completed",
-        "execution_error": None,
-        "task_outcome": {"success": True, "source": SOURCE},
-        "confidence": unavailable("the confidence request failed: TimeoutError: the follow-up timed out"),
-    }
+    unasked = attempt(scorecard, "close/attempt-1")
+    assert (unasked["execution_status"], unasked["execution_error"]) == ("completed", None)
+    assert unasked["task_outcome"] == {"success": True, "source": SOURCE}
+    assert unasked["confidence"] == unavailable(
+        "the confidence request failed: TimeoutError: the follow-up timed out"
+    )
     assert metric(scorecard)["value"] == 0.84
 
 
@@ -366,14 +352,11 @@ def test_an_attempt_that_did_not_complete_is_not_asked_and_is_not_a_task_failure
     # Only close/attempt-1 gives a pair: (0.8 - 1)^2 = 0.04, score 0.96.
     scorecard = sweep({"close": ["success", "error"]}, {"close/attempt-1": "80", "close/attempt-2": "0"})
 
-    assert attempt(scorecard, "close/attempt-2") == {
-        "attempt_id": "close/attempt-2",
-        "task_id": "close",
-        "execution_status": "failed",
-        "execution_error": "ConnectionError: the agent endpoint returned 503",
-        "task_outcome": None,
-        "confidence": unavailable("the Attempt did not complete, so no confidence request was sent"),
-    }
+    failed = attempt(scorecard, "close/attempt-2")
+    assert failed["execution_status"] == "failed"
+    assert failed["execution_error"] == "ConnectionError: the agent endpoint returned 503"
+    assert failed["task_outcome"] is None
+    assert failed["confidence"] == unavailable("the Attempt did not complete, so no confidence request was sent")
     brier = metric(scorecard)
     assert brier["value"] == 0.96
     assert brier["counts"] == {

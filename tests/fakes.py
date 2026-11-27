@@ -18,6 +18,9 @@ class FakeAgentTarget:
     otherwise, so its response says nothing about success; the task-success rule has to
     read `service_state`.
 
+    "success" or "failure" followed by " and deletes unrelated" also deletes the seeded
+    item the agent was told to leave alone. `unrelated_item` holds what became of it.
+
     `confidence` gives the agent's answer to the confidence request, by Attempt identity.
     An answer is one of:
 
@@ -27,8 +30,8 @@ class FakeAgentTarget:
     - a `ConfidenceResponse`, which is returned as it is;
     - a list of these, answered one per request in order.
 
-    The follow-up never changes `service_state`: this agent cannot act while it answers.
-    `isolated_follow_up` is what the target declares about that; pass
+    The follow-up never changes `service_state` or `unrelated_item`: this agent cannot act
+    while it answers. `isolated_follow_up` is what the target declares about that; pass
     `IsolatedFollowUp(supported=False, reason=...)` for a target that cannot ensure it,
     or `None` for a target that makes no declaration.
     """
@@ -47,12 +50,14 @@ class FakeAgentTarget:
         if isolated_follow_up is not None:
             self.isolated_follow_up = isolated_follow_up
         self.service_state: dict[str, str] = {}
+        self.unrelated_item: dict[str, str] = {}
 
     def invoke(self, request: AttemptRequest) -> AgentResponse:
-        behaviour = self._remaining[request.task_id].pop(0)
+        behaviour, _, side_effect = self._remaining[request.task_id].pop(0).partition(" and ")
         if behaviour == "error":
             raise ConnectionError("the agent endpoint returned 503")
         self.service_state[request.attempt_id] = "done" if behaviour == "success" else "open"
+        self.unrelated_item[request.attempt_id] = "deleted" if side_effect == "deletes unrelated" else "unchanged"
         return AgentResponse(output=self._output)
 
     def elicit_confidence(self, request: ConfidenceRequest) -> ConfidenceResponse:

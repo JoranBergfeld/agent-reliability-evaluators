@@ -8,7 +8,7 @@ The three predictability Evaluators calculate from the same confidence/outcome p
 which `confidence_pairs.pair_confidence_with_outcome` builds, counts and explains.
 """
 
-from . import brier_based_score, outcome_consistency
+from . import brier_based_score, constraint_compliance, outcome_consistency
 from .catalogue import RELIABILITY_METRICS, ReliabilityMetric
 from .registry import EVALUATORS, Evaluator
 from .result import (
@@ -37,6 +37,7 @@ __all__ = [
     "Scale",
     "ScoringPath",
     "brier_based_score",
+    "constraint_compliance",
     "counted",
     "outcome_consistency",
 ]

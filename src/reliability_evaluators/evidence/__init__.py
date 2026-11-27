@@ -3,7 +3,14 @@
 Pure: standard library only, no I/O. The canonical metric definitions depend on it.
 """
 
-from .attempt import Attempt, EvidenceError, ExecutionStatus, TaskOutcome
+from .attempt import (
+    Attempt,
+    EvidenceError,
+    ExecutionStatus,
+    OperationalConstraint,
+    TaskOutcome,
+    ViolationAssessment,
+)
 from .confidence import ConfidenceRating, ConfidenceUnavailable, read_confidence_response
 from .grouping import TaskEvidence, group_by_task, require_unambiguous
 
@@ -13,8 +20,10 @@ __all__ = [
     "ConfidenceUnavailable",
     "EvidenceError",
     "ExecutionStatus",
+    "OperationalConstraint",
     "TaskEvidence",
     "TaskOutcome",
+    "ViolationAssessment",
     "group_by_task",
     "read_confidence_response",
     "require_unambiguous",

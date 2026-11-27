@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Callable, Iterable
 
 from ..evidence import TaskEvidence
-from . import brier_based_score, outcome_consistency
+from . import brier_based_score, constraint_compliance, outcome_consistency
 from .result import MetricDefinition, MetricResult
 
 
@@ -25,5 +25,6 @@ EVALUATORS: dict[str, Evaluator] = {
     for evaluator in (
         Evaluator(outcome_consistency.DEFINITION, outcome_consistency.evaluate),
         Evaluator(brier_based_score.DEFINITION, brier_based_score.evaluate, needs_confidence=True),
+        Evaluator(constraint_compliance.DEFINITION, constraint_compliance.evaluate),
     )
 }
