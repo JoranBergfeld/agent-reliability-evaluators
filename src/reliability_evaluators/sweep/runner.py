@@ -21,7 +21,7 @@ from ..evidence import (
 )
 from ..scorecard import AcceptanceCriterion, ScoredMetric, build_scorecard, criteria_by_metric
 from .confidence import ATTEMPT_NOT_COMPLETED, elicit_confidence
-from .declaration import ActionEvidenceDeclaration, Task
+from .declaration import ActionEvidenceDeclaration, NoTaskOutcomeYet, Task
 
 ELAPSED_TIME_UNIT = "seconds"
 ELAPSED_TIME_BOUNDARY = (
@@ -139,10 +139,12 @@ def _run_attempt(
         )
     elapsed = clock() - started
     outcome = task.success_rule(request, response)
-    if not isinstance(outcome, TaskOutcome):
+    if isinstance(outcome, NoTaskOutcomeYet):
+        outcome = None
+    elif not isinstance(outcome, TaskOutcome):
         raise EvidenceError(
             f"the task-success rule of Task {task.task_id!r} must return a TaskOutcome with its source, "
-            f"got {outcome!r}"
+            f"or NO_TASK_OUTCOME_YET, got {outcome!r}"
         )
     # The task outcome is decided before the agent is asked for its confidence rating, so the
     # rating cannot enter the outcome, and the follow-up cannot disturb what the outcome is decided from.

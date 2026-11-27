@@ -16,7 +16,7 @@ from reliability_evaluators.evidence import (
     ViolationAssessment,
 )
 from reliability_evaluators.scorecard import to_json
-from reliability_evaluators.sweep import ActionEvidenceDeclaration, Task, recalculate, run_sweep
+from reliability_evaluators.sweep import NO_TASK_OUTCOME_YET, ActionEvidenceDeclaration, Task, recalculate, run_sweep
 from tests.fakes import FakeActingAgentTarget, FakeAgentTarget
 
 SOURCE = "final state of the fake service"
@@ -30,15 +30,18 @@ def supplied(scorecard):
     return json.loads(to_json(scorecard))
 
 
-def sweep(script, metrics=("outcome_consistency",), ratings=None):
+def sweep(script, metrics=("outcome_consistency",), ratings=None, not_known_yet=()):
     """Run a sweep with one Task per script entry and one Attempt per scripted behaviour.
 
     `ratings` gives the fake agent's answer to the confidence request of each Attempt, by
-    Attempt identity.
+    Attempt identity. `not_known_yet` names the Attempts whose task outcome the
+    task-success rule cannot decide during the sweep.
     """
     target = FakeAgentTarget(script, confidence=ratings)
 
     def item_is_done(attempt, response):
+        if attempt.attempt_id in not_known_yet:
+            return NO_TASK_OUTCOME_YET
         return TaskOutcome(success=target.service_state[attempt.attempt_id] == "done", source=SOURCE)
 
     tasks = [
@@ -255,3 +258,75 @@ def test_a_correction_changes_nothing_but_the_task_outcome_it_names_and_the_metr
     ]
     assert [assessment["violated"] for assessment in third["violation_assessments"]] == [False]
     assert third["operational_constraints"] == [LEAVE_UNRELATED.to_dict()]
+
+
+def test_the_corrected_outcome_is_the_one_supplied_whatever_the_confidence_rating_of_the_attempt():
+    # Earlier: ratings of 100 on a success and 0 on a failure, squared errors 0 and 0, score 1.
+    # Both outcomes are corrected against the ratings: (1 - 0)^2 = 1 and (0 - 1)^2 = 1, mean 1, score 0.
+    ratings = {"close/attempt-1": "100", "close/attempt-2": "0"}
+    earlier = sweep({"close": ["success", "failure"]}, metrics=["brier_based_score"], ratings=ratings)
+    assert metric(earlier, "brier_based_score")["value"] == 1
+
+    recalculated = recalculate(
+        earlier_scorecard=earlier,
+        outcome_corrections=[corrected("close/attempt-1", success=False), corrected("close/attempt-2", success=True)],
+    )
+
+    assert metric(recalculated, "brier_based_score")["value"] == 0
+    first, second = recalculated["attempts"]
+    assert (first["task_outcome"]["success"], first["confidence"]["rating"]) == (False, "100")
+    assert (second["task_outcome"]["success"], second["confidence"]["rating"]) == (True, "0")
+    assert [entry["confidence"] for entry in recalculated["attempts"]] == [
+        entry["confidence"] for entry in earlier["attempts"]
+    ]
+
+
+def test_a_task_outcome_that_was_not_known_during_the_sweep_can_be_supplied_later():
+    # The outcome of the third and fourth Attempt is labelled after the run.
+    # Earlier: outcome consistency over two successes, p = 2/2, value 1. Brier-based score over the
+    # two pairs that exist: squared errors 0.0625 and 0.0625, score 0.9375.
+    # Supplied: two failures. Outcome consistency: p = 2/4, (2 * 0.5 - 1)^2 = 0.
+    # Brier-based score: 0.0625, 0.0625, (0.75 - 0)^2 = 0.5625 and (0.25 - 0)^2 = 0.0625.
+    # Mean 0.75 / 4 = 0.1875, score 0.8125.
+    earlier = sweep(
+        {"close": HALF},
+        metrics=["outcome_consistency", "brier_based_score"],
+        ratings=RATINGS,
+        not_known_yet=["close/attempt-3", "close/attempt-4"],
+    )
+    assert attempt(earlier, "close/attempt-3")["execution_status"] == "completed"
+    assert attempt(earlier, "close/attempt-3")["task_outcome"] is None
+    assert metric(earlier, "outcome_consistency")["value"] == 1
+    assert metric(earlier, "outcome_consistency")["counts"]["attempts"] == {
+        "total": 4,
+        "valid": 2,
+        "missing": [
+            {"reason": "no task outcome recorded", "count": 2, "ids": ["close/attempt-3", "close/attempt-4"]}
+        ],
+        "excluded": [],
+    }
+    assert metric(earlier, "brier_based_score")["counts"]["confidence_outcome_pairs"]["valid"] == 2
+
+    recalculated = recalculate(
+        earlier_scorecard=earlier,
+        outcome_corrections=[
+            corrected("close/attempt-3", success=False, source="label by the support team"),
+            corrected("close/attempt-4", success=False, source="label by the support team"),
+        ],
+    )
+
+    assert metric(recalculated, "outcome_consistency")["value"] == 0
+    assert metric(recalculated, "outcome_consistency")["counts"]["attempts"] == {
+        "total": 4,
+        "valid": 4,
+        "missing": [],
+        "excluded": [],
+    }
+    brier = metric(recalculated, "brier_based_score")
+    assert brier["value"] == 0.8125
+    assert brier["counts"]["confidence_outcome_pairs"] == {"total": 4, "valid": 4, "missing": [], "excluded": []}
+    third = attempt(recalculated, "close/attempt-3")
+    assert third["task_outcome"] == {"success": False, "source": "label by the support team"}
+    assert third["superseded_task_outcomes"] == [{"task_outcome": None, "correction_provenance": PROVENANCE}]
+    (superseded,) = recalculated["superseded_results"]
+    assert [correction["superseded_task_outcome"] for correction in superseded["outcome_corrections"]] == [None, None]
