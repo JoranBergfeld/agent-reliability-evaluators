@@ -2,7 +2,7 @@
 
 Foundry-managed scoring runs an Evaluator's calculation as a custom evaluator in your own Foundry project, instead of in your own process. The Evaluator sweep still makes the Attempts and groups the evidence. Foundry only calculates.
 
-Only **outcome consistency** can be scored this way in this version. Every other metric is scored in your own process.
+Each of the twelve Evaluators can be scored this way. The scoring path is declared per metric, so one sweep can score some metrics in Foundry and the others in your own process. Foundry-managed scoring has [limits](#limits) that scoring in your own process does not have: a sweep of some hundreds of Attempts is too large for it.
 
 A value that comes back from Foundry is reported as an **unverified result**. It cannot be met or not met by an acceptance criterion. Read [what the scorecard shows](#what-the-scorecard-shows) before you choose this scoring path for a release gate.
 
@@ -35,6 +35,8 @@ scorecard = run_sweep(
 
 The scoring path is declared per metric. A metric selected by its identity alone is scored in your own process, so one sweep can use both paths. The sweep scores each metric on the path you declared and on no other.
 
+Any of the twelve metrics can be selected this way, alone or together. Everything else is declared as on the other path: the trajectory metrics take your [action evidence](../sequential_trajectory_consistency/readme.md#what-you-declare), a robustness metric needs an experiment with a variation of its kind, and the predictability metrics ask the agent for its confidence. Only where the calculation runs changes.
+
 What the sweep does for a metric on this path:
 
 1. Before any Attempt is made, it registers the derived evaluator in your project. A project it cannot use therefore costs no Attempts.
@@ -44,9 +46,11 @@ What the sweep does for a metric on this path:
 
 **Each metric has runs of its own.** An evaluator that raises fails its whole run, and takes the results of every other evaluator in that run with it (observed, see below). So no two metrics share a run: a metric whose run fails costs no other metric its result. The first runs of a sweep are all started before the first of them is waited for, and so are the second runs.
 
-`FoundryManagedScoring` waits up to `run_timeout_seconds` (900 by default) for each run, counted from when that run was made, and asks for the run's status every `poll_interval_seconds` (10 by default). A run that has not ended in time is cancelled and its metric has no result. The second run takes two to three seconds for every six bytes of the result (observed): raise `run_timeout_seconds` for a sweep of several hundred Attempts.
+Twelve metrics on this path are twelve evaluations in your project, each with one criterion, and twenty-four runs or more. The twelve derived evaluators also returned their values as twelve criteria of one run when that was tried ([observed](#all-twelve-evaluators-observed-on-2026-11-27)). The sweep does not score that way: every row of such a run carries the evidence of all twelve, and one evaluator that raises costs the other eleven their results.
 
-To register from a separate CI step, without a sweep:
+`FoundryManagedScoring` waits up to `run_timeout_seconds` (900 by default) for each run, counted from when that run was made, and asks for the run's status every `poll_interval_seconds` (10 by default). A run that has not ended in time is cancelled and its metric has no result. The second run takes two to three seconds for every six bytes of the result (observed), so a result of more than about 300 parts does not come back in the default time: raise `run_timeout_seconds` for a sweep of more than about a hundred Attempts. See [limits](#limits).
+
+To register from a separate CI step, without a sweep, name the metrics by their metric identities:
 
 ```python
 FoundryManagedScoring(project=my_project).register(["outcome_consistency"])
@@ -67,16 +71,18 @@ Foundry does not accept API keys for evaluations (documented by Microsoft, not t
 
 ## How the evaluator is derived
 
-There is one definition of outcome consistency: [`evaluators/outcome_consistency.py`](../../src/reliability_evaluators/evaluators/outcome_consistency.py). No second formula exists for Foundry.
+There is one definition of each metric: its module in [`evaluators/`](../../src/reliability_evaluators/evaluators/), such as [`outcome_consistency.py`](../../src/reliability_evaluators/evaluators/outcome_consistency.py). No second formula exists for Foundry.
 
-A Foundry code evaluator is one Python source that defines `grade(sample, item)`, which returns a number. It cannot import the offering. `derive_artifact("outcome_consistency")` therefore builds that one source from the files your own process executes:
+A Foundry code evaluator is one Python source that defines `grade(sample, item)`, which returns a number. It cannot import the offering. `derive_artifact(metric_id)` therefore builds that one source, for one metric, from the files your own process executes:
 
 1. It starts from the canonical definition and from [`managed_scoring/grader.py`](../../src/reliability_evaluators/managed_scoring/grader.py), which reads the transported evidence with the Evidence model's own reader and encodes the result.
 2. It follows their imports of other modules of the offering, and reads the source of each.
 3. It joins those sources in import order. Every statement is kept as written. Only the imports between the joined modules, the module docstrings and `__all__` are left out, because one source does not need them.
-4. It appends `grade`, which calls the canonical `evaluate` on the decoded evidence and returns the part of the result that the submitted item asks for.
+4. It appends `grade`, which calls the canonical `evaluate` on the decoded evidence, with what you declared for the Evaluator, and returns the part of the result that the submitted item asks for.
 
-The artifact is derived when it is needed and is never stored in the repository, so there is no generated file that could fall behind. The Evaluator-seam vectors of outcome consistency run against both the canonical definition and the derived artifact in [`tests/evaluators/test_outcome_consistency_managed_artifact.py`](../../tests/evaluators/test_outcome_consistency_managed_artifact.py). A change that made the two scoring paths give different values, or a different state, reason or counts for an unavailable measurement, fails there.
+The artifact is derived when it is needed and is never stored in the repository, so there is no generated file that could fall behind.
+
+**Every Evaluator-seam vector runs on both scoring paths.** [`tests/evaluators/conftest.py`](../../tests/evaluators/conftest.py) runs each test of that directory twice: against the canonical definition, and against the artifact derived from it, which [`tests/managed_artifact.py`](../../tests/managed_artifact.py) calls for every part of the result the way the sandbox does. The vectors are written once and are not copied, so a vector that is added later runs on both paths without anything being done for it. Beside the hand-calculated expectations of the vector, what the artifact gives is compared with what the canonical definition gives for the same evidence: the same double, state, reason, counts, details and Attempts, or the same kind of rejection. A change that makes the two paths differ fails there. So does a definition that starts to use evidence which is not declared for transport. What only an artifact has is tested in [`tests/derived_artifacts/`](../../tests/derived_artifacts/test_derived_artifacts.py): the sandbox it has to fit, what it is sent, and the encoding of its result.
 
 The derivation refuses, with a `DerivationError`, anything that would only fail later in Foundry:
 
@@ -85,18 +91,20 @@ The derivation refuses, with a `DerivationError`, anything that would only fail 
 | An import of a module that the sandbox was not observed to accept | The sandbox has a fixed package list |
 | A call named `compile`, `eval`, `exec`, `globals` or `__import__`, as a function or a method | The sandbox refuses such a source before running it. `re.compile` is refused too |
 | Syntax newer than Python 3.12 | The sandbox ran Python 3.12 when observed |
-| A source of 256 KB or more | The documented code-size limit. The artifact is about 80 KB |
+| A source of 256 KB or more | The documented code-size limit. The twelve artifacts are between 82 and 94 KB |
 | Two joined modules that define the same top-level name, an import under another name, an import of a module as an object, or an import inside a function | One joined source cannot keep them apart |
 
 The canonical definitions and the Evidence model therefore have to stay inside those rules.
 
 ### Adding another Evaluator
 
-Declare the Attempt evidence it is calculated from in `MANAGED_ATTEMPT_EVIDENCE` in [`artifact.py`](../../src/reliability_evaluators/managed_scoring/artifact.py), by the field names of the Attempt record. The same derivation then produces its artifact, and the same reader reads its evidence. Then run its Evaluator-seam vectors against the derived artifact, as the outcome consistency test does. That test is what shows the declared evidence is enough. Its result comes back through the same encoding, whatever units its counts are in and whatever its details hold, as long as they are JSON data. Only outcome consistency has been derived and proven. An Evaluator that also takes a customer declaration, such as the action types of the trajectory metrics, needs that declaration transported too, which nothing does yet.
+All twelve are declared. For another one, declare the Attempt evidence it is calculated from in `MANAGED_ATTEMPT_EVIDENCE` in [`artifact.py`](../../src/reliability_evaluators/managed_scoring/artifact.py), by the field names of the Attempt record. The same derivation then produces its artifact, and the same reader reads its evidence. Its Evaluator-seam vectors run against the artifact as soon as they are in `tests/evaluators/`, and they are what shows that the declared evidence is enough. Its result comes back through the same encoding, whatever units its counts are in and whatever its details hold, as long as they are JSON data.
+
+An Evaluator that takes a customer declaration after its evidence names it under `declarations` in the [registry](../../src/reliability_evaluators/evaluators/registry.py). The declaration travels with the evidence, and is written and read by the two functions under its name in `_DECLARATIONS` in [`grader.py`](../../src/reliability_evaluators/managed_scoring/grader.py). The action types of the trajectory metrics are the only declaration there is.
 
 ## Registration
 
-The evaluator is registered as `reliability-outcome-consistency`, of type `custom` with a `code` definition.
+Each evaluator is registered under `reliability-` and its metric identity with hyphens, such as `reliability-outcome-consistency` or `reliability-brier-based-score`, of type `custom` with a `code` definition.
 
 Registration is **idempotent**. Foundry itself is not: registering the same code twice creates a second version (observed). So the offering first lists the versions your project holds under that name and compares their code with the derived code:
 
@@ -109,19 +117,33 @@ The declared range of the score is the scale of the canonical definition. Only t
 
 ## The evidence that is submitted
 
-For each Attempt the evaluator is given: its identity, its Task, its execution status and its task outcome with its source. Nothing else about the Attempt is sent: its actions, its resource measurements, its confidence rating, its violation assessments and what it records about its experiment stay in your process. It goes to your own project.
+For each Attempt an evaluator is given its identity, its Task, its execution status and the evidence its metric is calculated from. Nothing else about the Attempt is sent: the rest stays in your process. What is sent goes to your own project.
 
-Each Attempt is written exactly as the Attempt record writes itself in the scorecard, with the evidence that is not sent left empty, and is read back with the Evidence model's strict reader (`read_attempts`). That reader accepts an Attempt only when it is exactly what this version records.
+| Evaluator | What is sent of an Attempt, beside its identity, its Task and its execution status |
+| --- | --- |
+| Outcome consistency | The task outcome with its source |
+| Distributional and sequential trajectory consistency | The source of the action evidence and the tool name of each action, in order. The arguments, the result and the error of an action are not sent: these metrics compare action types and nothing else of an action |
+| Resource consistency | The resource measurements, each with its type, value, unit, measurement boundary and whether it is reliably sourced |
+| Fault, environment and prompt robustness | The task outcome, the intended condition with its role, kind, description and parameters, the observed condition with its source and observations, and the prompt variant with its exact text and source |
+| Calibration, strict confidence discrimination and Brier-based score | The task outcome and the confidence evidence: the rating as the agent wrote it with the whole response it was read from, or the reason there is no rating |
+| Constraint compliance and conditional harm severity | The operational constraints with their descriptions, and the violation assessments with their evidence, source and severity rating |
 
-The evidence travels as one string in one field, `outcome_consistency_evidence`: the SHA-256 digest of the evidence as JSON, a colon, and that JSON, deflated and written in base64.
+So the text of a prompt variant, the agent's answer to the confidence request and the evidence text of a violation assessment are stored in your project when you score those metrics there.
+
+**What you declare for an Evaluator is sent with its evidence.** The trajectory metrics are calculated from the evidence source and the action types you declare, so those travel in the same string, behind the same digest. An evaluator in Foundry is given the submitted row and nothing else (observed), so a declaration has no other way to reach it.
+
+Each Attempt is written exactly as the Attempt record writes itself in the scorecard, with the evidence that is not sent left empty, and is read back with the Evidence model's strict reader (`read_attempts`). That reader accepts an Attempt only when it is exactly what this version records. An action that is sent with its tool name only is written as an action whose arguments, result and error were not recorded.
+
+The evidence travels as one string in one field, named after the metric, such as `outcome_consistency_evidence`: the SHA-256 digest of the evidence as JSON, a colon, and that JSON, deflated and written in base64. The JSON holds the version of the encoding, what you declared, and the Tasks with their Attempts.
 
 - **A string, not structured data.** Structured numbers were altered on the way into a managed evaluator, and strings were not, in the earlier probes (decision ticket #12).
 - **A digest.** The evaluator recomputes the digest before it reads anything. Evidence that changed on the way is rejected inside Foundry. It can never produce a value calculated from other evidence.
 - **Deflated.** Every submitted row carries the evidence, because Foundry grades each row on its own, and a result takes many rows. The JSON is deflated with `zlib` (raw deflate, level 9), which the sandbox provides. In your project the stored evidence is therefore not readable as it stands: inflate the base64 text to read it.
+- **As recorded.** A confidence rating travels as the text the agent wrote: `87.50` arrives as `87.50`, and a rating with more digits than a double holds arrives with all of them. The predictability Evaluators calculate from that text with exact fractions, in Foundry as in your process. A resource measurement travels as the number that was recorded, a count as a whole number, and a task outcome as true or false. Nothing is rounded on the way.
 
 The evaluator validates what it receives with the same code as your own process: the Evidence model rejects a task outcome that is not binary, an Attempt without an identity and two Attempts with the same identity, and the result contract rejects a value outside the scale. A field this version does not know is rejected, not ignored.
 
-A run larger than 1,900,000 characters is not submitted, and the metric has no result. That is the size one run accepted when observed; larger ones were rejected, and the limit is on all the rows of a run together. The run for the parts of the result has one row for each part, each with the evidence, so the limit is reached sooner than the evidence alone would reach it: see [what it costs](#what-it-costs). Nothing is split or truncated. Batching is not designed.
+A run whose request would be larger than 2,000,000 bytes is not made, and the metric has no result. The run for the parts of the result has one row for each part, each with the evidence, so the limit is reached much sooner than the evidence alone would reach it: see [limits](#limits). Nothing is split or truncated.
 
 ## How a result comes back
 
@@ -160,14 +182,54 @@ Foundry grades the rows of a run one after another, at two to three seconds a ro
 | 2 Attempts in 2 Tasks, an unavailable measurement | 259 bytes | 44 | Seen live: the sweep took 141 seconds, registration and both runs included |
 | 8 Attempts in 2 Tasks, a value | 266 bytes | 45 | Seen live: the sweep took 164 and 203 seconds |
 | 50 Attempts in 10 Tasks | 365 bytes | 61 | Not run live. Three to four minutes at the pace that was seen |
-| 500 Attempts in 100 Tasks | 1,677 bytes | 280 | Not run live. Twelve to fifteen minutes at that pace for the second run alone, which is about the default `run_timeout_seconds`, and 1.4 million submitted characters |
-| 750 Attempts in 150 Tasks | | 420 | Refused by the sweep: the run would submit 3.0 million characters |
+| 500 Attempts in 100 Tasks | 1,682 bytes | 281 | Not run live. Twelve to fifteen minutes at that pace for the second run alone, which is about the default `run_timeout_seconds`, and a request of 1.4 million bytes |
+| 750 Attempts in 150 Tasks | | 420 | Refused by the sweep: the request for the run would be 3.0 million bytes |
 
-The sizes of the last three rows were measured with the derived evaluator on this machine, with Attempt identities of the form `task-7/attempt-3`. Identities that have less in common deflate less. The limit of 1,900,000 characters is therefore reached somewhere between 500 and 750 such Attempts for outcome consistency, where the evidence alone would fit many more. A metric that reports more details has a larger result and reaches the limit sooner.
+These rows are for outcome consistency. The sizes of the last three were measured with the derived evaluator on this machine, with Attempt identities of the form `task-7/attempt-3`. A metric that reports more details has a larger result, takes more rows and reaches the [limits](#limits) sooner. With all twelve metrics on this path, a sweep of 14 Attempts took 687 seconds (seen live): the results were 269 to 623 bytes, in 45 to 104 parts each.
 
 Before this version a managed sweep made one run with one row and took 43 to 52 seconds. Returning the state, the reason and the counts is what the added minutes buy.
 
 **A row that Foundry does not grade is asked for again.** Twice, Foundry returned a row of a completed run as an error where the evaluator had not raised on that row (observed). A result takes many rows, so the sweep asks again for the parts that did not come back, in a further run with only those rows, up to three times in all. The evaluator returns the same part for the same evidence, and the digest is checked whichever run a part came from. A part that does not come back in three runs leaves the metric without a result. `managed_scoring.encoded_result.run_ids` names every run that returned a part.
+
+## Limits
+
+Foundry-managed scoring has limits that scoring in your own process does not have. When one is exceeded, the metric has [no result](#when-managed-scoring-gives-no-result): the scorecard is partial and the failure names the limit. Nothing is truncated, no part of a result is reported, and no metric is calculated from a part of its evidence. The evidence is kept, so you can ask for a [customer-process rescore](#a-customer-process-rescore).
+
+| Limit | Documented by Microsoft | Observed on 2026-11-27 | What the offering does |
+| --- | --- | --- | --- |
+| The code of an evaluator | Under 256 KB | Not approached: the twelve derived evaluators are 82 to 94 KB | The derivation refuses a larger source |
+| A run: the request that makes it, with all its rows | Not found. The specification assumed a limit near 2 MB | A request of 2,096,232 bytes was accepted and one of 2,096,233 was refused with HTTP 413, counted without whitespace, with one row and with 300 rows | A run whose request would be more than 2,000,000 bytes is not made. The failure says how large it would have been |
+| One call of an evaluator | 120 seconds | Less. Every call of up to 50 seconds was graded (10 of 10), a call of 52 to 58 seconds 6 times in 8, and no call of 60 seconds or more (0 of 12). A row that takes too long comes back as a row that was not graded, with the same error | It cannot know beforehand how long a call takes. A row that is not graded is asked for again, twice. The failure names the limit |
+| A run, in time | None found | Two to three seconds a row, with the runs of a sweep side by side | A run that has not ended after `run_timeout_seconds`, 900 by default, is cancelled |
+
+### How large a sweep fits
+
+**The size of a run is what limits a sweep.** Every row of a run carries the evidence, and the run for the parts of a result has one row for every six bytes of it. Both grow with the sweep, so the request grows with its square.
+
+The table gives, for each Evaluator, the largest sweep whose runs fit in 2,000,000 bytes. It was measured on this machine with the derived evaluators, on synthetic sweeps of Tasks with five Attempts each and identities like `task-7/attempt-3`. Your sweep will differ: identities and texts that have less in common deflate less, and a result names every Task and Attempt it leaves out.
+
+| Evaluator | Largest sweep that fits | Rows of its second run | Rows at 100 Attempts |
+| --- | --- | --- | --- |
+| Outcome consistency | 610 Attempts | 343 | 89 |
+| Distributional trajectory consistency, six actions an Attempt | 420 Attempts | 279 | 119 |
+| Sequential trajectory consistency, six actions an Attempt | 415 Attempts | 281 | 121 |
+| Resource consistency, three measurements an Attempt | 195 Attempts | 431 | 274 |
+| Fault robustness, half the Attempts under the fault | 475 Attempts | 312 | 122 |
+| Environment robustness, half the Attempts under the presentation | 470 Attempts | 311 | 123 |
+| Prompt robustness, half the Attempts under two prompt variants | 450 Attempts | 306 | 126 |
+| Calibration | 215 Attempts | 523 | 312 |
+| Strict confidence discrimination | 235 Attempts | 488 | 255 |
+| Brier-based score | 220 Attempts | 513 | 291 |
+| Constraint compliance, one operational constraint | 410 Attempts | 361 | 138 |
+| Conditional harm severity, a violation in one Attempt of five | 375 Attempts | 389 | 164 |
+
+The predictability metrics and resource consistency reach the limit soonest, because their results list every confidence/outcome pair, or every Task with its measurements.
+
+**Time comes before size for the larger of these.** At two and a half seconds a row, a second run of 300 rows takes twelve to thirteen minutes and one of 520 rows over twenty. The default `run_timeout_seconds` of 900 is reached at about 350 rows. Raise it for a sweep of more than about a hundred Attempts.
+
+**One call is not what limits these metrics, with one exception.** A call of a derived evaluator took 0.12 to 0.18 seconds in the sandbox for a sweep of 1,000 Attempts, for each of the twelve (observed). That is about what it takes on a development machine. The exception is sequential trajectory consistency when Attempts take many actions. It compares every pair of Attempts at a Task by edit distance, so a call grows with the square of the number of Attempts at a Task and with the square of the number of actions. 20 Attempts of 200 actions at one Task took 1.3 seconds in the sandbox. 80 Attempts of 600 actions at one Task were not scored: see [observed live](#all-twelve-evaluators-observed-on-2026-11-27).
+
+**Nothing is batched.** A metric is never calculated from a part of its evidence in one run and from the rest in another, and partial results are never combined in your process. That would be a second definition of the metric beside the canonical one. The parts of one encoded result could be asked for in several runs without that, which would lift the limit on the size of a run and leave the time. This version does not do it.
 
 ## What the scorecard shows
 
@@ -275,7 +337,8 @@ With `artifact_dir`, the partial scorecard, its report and the evidence are deli
 | The metric has no Foundry-managed evaluator, or `managed_scoring` was not given | `ValueError` before any Attempt is made |
 | The metric is an unavailable measurement for the evidence, for example no Task has two Attempts | **A result**, not a failure: `state` is `unavailable`, with its reason and counts. See [what the scorecard shows](#what-the-scorecard-shows) |
 | The evidence was altered on the way | No result. The evaluator raises on every row, and Foundry then fails the run |
-| A run would be larger than one run accepts: the evidence is too large, or the result has too many parts | No result. That run was not submitted |
+| A run would be larger than one run accepts: the evidence is too large, or the result has too many parts | No result. That run was not made. The failure says how many bytes its request would have been and names the [limit](#limits) |
+| One call of the evaluator takes longer than Foundry allows | No result. Every row then comes back as one that was not graded: the run fails, or its rows are asked for again and still do not come back. The failure names the [limit](#limits) |
 | A part of the encoded result did not come back as the evaluator returned it, or the size did not | No result. The digest does not match, or a part is not a number of six bytes. Nothing of what came back is reported |
 | The plain value and the encoded result disagree on whether the metric has a value | No result |
 | A run returned fewer output items than rows were submitted, or not one for each row | No result |
@@ -386,7 +449,12 @@ The first comes from the specification and is not a confirmed decision. It is im
 1. **The managed artifact is a Foundry code evaluator, not an endpoint evaluator** (specification assumption 17). An endpoint evaluator would need the offering to host an endpoint that receives your data. A code evaluator limits the canonical definitions to the code-evaluator sandbox. The `skipped` output with a reason that Microsoft documents belongs to endpoint evaluators and is not used.
 2. **A result without a value that comes back from Foundry is reported as `unverified`, with a limitation.** `fidelity` says whether a value is known to equal what the evaluator computed, and an unavailable measurement has no value. It is reported as `unverified` all the same, because no fidelity rule yet says that anything received from Foundry is what the evaluator computed. It is still an unavailable measurement and not an unverified result: its `state` says so, and an acceptance criterion on it is not assessed for that reason.
 3. **The plain value stays the reported value.** The encoded result carries the value too, exactly. The scorecard reports the number of the `value` row, as before, and keeps it unverified. Whether the two are compared, and what follows from the comparison, is the fidelity rule's decision and is not made here.
-4. **Every row of the same run is graded by the same build of the sandbox.** The parts of a result are put together from rows that are graded separately. If two rows deflated the same result differently, the digest would not match and the metric would have no result. The one live comparison of the sandbox's deflate with this machine's gave the same bytes.
+4. **Every row of the runs of one result is graded by the same build of the sandbox.** The parts of a result are put together from rows that are graded separately. If two rows deflated the same result differently, the digest would not match and the metric would have no result. The one live comparison of the sandbox's deflate with this machine's gave the same bytes.
+5. **"Together in one managed run" is read as together in one sweep.** The twelve Evaluators were asked to run independently and together in one managed run. Each metric has an evaluation and runs of its own, which was decided when one evaluator that raises was seen to cost every other evaluator of its run its result. So the twelve are scored together in one sweep, in runs that are made side by side, and not as twelve criteria of one Foundry run. That arrangement was tried once, worked, and is not used.
+6. **An action is sent with its tool name only.** The trajectory metrics compare action types and nothing else of an action. The arguments and results of tool calls are your data and can be large: sending them would store them in every row of your project's runs and fill a run many times sooner. If a metric is ever calculated from more of an action, more has to be sent, and its vectors fail on this path until it is.
+7. **What is not a declaration is sent as none.** The trajectory Evaluators refuse to run without a declared action-type mapping. Given something else in its place, the transport sends no declaration, and the canonical definition refuses in Foundry as it does in your process. A sweep never gets that far: it rejects a missing declaration before any Attempt.
+8. **The limit on the size of a run is set under what was observed.** 2,000,000 bytes, where a request of 2,096,232 was accepted. What Foundry counts is not documented, so a run the offering makes could still be refused. It is then a failure with the project's answer, as any refused request is.
+9. **A sweep too large for one managed run is a failure, not a batch.** The specification names the limits and says that no batching design exists. None is made here: see [limits](#limits).
 
 ## Observed live
 

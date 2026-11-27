@@ -28,13 +28,13 @@ from .foundry import FoundryRequestError
 EVALUATORS_API = "api-version=v1"
 PREVIEW_FEATURE = {"Foundry-Features": "Evaluations=V1Preview"}
 # The rows of one run are submitted inline, and the limit is on the request that makes the
-# run, with all its rows together. Foundry accepted a request of 2,096,245 bytes and refused
-# one of 2,096,246 with HTTP 413 when observed, counted on the request written without
+# run, with all its rows together. Foundry accepted a request of 2,096,232 bytes and refused
+# one of 2,096,233 with HTTP 413 when observed, counted on the request written without
 # whitespace, whether it held one row or three hundred. Every row carries the evidence, so
 # a run whose request would be larger than the limit below is not made, and nothing is
 # truncated. The limit is under what was observed, because what Foundry counts is not documented.
 SUBMITTED_RUN_LIMIT_BYTES = 2_000_000
-OBSERVED_REFUSED_RUN_BYTES = 2_096_246
+OBSERVED_REFUSED_RUN_BYTES = 2_096_233
 OUTPUT_ITEM_PAGE = 100
 # Foundry was seen to return one row of a run as an error, where the evaluator had not raised and
 # every other row was graded. A part of a result is therefore asked for up to this many times.

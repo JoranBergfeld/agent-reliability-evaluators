@@ -181,6 +181,16 @@ Each Attempt under `attempts` carries its `resource_measurements`, each with `re
 
 The evidence units this metric counts are `tasks` and `attempts`, so an acceptance criterion can require a minimum number of eligible Tasks and of Attempts used, for example `{"value": {"at_least": 0.8}, "minimum_counts": {"tasks": 3, "attempts": 15}}`. A criterion on this metric accepts stable resource use, not low resource use.
 
+## Scoring it in your Foundry project
+
+Resource consistency can also be calculated by a custom evaluator in your own Foundry project. That evaluator is derived from the canonical definition above; there is no second formula. Select the metric as `ConfiguredEvaluator(metric_id="resource_consistency", scoring_path="foundry_managed")` and give the sweep your project as `managed_scoring`. Everything else is declared as above.
+
+For each Attempt the evaluator is sent its identity, its Task, its execution status, and its resource measurements, each with its type, value, unit, measurement boundary and whether it is reliably sourced. Nothing else about the Attempt leaves your process.
+
+The value is then the number Foundry returned. It is reported with `scoring_path` `foundry_managed` and `fidelity` `unverified`, with its limitation, and cannot be met or not met by an acceptance criterion. The state, the reason, the counts and the details are the ones the evaluator returned from Foundry with it, and they are what your own process gives for the same evidence. An unavailable measurement comes back as one.
+
+A sweep that is too large for one managed run has no result for the metric, and the scorecard says so. With Tasks of five Attempts, the largest synthetic sweep that fitted had 195 Attempts with three measurements each. See [Foundry-managed scoring](../managed_scoring/readme.md) and its [limits](../managed_scoring/readme.md#limits).
+
 ## Evidence it needs
 
 Each Attempt carries at most one resource measurement per resource type. A measurement has:

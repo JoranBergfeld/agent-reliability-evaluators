@@ -363,7 +363,7 @@ def test_a_result_too_large_to_come_back_in_one_run_is_a_failure_and_no_part_of_
     assert re.fullmatch(
         r"the run for the encoded result would be a request of \d+ bytes in \d+ rows, each with the grouped "
         r"evidence\. That is more than the 2000000 bytes this version submits in one managed run: Foundry refused "
-        r"a run of 2096246 bytes when observed\. It was not submitted, and nothing was truncated",
+        r"a run of 2096233 bytes when observed\. It was not submitted, and nothing was truncated",
         managed_scoring["error"],
     )
     # The first run returned the size of the result. The run for its parts was never made.

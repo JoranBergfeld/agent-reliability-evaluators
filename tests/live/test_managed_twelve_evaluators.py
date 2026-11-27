@@ -28,6 +28,7 @@ from reliability_evaluators.managed_scoring import (
     derive_artifact,
 )
 from reliability_evaluators.managed_scoring.scoring import OBSERVED_REFUSED_RUN_BYTES, SUBMITTED_RUN_LIMIT_BYTES
+from tests.fake_foundry import FakeFoundryProject
 from tests.twelve_evaluators_sweep import (
     METRIC_IDS,
     NOTHING_TO_CALCULATE_FROM,
@@ -57,31 +58,10 @@ def live():
             teardown(provisioned.resource_group)
 
 
-class RecordsWhatIsSubmitted:
-    """The project as a customer reaches it, which also keeps the rows of every run that was made."""
-
-    def __init__(self, project):
-        self._project = project
-        self.rows: list[dict] = []
-
-    def request(self, method, path, body=None, headers=None):
-        if method == "POST" and path.endswith("/runs"):
-            self.rows += [row["item"] for row in body["data_source"]["source"]["content"]]
-        return self._project.request(method, path, body, headers)
-
-    def evidence(self):
-        """The evidence field of each Evaluator, as it was submitted. Every row of an Evaluator carries the same."""
-        return {field: text for row in self.rows for field, text in row.items() if field.endswith("_evidence")}
-
-
 @pytest.fixture(scope="module")
-def project(live):
-    return RecordsWhatIsSubmitted(FoundryProject(live.project_endpoint, token=azure_cli_token))
-
-
-@pytest.fixture(scope="module")
-def scoring(project):
+def scoring(live):
     """Managed scoring as a customer sets it up. A run of some hundred rows takes longer than the default wait."""
+    project = FoundryProject(live.project_endpoint, token=azure_cli_token)
     return FoundryManagedScoring(project=project, run_timeout_seconds=1800)
 
 
@@ -160,12 +140,17 @@ def wait_for(live, eval_id, run, seconds=1200):
     return run
 
 
-def test_the_twelve_derived_evaluators_return_their_values_as_twelve_criteria_of_one_run(live, project, scoring):
+def submitted_evidence_of_the_worked_sweep():
+    """The evidence field of each Evaluator, as a sweep submits it. A fake project is handed it here, to keep it."""
+    kept = FakeFoundryProject()
+    managed_sweep(WORKED, FoundryManagedScoring(project=kept, poll_interval_seconds=0))
+    return {field: text for row in kept.submitted_items for field, text in row.items() if field.endswith("_evidence")}
+
+
+def test_the_twelve_derived_evaluators_return_their_values_as_twelve_criteria_of_one_run(live, scoring):
     # The sweep gives every Evaluator runs of its own. This is the other arrangement: one evaluation with
     # twelve criteria, and one run whose every row carries the evidence of all twelve.
-    if not project.evidence():
-        managed_sweep(WORKED, scoring)
-    evidence = project.evidence()
+    evidence = submitted_evidence_of_the_worked_sweep()
     assert sorted(evidence) == sorted(f"{metric_id}_evidence" for metric_id in METRIC_IDS)
     registered = scoring.register(METRIC_IDS)
     eval_id = live.project_request("POST", "/openai/v1/evals", {

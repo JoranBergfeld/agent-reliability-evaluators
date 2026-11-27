@@ -210,6 +210,16 @@ The metric's entry in the scorecard carries:
 
 Each Attempt under `attempts` carries its `action_evidence`: the source and the events in order, each with tool name, arguments, result and error. It is `null` for an Attempt that was not recorded.
 
+## Scoring it in your Foundry project
+
+Distributional trajectory consistency can also be calculated by a custom evaluator in your own Foundry project. That evaluator is derived from the canonical definition above; there is no second formula. Select the metric as `ConfiguredEvaluator(metric_id="distributional_trajectory_consistency", scoring_path="foundry_managed")` and give the sweep your project as `managed_scoring`. Everything else is declared as above.
+
+For each Attempt the evaluator is sent its identity, its Task, its execution status, and the source of its action evidence and the tool name of each action, in order. The arguments, the result and the error of an action are not sent. The evidence source and the action types you declare are sent with it. Nothing else about the Attempt leaves your process.
+
+The value is then the number Foundry returned. It is reported with `scoring_path` `foundry_managed` and `fidelity` `unverified`, with its limitation, and cannot be met or not met by an acceptance criterion. The state, the reason, the counts and the details are the ones the evaluator returned from Foundry with it, and they are what your own process gives for the same evidence. An unavailable measurement comes back as one.
+
+A sweep that is too large for one managed run has no result for the metric, and the scorecard says so. With Tasks of five Attempts, the largest synthetic sweep that fitted had 420 Attempts of six actions each. See [Foundry-managed scoring](../managed_scoring/readme.md) and its [limits](../managed_scoring/readme.md#limits).
+
 ## Evidence it needs
 
 Each Attempt must identify itself and its Task, and carry:
