@@ -259,6 +259,7 @@ The metric's own entry carries:
 | `details.pairs` | every valid pair: Attempt and Task identity, `rating` as written, `confidence`, `task_outcome` with its `source`, and `squared_error` |
 | `details.mean_squared_error` | the mean of the squared errors, which is the raw Brier loss; `null` when there is no valid pair |
 | `evidence.attempt_ids` | the Attempts the value rests on |
+| `attempts_used` | every Attempt this Evaluator was given, whatever became of it, and the other metrics scored from any of the same Attempts: see [several Evaluators in one sweep](../sweep/several-evaluators.md) |
 | `acceptance` | the assessment of your acceptance criterion for this metric, or `null` when you declared none: see [acceptance criteria](../acceptance_criteria/readme.md). A criterion can require a number of valid pairs with `{"minimum_counts": {"confidence_outcome_pairs": 20}}`. |
 
 ## Evidence it needs
@@ -292,7 +293,7 @@ An unavailable measurement carries its reason and the counts. It never carries a
 - The rating comes from a separate confidence-only request after the Attempt. The paper also asks after completion, with the conversation history, for a number from 0 to 100. Its heuristic fallback for an answer that cannot be parsed is deliberately not adopted.
 - The confidence is the agent's own estimate after the fact. It is not an independently verified probability.
 - No minimum number of pairs is imposed and no confidence interval is reported. The counts are the statistical disclosure.
-- This metric is separate from calibration and from strict confidence discrimination. It is not combined with them.
+- This metric is separate from [calibration](../calibration/readme.md) and from [strict confidence discrimination](../strict_confidence_discrimination/readme.md). It is not combined with them.
 
 ## Assumptions
 

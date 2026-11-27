@@ -1,0 +1,49 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 318" width="720" height="318" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13">
+  <title>Worked example: three rated successes compared with two rated failures</title>
+  <desc>A grid with one row per successful Attempt, rated 95, 90 and 62.5, and one column per failed Attempt, rated 80 and 30. Each cell is one success/failure pair. In five cells the success was rated strictly higher and the pair counts 1: 95 against 80, 95 against 30, 90 against 80, 90 against 30 and 62.5 against 30. In one cell, 62.5 against 80, the failure was rated higher and the pair counts 0. Strict confidence discrimination is 5 divided by 6, about 0.833.</desc>
+  <rect width="720" height="318" fill="#ffffff"/>
+
+  <g fill="#616161" font-weight="600">
+    <text x="20" y="64">Successful Attempts</text>
+    <text x="300" y="24">Failed Attempts</text>
+  </g>
+  <g fill="#212121" text-anchor="middle">
+    <text x="395" y="46">close/attempt-3</text>
+    <text x="395" y="64">rated 80</text>
+    <text x="605" y="46">archive/attempt-2</text>
+    <text x="605" y="64">rated 30</text>
+  </g>
+  <line x1="20" y1="76" x2="700" y2="76" stroke="#bdbdbd"/>
+
+  <g fill="#212121">
+    <text x="20" y="113">close/attempt-1</text>
+    <text x="190" y="113">rated 95</text>
+    <text x="20" y="163">close/attempt-2</text>
+    <text x="190" y="163">rated 90</text>
+    <text x="20" y="213">archive/attempt-1</text>
+    <text x="190" y="213">rated 62.5</text>
+  </g>
+
+  <g fill="#e8f5e9" stroke="#2e7d32" stroke-width="1.5">
+    <rect x="300" y="88" width="190" height="40" rx="4"/>
+    <rect x="510" y="88" width="190" height="40" rx="4"/>
+    <rect x="300" y="138" width="190" height="40" rx="4"/>
+    <rect x="510" y="138" width="190" height="40" rx="4"/>
+    <rect x="510" y="188" width="190" height="40" rx="4"/>
+  </g>
+  <rect x="300" y="188" width="190" height="40" rx="4" fill="#ffebee" stroke="#c62828" stroke-width="1.5"/>
+
+  <g fill="#1b5e20" text-anchor="middle" font-weight="600">
+    <text x="395" y="113">95 &gt; 80: counts 1</text>
+    <text x="605" y="113">95 &gt; 30: counts 1</text>
+    <text x="395" y="163">90 &gt; 80: counts 1</text>
+    <text x="605" y="163">90 &gt; 30: counts 1</text>
+    <text x="605" y="213">62.5 &gt; 30: counts 1</text>
+  </g>
+  <text x="395" y="213" fill="#b71c1c" text-anchor="middle" font-weight="600">62.5 &lt; 80: counts 0</text>
+
+  <line x1="20" y1="244" x2="700" y2="244" stroke="#bdbdbd"/>
+  <text x="20" y="274" fill="#212121" font-weight="600">Strict confidence discrimination</text>
+  <text x="300" y="274" fill="#1565c0" font-weight="600">5 of 6 success/failure pairs: 5 / 6 ≈ 0.833</text>
+  <text x="20" y="300" fill="#616161">Every success is compared with every failure, across both Tasks. The Attempt without a rating is not compared.</text>
+</svg>
