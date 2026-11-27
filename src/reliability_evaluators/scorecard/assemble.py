@@ -27,6 +27,8 @@ class ScoredMetric:
     result: MetricResult
     scoring_path: ScoringPath
     fidelity: Fidelity
+    # The experiments that supplied the evidence the result was calculated from.
+    experiment_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -81,22 +83,52 @@ def build_scorecard(
     Attempt identity.
 
     The scorecard is complete when nothing that was planned is missing. Otherwise it is
-    partial, and `missing` names what is missing and why.
+    partial, and `missing` names what is missing and why. A metric keeps its result when
+    its Evaluator still calculates a value from the evidence that was collected.
     """
     scored_by_id = {scored.result.definition.metric.metric_id: scored for scored in metrics}
     attempts_by_id = {attempt.attempt_id: attempt for attempt in attempts}
-    missing = [
-        _missing_attempt_evidence(experiment, attempts_by_id)
-        for experiment in experiments
-        if experiment.execution_status is not ExecutionStatus.COMPLETED
+    not_completed = [
+        experiment for experiment in experiments if experiment.execution_status is not ExecutionStatus.COMPLETED
+    ]
+    failures = {
+        metric_id: _experiment_failure(scored, not_completed) for metric_id, scored in scored_by_id.items()
+    }
+    missing = [_missing_attempt_evidence(experiment, attempts_by_id) for experiment in not_completed] + [
+        {"kind": "metric_result", "metric_id": metric_id, **failure}
+        for metric_id, failure in failures.items()
+        if failure is not None
     ]
     return {
         "schema_version": SCHEMA_VERSION,
         "status": (ScorecardStatus.PARTIAL if missing else ScorecardStatus.COMPLETE).value,
         "missing": missing,
-        "metrics": [_metric_entry(metric, scored_by_id.get(metric.metric_id)) for metric in RELIABILITY_METRICS],
+        "metrics": [
+            _metric_entry(metric, scored_by_id.get(metric.metric_id), failures.get(metric.metric_id))
+            for metric in RELIABILITY_METRICS
+        ],
         "experiments": [experiment.to_dict() for experiment in experiments],
         "attempts": [attempt.to_dict() for attempt in attempts],
+    }
+
+
+def _experiment_failure(scored: ScoredMetric, not_completed: Sequence[ExperimentRun]) -> dict[str, Any] | None:
+    """Why a metric has no result, when that is because its experiments did not complete.
+
+    Evidence that is short because an experiment failed is not an unavailable measurement:
+    what the complete evidence would have shown is not known.
+    """
+    failed = [
+        experiment.experiment_id for experiment in not_completed if experiment.experiment_id in scored.experiment_ids
+    ]
+    if scored.result.state is not MetricState.UNAVAILABLE or not failed:
+        return None
+    return {
+        "reason": (
+            "experiments that supply this metric's evidence did not complete, and what they collected "
+            f"does not permit a calculation: {scored.result.reason}"
+        ),
+        "experiment_ids": failed,
     }
 
 
@@ -118,7 +150,9 @@ def _missing_attempt_evidence(experiment: ExperimentRun, attempts_by_id: dict[st
     }
 
 
-def _metric_entry(metric: ReliabilityMetric, scored: ScoredMetric | None) -> dict[str, Any]:
+def _metric_entry(
+    metric: ReliabilityMetric, scored: ScoredMetric | None, experiment_failure: dict[str, Any] | None
+) -> dict[str, Any]:
     if scored is None:
         return {
             "metric_id": metric.metric_id,
@@ -126,11 +160,16 @@ def _metric_entry(metric: ReliabilityMetric, scored: ScoredMetric | None) -> dic
             "dimension": metric.dimension,
             "state": MetricState.NOT_CONFIGURED.value,
         }
-    return {
+    entry = {
         **scored.result.to_dict(),
+        "experiment_failure": experiment_failure,
         "scoring_path": scored.scoring_path.value,
         "fidelity": scored.fidelity.value,
     }
+    if experiment_failure is not None:
+        # There is no metric result, so the metric is in no metric state.
+        entry.update(state=None, reason=None)
+    return entry
 
 
 def to_json(scorecard: dict[str, Any]) -> str:

@@ -24,18 +24,26 @@ class Scripted:
 
     behaviour: str
     seconds: float = 0.0
+    # The caller asks for the sweep to be cancelled while this invocation is in flight.
+    cancels: bool = False
 
 
 def taking(seconds: float, behaviour: str) -> Scripted:
     return Scripted(behaviour, seconds)
 
 
+def cancelling(behaviour: str) -> Scripted:
+    return Scripted(behaviour, cancels=True)
+
+
 class FakeAgentTarget:
     """A scripted agent that works on a fake service.
 
     The script gives, per Task, what happens on each invocation in order: "success" and
-    "failure" leave the service in the right or the wrong state, and "error" makes the
-    invocation itself fail. `taking(seconds, behaviour)` makes an invocation take time on
+    "failure" leave the service in the right or the wrong state, "error" makes the
+    invocation itself fail, and "aborted" makes it end without an answer because the caller
+    closed the connection. `cancelling(behaviour)` sets `cancel_requested` while the
+    invocation is in flight. `taking(seconds, behaviour)` makes an invocation take time on
     the fake clock; the agent stops at the time limit it is given and raises TimeoutError,
     unless it was built not to honour time limits.
     The agent always answers "Done.", so its response says nothing about success; the
@@ -56,6 +64,7 @@ class FakeAgentTarget:
         self._clock = clock or FakeClock()
         self._honours_time_limits = honours_time_limits
         self.service_state: dict[str, str] = {}
+        self.cancel_requested = False
 
     def invoke(self, request: AttemptRequest) -> AgentResponse:
         step = self._remaining[request.task_id].pop(0)
@@ -64,7 +73,11 @@ class FakeAgentTarget:
             self._clock.advance(limit)
             raise TimeoutError(f"no answer within {limit:g} seconds")
         self._clock.advance(step.seconds)
+        if step.cancels:
+            self.cancel_requested = True
         if step.behaviour == "error":
             raise ConnectionError("the agent endpoint returned 503")
+        if step.behaviour == "aborted":
+            raise ConnectionAbortedError("the caller closed the connection")
         self.service_state[request.attempt_id] = "done" if step.behaviour == "success" else "open"
         return AgentResponse(output="Done.")

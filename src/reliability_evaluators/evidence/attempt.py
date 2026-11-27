@@ -17,6 +17,7 @@ class ExecutionStatus(str, Enum):
     COMPLETED = "completed"
     FAILED = "failed"
     TIMED_OUT = "timed_out"
+    CANCELLED = "cancelled"
     # The execution did not complete and the Attempt was made again. The retry is another Attempt.
     RETRIED = "retried"
 
