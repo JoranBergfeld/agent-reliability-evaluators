@@ -153,7 +153,7 @@ def test_a_sweep_scores_outcome_consistency_in_the_live_project(live, scoring, m
     }
     assert entry["evidence"]["attempt_ids"] == [attempt["attempt_id"] for attempt in scorecard["attempts"]]
     encoded = entry["managed_scoring"]["encoded_result"]
-    assert encoded["run_id"] != entry["managed_scoring"]["run_id"]
+    assert encoded["run_ids"] and entry["managed_scoring"]["run_id"] not in encoded["run_ids"]
     assert encoded["parts"] == -(-encoded["bytes"] // 6)
 
 
