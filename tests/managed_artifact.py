@@ -59,6 +59,17 @@ def returned_result(artifact, tasks) -> dict:
     return json.loads(zlib.decompress(body, -15).decode("utf-8"))["result"]
 
 
+def altered_evidence(item: dict, old: str, new: str) -> dict:
+    """A submitted item whose evidence was changed after it was encoded, behind the digest it was encoded with.
+
+    The evaluator that is handed it raises: the evidence no longer matches its digest.
+    """
+    (field,) = [field for field in item if field.endswith("_evidence")]
+    payload = unpacked(item[field])
+    assert old in payload
+    return {**item, field: packed(payload.replace(old, new, 1), digest=item[field].partition(":")[0])}
+
+
 def unpacked(evidence: str) -> str:
     """The JSON of transported evidence."""
     _, _, packed = evidence.partition(":")

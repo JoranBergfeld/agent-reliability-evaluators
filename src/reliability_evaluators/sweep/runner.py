@@ -7,9 +7,9 @@ from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
 from functools import partial
 from time import perf_counter
-from typing import Any, Callable, Sequence
+from typing import Any, Callable, Mapping, Sequence
 
-from ..agent_target import AgentResponse, AgentTarget, AttemptRequest
+from ..agent_target import AgentResponse, AgentTarget, AttemptRequest, InvocationFailed
 from ..evaluators import EVALUATORS, Evaluator, Fidelity, MetricResult, ScoringPath
 from ..evidence import (
     ActionEvidence,
@@ -25,11 +25,12 @@ from ..evidence import (
     VariationKind,
     ViolationAssessment,
 )
-from ..managed_scoring import FoundryManagedScoring, has_managed_evaluator
+from ..managed_scoring import FoundryManagedScoring, ManagedFailure, has_managed_evaluator
 from ..scorecard import (
     AcceptanceCriterion,
     ArtifactLocation,
     CutShort,
+    MissingResult,
     ScoredMetric,
     build_scorecard,
     criteria_by_metric,
@@ -70,10 +71,14 @@ def run_sweep(
     `managed_scoring` is the customer's Foundry project, for the Evaluators configured with
     the scoring path "foundry_managed". Their derived evaluators are registered in that
     project before any Attempt is made, and after the Attempts the project calculates their
-    values from the grouped evidence. A value it returns is reported as Foundry returned it,
-    attributed to that scoring path, as an unverified result. When the project returns no
-    value the sweep stops with ManagedScoringFailure. It never scores such an Evaluator in
-    this process instead.
+    values from the grouped evidence, each Evaluator in a managed run of its own. A value it
+    returns is reported as Foundry returned it, attributed to that scoring path, as an
+    unverified result. A project that cannot be used stops the sweep with
+    ManagedScoringFailure before any Attempt. After the Attempts, an Evaluator whose managed
+    run gives no result has none: the scorecard is partial, names the missing result with its
+    execution error, and keeps the evidence and the result of every other metric. The sweep
+    never scores such an Evaluator in this process instead. `rescore_in_customer_process`
+    does, when the customer asks for it, and reports that result beside the managed one.
 
     `experiments` are controlled experiments: the sweep invokes their customer controls
     around every Attempt and follows their starting-state policy. `tasks` are Tasks given
@@ -269,22 +274,29 @@ def _sweep(
         for shared, (attempts_of_set, executions) in zip(sharing, made)
         for evaluator in shared.members
     ]
-    # One managed run scores every Evaluator on that path. Its failure stops the sweep here.
-    returned = (
-        managed_scoring.score(
-            {evaluator.metric_id: evidence for evaluator, evidence, _ in to_score if evaluator.metric_id in managed}
-        )
-        if managed
-        else {}
+    returned = _score_managed(
+        managed_scoring,
+        {evaluator.metric_id: evidence for evaluator, evidence, _ in to_score if evaluator.metric_id in managed},
     )
-    scored = []
+    scored: list[ScoredMetric | MissingResult] = []
     for evaluator, evidence, cut_short in to_score:
         attributed = {
             "attempts_used": tuple(attempt.attempt_id for task in evidence for attempt in task.attempts),
             "cut_short": cut_short,
         }
-        if evaluator.metric_id in returned:
+        # By the path that was declared, never by what came back: nothing falls back to this process.
+        if evaluator.scoring_path is ScoringPath.FOUNDRY_MANAGED:
             managed_result = returned[evaluator.metric_id]
+            if isinstance(managed_result, ManagedFailure):
+                scored.append(
+                    MissingResult(
+                        definition=evaluator.evaluator.definition,
+                        execution_error=managed_result.error,
+                        managed_scoring={**managed_result.provenance, "error": managed_result.error},
+                        **attributed,
+                    )
+                )
+                continue
             scored.append(
                 ScoredMetric(
                     result=managed_result.result,
@@ -312,6 +324,25 @@ def _sweep(
         max_concurrent_attempts=max_concurrent_attempts,
         acceptance_criteria=acceptance_criteria,
     )
+
+
+def _score_managed(
+    managed_scoring: FoundryManagedScoring | None, evidence: dict[str, Sequence[TaskEvidence]]
+) -> dict[str, Any]:
+    """What Foundry-managed scoring gives for each metric on that path: its result, or its failure.
+
+    The Attempts are made by now. Whatever goes wrong here leaves those metrics without a
+    result, and never without the evidence or the results of the other metrics.
+    """
+    if not evidence:
+        return {}
+    try:
+        returned = dict(managed_scoring.score(evidence))
+    except Exception as error:
+        failure = ManagedFailure(error=f"{type(error).__name__}: {error}")
+        return dict.fromkeys(evidence, failure)
+    not_returned = ManagedFailure(error="Foundry-managed scoring returned nothing for this metric")
+    return {metric_id: returned.get(metric_id, not_returned) for metric_id in evidence}
 
 
 def _run_planned_attempts(
@@ -585,13 +616,16 @@ def _invoke_agent(
     limit = task.limits.attempt_timeout_seconds
     request = AttemptRequest(attempt_id=attempt_id, task_id=task.task_id, prompt=task.prompt, timeout_seconds=limit)
 
-    def not_completed(status: ExecutionStatus, why: str) -> tuple[Attempt, ConfidenceFollowUp]:
+    def not_completed(
+        status: ExecutionStatus, why: str, invocation: Mapping[str, Any] | None = None
+    ) -> tuple[Attempt, ConfidenceFollowUp]:
         attempt = Attempt(
             attempt_id=attempt_id,
             task_id=task.task_id,
             execution_status=status,
             execution_error=why,
             retry_of=retry_of,
+            invocation=invocation,
             operational_constraints=task.operational_constraints,
         )
         # The agent is not asked about an Attempt that did not complete.
@@ -602,22 +636,26 @@ def _invoke_agent(
         response = agent_target.invoke(request)
     except Exception as error:
         why = f"{type(error).__name__}: {error}"
+        # What the agent target recorded of the invocation stays on the Attempt, however it ended.
+        recorded = error.invocation if isinstance(error, InvocationFailed) else None
         if isinstance(error, TimeoutError):
             return not_completed(ExecutionStatus.TIMED_OUT, why)
         # The sweep cannot interrupt an invocation. It measures, so that the limit holds
         # whether or not the agent target stopped at it.
         if limit is not None and clock() - started > limit:
             return not_completed(
-                ExecutionStatus.TIMED_OUT, f"{why}, after the Attempt's time limit of {limit:g} seconds"
+                ExecutionStatus.TIMED_OUT, f"{why}, after the Attempt's time limit of {limit:g} seconds", recorded
             )
         if cancellation.requested():
-            return not_completed(ExecutionStatus.CANCELLED, f"{why}, after the sweep was cancelled")
-        return not_completed(ExecutionStatus.FAILED, why)
+            return not_completed(ExecutionStatus.CANCELLED, f"{why}, after the sweep was cancelled", recorded)
+        return not_completed(ExecutionStatus.FAILED, why, recorded)
     elapsed = clock() - started
     if limit is not None and elapsed > limit:
         # The limit applies to every Attempt alike, so a late answer is not scored.
         return not_completed(
-            ExecutionStatus.TIMED_OUT, f"the agent target answered after the Attempt's time limit of {limit:g} seconds"
+            ExecutionStatus.TIMED_OUT,
+            f"the agent target answered after the Attempt's time limit of {limit:g} seconds",
+            response.invocation,
         )
     outcome = task.success_rule(request, response)
     if isinstance(outcome, NoTaskOutcomeYet):
@@ -639,6 +677,7 @@ def _invoke_agent(
         task_outcome=outcome,
         retry_of=retry_of,
         resource_measurements=_resource_measurements(elapsed, response.resource_measurements),
+        invocation=response.invocation,
         operational_constraints=task.operational_constraints,
         violation_assessments=violation_assessments,
         action_evidence=actions,

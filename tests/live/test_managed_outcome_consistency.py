@@ -25,7 +25,6 @@ from reliability_evaluators.evidence import TaskOutcome
 from reliability_evaluators.managed_scoring import (
     FoundryManagedScoring,
     FoundryProject,
-    ManagedScoringFailure,
     azure_cli_token,
     derive_artifact,
 )
@@ -152,9 +151,13 @@ def test_registration_is_idempotent_and_made_as_the_signed_in_identity(live, sco
     assert held[0]["created_by"] == signed_in_name(live)
 
 
-def test_an_unavailable_measurement_is_an_explicit_managed_scoring_failure(live, scoring, monkeypatch):
+def test_an_unavailable_measurement_gives_no_managed_result_and_a_partial_scorecard(live, scoring, monkeypatch):
     # One Attempt at each Task: no Task has two, so outcome consistency is an unavailable measurement.
-    with pytest.raises(ManagedScoringFailure, match="ended as failed") as failure:
-        sweep_on_the_fixture({"close": ["success"], "archive": ["failure"]}, scoring, monkeypatch)
+    scorecard = sweep_on_the_fixture({"close": ["success"], "archive": ["failure"]}, scoring, monkeypatch)
 
-    print(json.dumps({"managed_scoring_failure": str(failure.value)}))
+    (entry,) = [entry for entry in scorecard["metrics"] if entry["metric_id"] == "outcome_consistency"]
+    print(json.dumps({"managed_scoring_failure": entry["managed_scoring"]["error"]}))
+    # Nothing came back that says the measurement is unavailable, so the scorecard does not say it either.
+    assert (entry["state"], entry["value"]) == (None, None)
+    assert "ended as failed" in entry["managed_scoring"]["error"]
+    assert scorecard["status"] == "partial"

@@ -25,7 +25,7 @@ from reliability_evaluators.scorecard import AcceptanceCriterion, render_report,
 from reliability_evaluators.sweep import ConfiguredEvaluator, RecalculationFailed, Task, recalculate, run_sweep
 from tests.fake_foundry import FakeFoundryProject
 from tests.fakes import FakeAgentTarget, cancelling
-from tests.managed_artifact import packed, unpacked
+from tests.managed_artifact import unpacked
 from tests.report_reader import assert_faithful_rendering
 
 SOURCE = "final state of the fake service"
@@ -60,11 +60,6 @@ def sha256(text):
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
 
-def only(part, altered):
-    """Foundry returns another number for one part of the result, and every other part as the evaluator returned it."""
-    return lambda score, item: altered(score) if item["result_part"] == part else score
-
-
 def numbers_in(recorded):
     """Every number anywhere in a scorecard entry."""
     if isinstance(recorded, dict):
@@ -89,7 +84,7 @@ def test_a_sweep_reports_the_outcome_consistency_that_foundry_calculated():
 
 def test_the_value_is_the_one_foundry_returned_and_not_one_calculated_in_this_process():
     # This process would calculate 0.68. The project returns something else, and that is what is reported.
-    foundry = FakeFoundryProject(alter_score=only("value", lambda score: 0.25))
+    foundry = FakeFoundryProject(alter_score=lambda score, item: 0.25 if item["result_part"] == "value" else score)
 
     outcome_consistency = metric(sweep(TWO_TASKS, foundry))
 
@@ -171,9 +166,18 @@ def test_the_scorecard_says_which_evaluator_and_which_run_the_value_came_from():
         str(number) for number in range(1, encoded["parts"] + 1)
     ]
     assert list(foundry.evals) == ["eval_1"]
+    # The digest the evidence travelled with: the SHA-256 of the evidence as it was submitted.
+    evidence = foundry.submitted_items[0]["outcome_consistency_evidence"]
+    assert managed_scoring["evidence_sha256"] == evidence.partition(":")[0] == sha256(unpacked(evidence))
     # The run's portal link embeds the subscription identifier, so the scorecard does not repeat it.
     assert set(managed_scoring) == {
-        "evaluator", "eval_id", "run_id", "output_item_id", "encoded_result", "platform_diagnostics"
+        "evaluator",
+        "eval_id",
+        "run_id",
+        "output_item_id",
+        "encoded_result",
+        "platform_diagnostics",
+        "evidence_sha256",
     }
 
 
@@ -368,47 +372,6 @@ def test_a_sweep_that_was_cut_short_gives_a_partial_scorecard_on_the_managed_pat
     assert [missing["kind"] for missing in scorecard["missing"]] == ["attempt_evidence", "metric_result"]
 
 
-# What came back is not what the evaluator returned. Nothing is reported in its place.
-
-
-def test_a_value_where_the_encoded_result_says_the_metric_has_none_is_not_reported():
-    # The metric is unavailable, and Foundry returns 0.5 as its plain value.
-    foundry = FakeFoundryProject(alter_score=only("value", lambda score: 0.5))
-
-    with pytest.raises(ManagedScoringFailure, match="0.5 as the value.*is unavailable and has no value.*do not agree"):
-        sweep(ONE_ATTEMPT_EACH, foundry)
-
-
-@pytest.mark.parametrize(
-    ("part", "altered", "problem"),
-    [
-        # One of the numbers the encoded result is made of comes back as another number.
-        ("3", lambda score: score + 1, "does not match its digest"),
-        ("1", lambda score: score + 0.5, "which is not 6 bytes"),
-        ("2", lambda score: -score, "which is not 6 bytes"),
-        # The size comes back larger, so more parts are asked for than the result has.
-        ("size", lambda score: score + 6, "does not match its digest"),
-        ("size", lambda score: 0.5, "0.5 was returned as the size"),
-    ],
-)
-def test_an_encoded_result_that_was_altered_on_the_way_back_is_not_reported(part, altered, problem):
-    with pytest.raises(ManagedScoringFailure, match=problem):
-        sweep(ONE_ATTEMPT_EACH, FakeFoundryProject(alter_score=only(part, altered)))
-
-
-def test_a_result_too_large_to_come_back_in_one_run_is_a_failure_and_no_part_of_it_is_reported():
-    # 150 Tasks of five Attempts. Every row that asks for a part of the result carries the evidence of all 750.
-    foundry = FakeFoundryProject()
-
-    with pytest.raises(
-        ManagedScoringFailure, match=r"encoded result would submit \d+ characters in \d+ rows.*It was not submitted"
-    ):
-        sweep({f"task-{number}": FOUR_IN_FIVE for number in range(150)}, foundry)
-
-    # The first run returned the size of the result. The run for its parts was never made.
-    assert list(foundry.runs) == ["evalrun_1"]
-
-
 # Registration in the customer's project.
 
 
@@ -476,58 +439,13 @@ def test_a_project_that_refuses_the_customers_identity_stops_the_sweep_before_an
     assert target.service_state == {}
 
 
-# Failures. Managed scoring that returns no value is never replaced by scoring in this process.
-
-
-def test_evidence_that_is_altered_on_the_way_to_foundry_gives_no_value():
-    def one_outcome_flipped(item):
-        evidence = item["outcome_consistency_evidence"]
-        flipped = unpacked(evidence).replace('"success":true', '"success":false', 1)
-        assert flipped != unpacked(evidence)
-        # The altered evidence travels on behind the digest of what was submitted.
-        return {**item, "outcome_consistency_evidence": packed(flipped, digest=evidence.partition(":")[0])}
-
-    with pytest.raises(ManagedScoringFailure, match="ended as failed"):
-        sweep(TWO_TASKS, FakeFoundryProject(alter_item=one_outcome_flipped))
-
-
-# -1 is what the evaluator returns as the value part of a metric that has no value. This metric has one.
-@pytest.mark.parametrize("returned", [1.1, -0.1, -1])
-def test_a_returned_score_outside_the_scale_of_the_metric_is_not_reported(returned):
-    # Foundry does not enforce the range an evaluator declares, so the result contract does.
-    with pytest.raises(ManagedScoringFailure, match="not a value of the metric.*outside the scale"):
-        sweep(TWO_TASKS, FakeFoundryProject(alter_score=only("value", lambda score: returned)))
-
-
-def test_a_completed_run_whose_item_carries_an_error_gives_no_value():
-    foundry = FakeFoundryProject(sample_error={"code": "FAILED_EXECUTION", "message": "the evaluator did not run"})
-
-    with pytest.raises(ManagedScoringFailure, match="carries an error.*FAILED_EXECUTION"):
-        sweep(TWO_TASKS, foundry)
+# A managed run that gives no value: tests/sweep/test_managed_scoring_failures_sweep.py.
 
 
 def test_a_run_that_takes_a_while_is_waited_for():
     outcome_consistency = metric(sweep(TWO_TASKS, FakeFoundryProject(polls_until_finished=3)))
 
     assert outcome_consistency["value"] == pytest.approx(0.68, abs=1e-12)
-
-
-def test_a_run_that_does_not_end_in_time_is_cancelled_and_gives_no_value():
-    foundry = FakeFoundryProject(never_finishes=True)
-    scoring = FoundryManagedScoring(project=foundry, poll_interval_seconds=0, run_timeout_seconds=0)
-    task = Task(
-        task_id="close",
-        prompt="Close it.",
-        success_rule=lambda attempt, response: TaskOutcome(success=True, source=SOURCE),
-        attempts=2,
-    )
-
-    with pytest.raises(ManagedScoringFailure, match="had not ended after 0 seconds"):
-        run_sweep(
-            tasks=[task], agent_target=FakeAgentTarget({"close": ["success"] * 2}), metrics=[MANAGED], managed_scoring=scoring
-        )
-
-    assert foundry.runs["evalrun_1"]["status"] == "canceled"
 
 
 CORRECTED = OutcomeCorrection(

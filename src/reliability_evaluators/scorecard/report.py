@@ -5,7 +5,8 @@ that it says in `status` and `missing` whether it is complete, and that a recalc
 lists the `superseded_results` it replaces. It describes the four metric states, the
 execution failure that leaves a metric without one, and the scorecard statuses. Every other
 field is laid out by its shape, so a field or a state that the scorecard gains is shown
-without a change here.
+without a change here. It also knows a customer-process rescore, which it shows as a result
+of its own next to the Foundry-managed result it was requested for.
 """
 
 from __future__ import annotations
@@ -16,7 +17,7 @@ from collections import Counter
 from html import escape
 from typing import Any
 
-from .assemble import to_json
+from .assemble import RESCORE, to_json
 
 _STATES = {
     "available": "Available: a value was validly calculated from the evidence.",
@@ -31,6 +32,12 @@ _UNDESCRIBED_STATE = "This report has no description of this state. It is shown 
 _EXECUTION_FAILURE = (
     "Execution failure: this metric has no result, because the Attempts that supply its evidence were cut "
     "short. Nothing was measured, and no Task failed because of it."
+)
+
+# The same, when it is the scoring that failed and not the Attempts: Foundry-managed scoring records its error.
+_MANAGED_SCORING_FAILURE = (
+    "Managed scoring failure: Foundry-managed scoring gave no result for this metric. Nothing was measured, "
+    "and no Task failed because of it. The metric was not scored in the customer's own process instead."
 )
 
 _STATUSES = {
@@ -81,10 +88,14 @@ class _Report:
             description = _STATUSES.get(recorded, _UNDESCRIBED_STATUS) if isinstance(recorded, str) else ""
             status = f'<p class="status">{self._value(recorded, _child("", "status"))} {escape(description)}</p>'
         sections = [self._section(key, value) for key, value in self._scorecard.items() if _is_filled(value)]
+        notices = [_RECALCULATION_NOTICE] if _is_records(self._scorecard.get("superseded_results")) else []
+        metrics = self._scorecard.get("metrics")
+        if _is_records(metrics) and any(_is_filled(entry.get(RESCORE), dict) for entry in metrics):
+            notices.append(_RESCORE_NOTICE)
         return _PAGE.format(
             style=_STYLE,
             status=status,
-            notice=_RECALCULATION_NOTICE if _is_records(self._scorecard.get("superseded_results")) else "",
+            notice="\n".join(notices),
             summary=self._fields(summary, "") if summary else "",
             sections="\n".join(sections),
         )
@@ -140,25 +151,40 @@ class _Report:
             f"<h3>Superseded result</h3>\n{body}\n</section>"
         )
 
-    def _metric(self, entry: dict[str, Any], pointer: str, element_id: str, *, superseded: bool = False) -> str:
+    def _metric(
+        self, entry: dict[str, Any], pointer: str, element_id: str, *, superseded: bool = False, rescore: bool = False
+    ) -> str:
+        """One metric result. A customer-process rescore in it follows as a result of its own."""
         promoted = {key for key in ("name", "state") if key in entry and not isinstance(entry[key], (dict, list))}
         heading = self._value(entry["name"], _child(pointer, "name")) if "name" in promoted else "Unnamed metric"
         css, state = ("metric superseded" if superseded else "metric"), ""
         if superseded:
             state = _SUPERSEDED_METRIC
+        if rescore:
+            css += " rescore"
+            state += _RESCORE_MARK
         if "state" in promoted:
             recorded = entry["state"]
             described = isinstance(recorded, str) and recorded in _STATES
             if recorded is None and _is_filled(entry.get("execution_failure"), dict):
                 css += " execution-failure"
-                description = _EXECUTION_FAILURE
+                managed = entry.get("managed_scoring")
+                failed_in_scoring = isinstance(managed, dict) and _is_filled(managed.get("error"), str)
+                description = _MANAGED_SCORING_FAILURE if failed_in_scoring else _EXECUTION_FAILURE
             else:
                 css += f" state-{recorded}" if described else " state-other"
                 description = _STATES[recorded] if described else _UNDESCRIBED_STATE
             state += f'<p class="state">{self._value(recorded, _child(pointer, "state"))} {escape(description)}</p>'
-        rest = {key: value for key, value in entry.items() if key not in promoted}
+        rescored = not rescore and _is_filled(entry.get(RESCORE), dict)
+        rest = {key: value for key, value in entry.items() if key not in promoted and not (rescored and key == RESCORE)}
         fields = self._fields(rest, pointer, css="fields of-metric") if rest else ""
-        return f'<article class="{css}" id="{element_id}">\n<h3>{heading}</h3>\n{state}\n{fields}\n</article>'
+        article = f'<article class="{css}" id="{element_id}">\n<h3>{heading}</h3>\n{state}\n{fields}\n</article>'
+        if rescored:
+            beside = self._metric(
+                entry[RESCORE], _child(pointer, RESCORE), f"{element_id}-rescore", superseded=superseded, rescore=True
+            )
+            article += f"\n{beside}"
+        return article
 
     def _attempt(self, attempt: dict[str, Any], pointer: str, position: int) -> str:
         identified = "attempt_id" in attempt and not isinstance(attempt["attempt_id"], (dict, list))
@@ -261,12 +287,26 @@ _METRICS_NOTE = (
 _MISSING_NOTE = (
     '<p class="note">What was planned and is not in this scorecard, and why. Planned Attempts that were not made '
     "do not appear as Attempts. A planned Attempt that was made and did not complete is named here with how its "
-    "execution ended, and is not a failed Task.</p>"
+    "execution ended, and is not a failed Task. A metric that has no result is named here with the reason. "
+    "It has no value, and it is not an unavailable measurement.</p>"
 )
 
 _RECALCULATION_NOTICE = (
     '<p class="notice">This scorecard is a recalculation: a task outcome was supplied or corrected after the run. '
     'It supersedes the earlier results, which are kept under <a href="#superseded-results">Superseded results</a>.</p>'
+)
+
+_RESCORE_NOTICE = (
+    '<p class="notice">This scorecard holds a customer-process rescore: the customer asked for the evidence of a '
+    "Foundry-managed result to be scored in their own process. The rescore is shown directly below the metric it "
+    "was requested for, as a result of its own. What Foundry-managed scoring gave for that metric is shown as it "
+    "was, and a result that is missing is still missing.</p>"
+)
+
+_RESCORE_MARK = (
+    '<p class="rescore-mark">Customer-process rescore. The customer asked for the evidence that Foundry-managed '
+    "scoring was given for this metric to be scored in their own process. This is a result of its own. It is "
+    "not the Foundry-managed result of the metric, which is shown directly above and stays as it was.</p>\n"
 )
 
 _SUPERSEDED_NOTE = (
@@ -332,6 +372,8 @@ border-radius:1rem;color:var(--alert);font-weight:600}
 .status .is-partial{border:2px solid var(--warn);background:var(--warn);color:var(--page)}
 .notice{padding:.6rem 1rem;border:1px solid var(--warn);border-radius:.4rem}
 .metric.superseded{border-style:dashed}
+.metric.rescore{margin-left:2rem;border-style:double;border-width:3px;border-left-width:.5rem}
+.rescore-mark{font-weight:600}
 .superseded-mark{color:var(--warn);font-weight:600}
 .superseded .of-metric>tbody>tr>th[data-key=value]+td>.v{text-decoration:line-through}
 """
