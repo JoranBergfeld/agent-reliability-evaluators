@@ -6,6 +6,9 @@ Standard library only: plain REST with a bearer token. See docs/foundry_hosted_a
 from __future__ import annotations
 
 import json
+import shutil
+import subprocess
+import time
 import urllib.error
 import urllib.request
 from dataclasses import dataclass
@@ -16,6 +19,8 @@ from ..evidence import ActionEvent, ResourceMeasurement, ResourceType
 from .interface import AgentResponse, AttemptRequest, InvocationFailed, IsolatedFollowUp
 
 API_VERSION = "v1"
+# What a token for a Foundry project is asked for.
+TOKEN_RESOURCE = "https://ai.azure.com"
 AGENT_TARGET = "foundry_hosted_agent"
 RESPONSES_PROTOCOL = "responses"
 # The evidence source to declare when `native_tool_calls` records the action evidence.
@@ -34,6 +39,36 @@ TOOL_CALL_BOUNDARY = (
 )
 
 
+class AzureCliCredential:
+    """Bearer tokens for a Foundry project, from the identity the Azure CLI is signed in with.
+
+    Calling it returns a token. The token is kept until five minutes before it expires, so a
+    long sweep asks the Azure CLI again only when it has to. `subscription` names the
+    subscription to ask for, when the signed-in identity has more than one tenant.
+    """
+
+    def __init__(self, subscription: str | None = None):
+        self._subscription = subscription
+        self._token: str | None = None
+        self._expires_on = 0.0
+
+    def __call__(self) -> str:
+        if self._token is None or time.time() >= self._expires_on - 300:
+            az = shutil.which("az")
+            if az is None:
+                raise RuntimeError("the Azure CLI (az) is not on PATH, so it cannot give a token for the Foundry project")
+            command = [az, "account", "get-access-token", "--resource", TOKEN_RESOURCE, "--only-show-errors", "-o", "json"]
+            if self._subscription:
+                command += ["--subscription", self._subscription]
+            result = subprocess.run(command, text=True, capture_output=True, timeout=120)
+            if result.returncode:
+                raise RuntimeError(f"the Azure CLI gave no token for the Foundry project: {result.stderr.strip()}")
+            token = json.loads(result.stdout)
+            # Without an expiry time the token is not kept.
+            self._token, self._expires_on = token["accessToken"], float(token.get("expires_on") or 0)
+        return self._token
+
+
 class UnsupportedAgent(Exception):
     """The agent is not one this target supports. It was not invoked, and nothing was tried instead."""
 
@@ -43,7 +78,8 @@ class FoundryHostedAgentTarget:
 
     `project_endpoint` is the project's endpoint, such as
     `https://<account>.services.ai.azure.com/api/projects/<project>`, and `agent_name` the
-    name of the hosted agent in it. `credential` returns the bearer token to call the project with.
+    name of the hosted agent in it. `credential` returns the bearer token to call the project
+    with, for the resource `https://ai.azure.com`. Without it the token comes from the Azure CLI.
 
     `compose_input` gives what the agent is sent for an Attempt. Without it the agent is
     sent the Task's prompt as it is.
@@ -67,7 +103,7 @@ class FoundryHostedAgentTarget:
         *,
         project_endpoint: str,
         agent_name: str,
-        credential: Callable[[], str],
+        credential: Callable[[], str] | None = None,
         compose_input: Callable[[AttemptRequest], str] | None = None,
         timeout_seconds: float = 300.0,
         clock: Callable[[], float] = perf_counter,
@@ -77,7 +113,7 @@ class FoundryHostedAgentTarget:
         self._agent_url = f"{self._project_endpoint}/agents/{agent_name}"
         # What the project said about the agent, once it has been looked up.
         self._agent: dict[str, Any] | None = None
-        self._credential = credential
+        self._credential = credential or AzureCliCredential()
         self._compose_input = compose_input or (lambda request: request.prompt)
         self._timeout_seconds = timeout_seconds
         self._clock = clock
