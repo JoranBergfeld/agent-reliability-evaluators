@@ -292,7 +292,7 @@ An unavailable measurement carries its reason and the counts. It never carries a
 - The rating comes from a separate confidence-only request after the Attempt. The paper also asks after completion, with the conversation history, for a number from 0 to 100. Its heuristic fallback for an answer that cannot be parsed is deliberately not adopted.
 - The confidence is the agent's own estimate after the fact. It is not an independently verified probability.
 - No minimum number of pairs is imposed and no confidence interval is reported. The counts are the statistical disclosure.
-- This metric is separate from calibration and from strict confidence discrimination. It is not combined with them.
+- This metric is separate from [calibration](../calibration/readme.md) and from [strict confidence discrimination](../strict_confidence_discrimination/readme.md). It is not combined with them.
 
 ## Assumptions
 
