@@ -4,12 +4,20 @@ from __future__ import annotations
 
 import json
 from dataclasses import dataclass
+from enum import Enum
 from typing import Any, Sequence
 
 from ..evaluators import RELIABILITY_METRICS, Fidelity, MetricResult, MetricState, ReliabilityMetric, ScoringPath
-from ..evidence import Attempt
+from ..evidence import Attempt, ExecutionStatus
 
 SCHEMA_VERSION = 1
+
+
+class ScorecardStatus(str, Enum):
+    """Whether a scorecard holds everything the sweep planned to collect and score."""
+
+    COMPLETE = "complete"
+    PARTIAL = "partial"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -21,17 +29,92 @@ class ScoredMetric:
     fidelity: Fidelity
 
 
-def build_scorecard(*, metrics: Sequence[ScoredMetric], attempts: Sequence[Attempt]) -> dict[str, Any]:
+@dataclass(frozen=True, kw_only=True)
+class ExperimentRun:
+    """The running of one experiment: what was planned for it, what was made, and how it ended.
+
+    The execution status is completed only when every planned Attempt completed. Otherwise
+    it says why evidence is missing, with a reason. It is not a metric state.
+    """
+
+    experiment_id: str
+    task_id: str
+    planned_attempts: int
+    # The execution limits the customer declared, as JSON-compatible data.
+    limits: dict[str, Any]
+    execution_status: ExecutionStatus
+    reason: str | None = None
+    # Every Attempt made, in the order planned.
+    attempt_ids: tuple[str, ...]
+    # Planned Attempts that were made and did not complete, by the identity of their last execution.
+    not_completed: tuple[str, ...] = ()
+    # Planned Attempts that were never started.
+    not_made: int = 0
+    # Retries made. Each is an Attempt of its own in `attempt_ids`.
+    retries: int = 0
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "experiment_id": self.experiment_id,
+            "task_id": self.task_id,
+            "execution_status": self.execution_status.value,
+            "reason": self.reason,
+            "limits": self.limits,
+            "attempts": {
+                "planned": self.planned_attempts,
+                "completed": self.planned_attempts - len(self.not_completed) - self.not_made,
+                "not_completed": list(self.not_completed),
+                "not_made": self.not_made,
+                "retries": self.retries,
+            },
+            "attempt_ids": list(self.attempt_ids),
+        }
+
+
+def build_scorecard(
+    *, metrics: Sequence[ScoredMetric], attempts: Sequence[Attempt], experiments: Sequence[ExperimentRun]
+) -> dict[str, Any]:
     """Assemble the scorecard as JSON-compatible data.
 
     All twelve metrics are listed individually, in catalogue order. A metric that was not
-    scored is not configured. Metric entries refer to `attempts` by Attempt identity.
+    scored is not configured. Metric entries and `experiments` refer to `attempts` by
+    Attempt identity.
+
+    The scorecard is complete when nothing that was planned is missing. Otherwise it is
+    partial, and `missing` names what is missing and why.
     """
     scored_by_id = {scored.result.definition.metric.metric_id: scored for scored in metrics}
+    attempts_by_id = {attempt.attempt_id: attempt for attempt in attempts}
+    missing = [
+        _missing_attempt_evidence(experiment, attempts_by_id)
+        for experiment in experiments
+        if experiment.execution_status is not ExecutionStatus.COMPLETED
+    ]
     return {
         "schema_version": SCHEMA_VERSION,
+        "status": (ScorecardStatus.PARTIAL if missing else ScorecardStatus.COMPLETE).value,
+        "missing": missing,
         "metrics": [_metric_entry(metric, scored_by_id.get(metric.metric_id)) for metric in RELIABILITY_METRICS],
+        "experiments": [experiment.to_dict() for experiment in experiments],
         "attempts": [attempt.to_dict() for attempt in attempts],
+    }
+
+
+def _missing_attempt_evidence(experiment: ExperimentRun, attempts_by_id: dict[str, Attempt]) -> dict[str, Any]:
+    return {
+        "kind": "attempt_evidence",
+        "experiment_id": experiment.experiment_id,
+        "execution_status": experiment.execution_status.value,
+        "reason": experiment.reason,
+        "attempts_not_completed": [
+            {
+                "attempt_id": attempt_id,
+                "execution_status": attempts_by_id[attempt_id].execution_status.value,
+                "execution_error": attempts_by_id[attempt_id].execution_error,
+            }
+            for attempt_id in experiment.not_completed
+        ],
+        "attempts_not_made": experiment.not_made,
     }
 
 

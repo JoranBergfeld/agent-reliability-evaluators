@@ -16,6 +16,9 @@ class ExecutionStatus(str, Enum):
 
     COMPLETED = "completed"
     FAILED = "failed"
+    TIMED_OUT = "timed_out"
+    # The execution did not complete and the Attempt was made again. The retry is another Attempt.
+    RETRIED = "retried"
 
 
 @dataclass(frozen=True)
@@ -56,6 +59,8 @@ class Attempt:
     task_outcome: TaskOutcome | None = None
     # Why the execution did not complete, when it did not.
     execution_error: str | None = None
+    # The identity of the Attempt this one retries. A retry never replaces that Attempt.
+    retry_of: str | None = None
 
     def __post_init__(self) -> None:
         for name in ("attempt_id", "task_id"):
@@ -77,5 +82,6 @@ class Attempt:
             "task_id": self.task_id,
             "execution_status": self.execution_status.value,
             "execution_error": self.execution_error,
+            "retry_of": self.retry_of,
             "task_outcome": None if self.task_outcome is None else self.task_outcome.to_dict(),
         }

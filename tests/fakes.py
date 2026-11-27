@@ -1,24 +1,70 @@
 """Fakes for driving the Evaluator sweep through its public entry point."""
 
+from dataclasses import dataclass
+
 from reliability_evaluators.agent_target import AgentResponse, AttemptRequest
+
+
+class FakeClock:
+    """A clock that only moves when the fake agent target takes time."""
+
+    def __init__(self) -> None:
+        self.now = 0.0
+
+    def __call__(self) -> float:
+        return self.now
+
+    def advance(self, seconds: float) -> None:
+        self.now += seconds
+
+
+@dataclass(frozen=True)
+class Scripted:
+    """One scripted invocation: what happens, and how long it takes on the fake clock."""
+
+    behaviour: str
+    seconds: float = 0.0
+
+
+def taking(seconds: float, behaviour: str) -> Scripted:
+    return Scripted(behaviour, seconds)
 
 
 class FakeAgentTarget:
     """A scripted agent that works on a fake service.
 
-    The script gives, per Task, what happens on each Attempt in order: "success" and
+    The script gives, per Task, what happens on each invocation in order: "success" and
     "failure" leave the service in the right or the wrong state, and "error" makes the
-    invocation itself fail. The agent always answers "Done.", so its response says
-    nothing about success; the task-success rule has to read `service_state`.
+    invocation itself fail. `taking(seconds, behaviour)` makes an invocation take time on
+    the fake clock; the agent stops at the time limit it is given and raises TimeoutError,
+    unless it was built not to honour time limits.
+    The agent always answers "Done.", so its response says nothing about success; the
+    task-success rule has to read `service_state`.
     """
 
-    def __init__(self, script: dict[str, list[str]]):
-        self._remaining = {task_id: list(behaviours) for task_id, behaviours in script.items()}
+    def __init__(
+        self,
+        script: dict[str, list[str | Scripted]],
+        *,
+        clock: FakeClock | None = None,
+        honours_time_limits: bool = True,
+    ):
+        self._remaining = {
+            task_id: [step if isinstance(step, Scripted) else Scripted(step) for step in behaviours]
+            for task_id, behaviours in script.items()
+        }
+        self._clock = clock or FakeClock()
+        self._honours_time_limits = honours_time_limits
         self.service_state: dict[str, str] = {}
 
     def invoke(self, request: AttemptRequest) -> AgentResponse:
-        behaviour = self._remaining[request.task_id].pop(0)
-        if behaviour == "error":
+        step = self._remaining[request.task_id].pop(0)
+        limit = request.timeout_seconds
+        if self._honours_time_limits and limit is not None and step.seconds > limit:
+            self._clock.advance(limit)
+            raise TimeoutError(f"no answer within {limit:g} seconds")
+        self._clock.advance(step.seconds)
+        if step.behaviour == "error":
             raise ConnectionError("the agent endpoint returned 503")
-        self.service_state[request.attempt_id] = "done" if behaviour == "success" else "open"
+        self.service_state[request.attempt_id] = "done" if step.behaviour == "success" else "open"
         return AgentResponse(output="Done.")

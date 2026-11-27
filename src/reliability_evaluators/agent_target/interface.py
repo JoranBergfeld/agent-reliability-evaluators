@@ -8,11 +8,15 @@ from typing import Protocol
 
 @dataclass(frozen=True, kw_only=True)
 class AttemptRequest:
-    """What the agent is asked to do for one Attempt."""
+    """What the agent is asked to do for one Attempt.
+
+    `timeout_seconds` is the time limit the customer declared for the Attempt, or None.
+    """
 
     attempt_id: str
     task_id: str
     prompt: str
+    timeout_seconds: float | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -23,6 +27,10 @@ class AgentResponse:
 
 
 class AgentTarget(Protocol):
-    """An agent the sweep can invoke. An invocation that fails raises."""
+    """An agent the sweep can invoke. An invocation that fails raises.
+
+    The sweep cannot interrupt an invocation. An agent target stops at
+    `request.timeout_seconds` itself and raises `TimeoutError`.
+    """
 
     def invoke(self, request: AttemptRequest) -> AgentResponse: ...

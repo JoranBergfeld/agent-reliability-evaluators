@@ -93,6 +93,7 @@ def test_the_value_refers_to_attempt_level_evidence_in_the_scorecard():
             "task_id": "close",
             "execution_status": "completed",
             "execution_error": None,
+            "retry_of": None,
             "task_outcome": {"success": True, "source": SOURCE},
         },
         {
@@ -100,6 +101,7 @@ def test_the_value_refers_to_attempt_level_evidence_in_the_scorecard():
             "task_id": "close",
             "execution_status": "completed",
             "execution_error": None,
+            "retry_of": None,
             "task_outcome": {"success": False, "source": SOURCE},
         },
     ]
@@ -137,7 +139,7 @@ def test_the_other_eleven_metrics_appear_as_not_configured():
 def test_there_is_no_combined_score_and_no_built_in_threshold():
     scorecard = sweep({"close": FOUR_IN_FIVE})
 
-    assert set(scorecard) == {"schema_version", "metrics", "attempts"}
+    assert set(scorecard) == {"schema_version", "status", "missing", "metrics", "experiments", "attempts"}
     assert set(metric(scorecard)) == {
         "metric_id",
         "name",
@@ -164,6 +166,7 @@ def test_an_invocation_that_fails_is_an_execution_status_and_not_a_task_failure(
         "task_id": "close",
         "execution_status": "failed",
         "execution_error": "ConnectionError: the agent endpoint returned 503",
+        "retry_of": None,
         "task_outcome": None,
     }
     outcome_consistency = metric(scorecard)
