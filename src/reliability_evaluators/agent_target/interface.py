@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol
 
-from ..evidence import PlatformEvidence, ResourceMeasurement
+from ..evidence import ActionEvent, PlatformEvidence, ResourceMeasurement
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -32,6 +32,17 @@ class AgentResponse:
     output: str
     resource_measurements: tuple[ResourceMeasurement, ...] = ()
     platform_evidence: PlatformEvidence | None = None
+
+
+def platform_tool_calls(request: AttemptRequest, response: AgentResponse) -> tuple[ActionEvent, ...] | None:
+    """The tool calls the platform exposed for an Attempt, in order, as its action evidence.
+
+    Declare it as the `record` of an ActionEvidenceDeclaration to calculate the trajectory
+    metrics from the platform's own tool calls. It returns None, nothing recorded, when
+    the agent target captured none.
+    """
+    evidence = response.platform_evidence
+    return None if evidence is None else evidence.tool_calls
 
 
 class InvocationError(Exception):
