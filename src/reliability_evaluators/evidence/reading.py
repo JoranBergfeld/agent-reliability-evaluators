@@ -31,25 +31,34 @@ def read_attempts(recorded: Any) -> tuple[Attempt, ...]:
 
     Raises EvidenceError, naming the Attempt, for a record that is not valid evidence or
     that would not be written back unchanged, such as one that carries evidence this
-    version does not know.
+    version does not know. Two Attempts with one identity are refused as well: evidence is
+    matched by Attempt identity, and such a match would be ambiguous.
     """
     if not isinstance(recorded, list):
         raise EvidenceError(f"attempt-level evidence is a list of Attempts. Got {recorded!r}")
-    return tuple(_read_attempt(record, position) for position, record in enumerate(recorded, start=1))
+    attempts = tuple(_read_attempt(record, position) for position, record in enumerate(recorded, start=1))
+    seen: set[str] = set()
+    for attempt in attempts:
+        if attempt.attempt_id in seen:
+            raise EvidenceError(f"more than one Attempt has the identity {attempt.attempt_id!r}")
+        seen.add(attempt.attempt_id)
+    return attempts
 
 
 def _read_attempt(recorded: Any, position: int) -> Attempt:
     attempt_id = recorded.get("attempt_id") if isinstance(recorded, Mapping) else None
-    name = f"Attempt {attempt_id!r}" if isinstance(attempt_id, str) and attempt_id else f"the Attempt at position {position}"
+    name = (
+        f"Attempt {attempt_id!r}"
+        if isinstance(attempt_id, str) and attempt_id
+        else f"the Attempt at position {position}"
+    )
     try:
         attempt = _attempt(recorded)
         differing = _differing_keys(attempt.to_dict(), recorded)
     except (ValueError, TypeError) as error:
         raise EvidenceError(f"{name} is not valid evidence: {error}") from error
     if differing:
-        raise EvidenceError(
-            f"{name} is not what this version records for it. It differs in: {', '.join(differing)}"
-        )
+        raise EvidenceError(f"{name} is not what this version records for it. It differs in: {', '.join(differing)}")
     return attempt
 
 
@@ -100,7 +109,13 @@ def _attempt(recorded: Any) -> Attempt:
             "resource_measurements": [
                 ResourceMeasurement(
                     **_fields(
-                        "a resource measurement", record, "resource_type", "value", "unit", "boundary", "reliably_sourced"
+                        "a resource measurement",
+                        record,
+                        "resource_type",
+                        "value",
+                        "unit",
+                        "boundary",
+                        "reliably_sourced",
                     )
                 )
                 for record in _each("resource measurements", fields["resource_measurements"])

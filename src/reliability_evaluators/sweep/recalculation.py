@@ -11,7 +11,7 @@ from contextlib import contextmanager
 from copy import deepcopy
 from dataclasses import dataclass
 from math import isclose
-from typing import Any, Iterator, Mapping, Sequence
+from typing import Any, Iterable, Iterator, Mapping, Sequence
 
 from ..evaluators import RELIABILITY_METRICS, Fidelity, MetricState, ScoringPath
 from ..evidence import (
@@ -96,6 +96,7 @@ def _recalculate(
     action_evidence: ActionEvidenceDeclaration | None,
     acceptance_criteria: Sequence[AcceptanceCriterion],
 ) -> dict[str, Any]:
+    corrections = _given(outcome_corrections)
     with _validating_the_supplied_evidence():
         earlier = _read(earlier_scorecard)
         scored_earlier = _scored_earlier(earlier)
@@ -103,15 +104,10 @@ def _recalculate(
     with _validating_the_supplied_evidence():
         _require_reproduced(earlier.metrics, _score(evaluators, earlier.attempts))
     _require_criteria_declared_again(earlier.metrics, acceptance_criteria)
-    attempts = apply_outcome_corrections(earlier.attempts, outcome_corrections)
-    if not outcome_corrections:
-        raise ValueError(
-            "no task outcome was supplied or corrected, so there is nothing to recalculate: "
-            "a recalculation needs at least one OutcomeCorrection"
-        )
+    attempts = apply_outcome_corrections(earlier.attempts, corrections)
     superseded = {
         "status": SUPERSEDED,
-        "outcome_corrections": _correction_records(outcome_corrections, earlier.attempts),
+        "outcome_corrections": _correction_records(corrections, earlier.attempts),
         "metrics": deepcopy(earlier.metrics),
     }
     scorecard = build_scorecard(
@@ -121,6 +117,19 @@ def _recalculate(
         acceptance_criteria=acceptance_criteria,
     )
     return {**scorecard, _SUPERSEDED_RESULTS: [*deepcopy(earlier.superseded_results), superseded]}
+
+
+def _given(outcome_corrections: Any) -> tuple[Any, ...]:
+    """The corrections a recalculation is given, of which there is at least one."""
+    if isinstance(outcome_corrections, (str, Mapping)) or not isinstance(outcome_corrections, Iterable):
+        raise ValueError(f"task outcomes are supplied as a sequence of OutcomeCorrection. Got {outcome_corrections!r}")
+    corrections = tuple(outcome_corrections)
+    if not corrections:
+        raise ValueError(
+            "no task outcome was supplied or corrected, so there is nothing to recalculate: "
+            "a recalculation needs at least one OutcomeCorrection"
+        )
+    return corrections
 
 
 @contextmanager
@@ -193,9 +202,7 @@ def _scored_earlier(earlier: _EarlierScorecard) -> list[_ScoredEarlier]:
     earlier scorecard names. Those are matched by Attempt identity, never by position.
     """
     known = {metric.metric_id for metric in RELIABILITY_METRICS}
-    by_identity: dict[str, list[Attempt]] = {}
-    for attempt in earlier.attempts:
-        by_identity.setdefault(attempt.attempt_id, []).append(attempt)
+    by_identity = {attempt.attempt_id: attempt for attempt in earlier.attempts}
     seen: set[str] = set()
     scored = []
     for entry in earlier.metrics:
@@ -216,12 +223,13 @@ def _scored_earlier(earlier: _EarlierScorecard) -> list[_ScoredEarlier]:
         if not isinstance(attempt_ids, list):
             raise EvidenceError(f"the result of {metric_id!r} is recorded without the Attempts its Evaluator used")
         for attempt_id in attempt_ids:
-            if len(by_identity.get(attempt_id, ())) != 1:
+            # An identity that is not text cannot be looked up, and is not in the evidence either.
+            if not isinstance(attempt_id, str) or attempt_id not in by_identity:
                 raise EvidenceError(
-                    f"the Evaluator of {metric_id!r} used Attempt {attempt_id!r}, which is "
-                    f"{'not in' if attempt_id not in by_identity else 'more than once in'} the attempt-level evidence"
+                    f"the Evaluator of {metric_id!r} used Attempt {attempt_id!r}, "
+                    "which is not in the attempt-level evidence"
                 )
-        scored.append(_ScoredEarlier(metric_id, tuple(by_identity[attempt_id][0] for attempt_id in attempt_ids)))
+        scored.append(_ScoredEarlier(metric_id, tuple(by_identity[attempt_id] for attempt_id in attempt_ids)))
     return scored
 
 

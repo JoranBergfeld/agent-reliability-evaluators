@@ -110,7 +110,10 @@ class _Report:
                 for at, entry in enumerate(metrics)
             ]
         body = "\n".join(parts)
-        return f'<section class="superseded" id="superseded-result-{position}">\n<h3>Superseded result</h3>\n{body}\n</section>'
+        return (
+            f'<section class="superseded" id="superseded-result-{position}">\n'
+            f"<h3>Superseded result</h3>\n{body}\n</section>"
+        )
 
     def _metric(self, entry: dict[str, Any], pointer: str, element_id: str, *, superseded: bool = False) -> str:
         promoted = {key for key in ("name", "state") if key in entry and not isinstance(entry[key], (dict, list))}

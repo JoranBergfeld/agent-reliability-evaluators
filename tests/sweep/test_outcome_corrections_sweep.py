@@ -41,7 +41,7 @@ from tests.fakes import (
     FakeTodoService,
     todo_list,
 )
-from tests.report_reader import Report, assert_faithful_rendering
+from tests.report_reader import assert_faithful_rendering
 
 SOURCE = "final state of the fake service"
 RULE = "The item is marked done in the to-do service."
@@ -247,7 +247,14 @@ def sweep_with_every_kind_of_evidence():
     """
     target = FakeActingAgentTarget(
         {"close": ["success", "success and deletes unrelated", "failure", "failure"]},
-        {"close": [["get_item", "update_item"], ["update_item", "get_item"], ["get_item"], ["get_item", "update_item"]]},
+        {
+            "close": [
+                ["get_item", "update_item"],
+                ["update_item", "get_item"],
+                ["get_item"],
+                ["get_item", "update_item"],
+            ]
+        },
         {"close": [{"seconds": 1.0, "tool_calls": 2}, {"seconds": 3.0, "tool_calls": 2}] * 2},
         confidence=RATINGS,
     )
@@ -310,7 +317,11 @@ def test_a_correction_changes_nothing_but_the_task_outcome_it_names_and_the_metr
         assert metric(recalculated, metric_id) == metric(earlier, metric_id)
     for before, after in zip(earlier["attempts"], recalculated["attempts"], strict=True):
         if before["attempt_id"] == "close/attempt-3":
-            before = {**before, "task_outcome": after["task_outcome"], "superseded_task_outcomes": after["superseded_task_outcomes"]}
+            before = {
+                **before,
+                "task_outcome": after["task_outcome"],
+                "superseded_task_outcomes": after["superseded_task_outcomes"],
+            }
         assert after == before
     third = attempt(recalculated, "close/attempt-3")
     assert third["confidence"]["rating"] == "75"
@@ -365,9 +376,7 @@ def test_a_task_outcome_that_was_not_known_during_the_sweep_can_be_supplied_late
     assert metric(earlier, "outcome_consistency")["counts"]["attempts"] == {
         "total": 4,
         "valid": 2,
-        "missing": [
-            {"reason": "no task outcome recorded", "count": 2, "ids": ["close/attempt-3", "close/attempt-4"]}
-        ],
+        "missing": [{"reason": "no task outcome recorded", "count": 2, "ids": ["close/attempt-3", "close/attempt-4"]}],
         "excluded": [],
     }
     assert metric(earlier, "brier_based_score")["counts"]["confidence_outcome_pairs"]["valid"] == 2
@@ -442,7 +451,10 @@ def test_a_correction_for_an_attempt_that_is_not_in_the_supplied_evidence_fails_
     with pytest.raises(RecalculationFailed, match="recalculation failed: .*no Attempt 'close/attempt-9'"):
         recalculate(
             earlier_scorecard=earlier,
-            outcome_corrections=[corrected("close/attempt-3", success=True), corrected("close/attempt-9", success=True)],
+            outcome_corrections=[
+                corrected("close/attempt-3", success=True),
+                corrected("close/attempt-9", success=True),
+            ],
         )
 
 
@@ -452,12 +464,15 @@ def test_two_corrections_for_the_same_attempt_are_ambiguous_and_fail_the_recalcu
     with pytest.raises(RecalculationFailed, match="more than one task outcome is supplied for 'close/attempt-3'"):
         recalculate(
             earlier_scorecard=earlier,
-            outcome_corrections=[corrected("close/attempt-3", success=True), corrected("close/attempt-3", success=False)],
+            outcome_corrections=[
+                corrected("close/attempt-3", success=True),
+                corrected("close/attempt-3", success=False),
+            ],
         )
 
 
 def test_a_correction_that_matches_more_than_one_attempt_in_the_supplied_evidence_fails_the_recalculation():
-    # No metric is scored, so that the match itself is refused and not only an Evaluator's own check.
+    # No metric is scored, so that it is not an Evaluator that refuses the evidence.
     earlier = sweep({"close": HALF}, metrics=[])
     earlier["attempts"].append(dict(attempt(earlier, "close/attempt-3")))
 
@@ -552,18 +567,25 @@ def instead(supplied_instead):
         (without_attempt_evidence("attempt_id"), "the Attempt at position 3.*attempt_id"),
         (with_attempt(reviewed_by="J. Jansen"), "'close/attempt-3'.*reviewed_by"),
         (
-            with_attempt(confidence={"rating": "150", "normalized": 1.5, "original_response": "150", "unavailable_reason": None}),
+            with_attempt(
+                confidence={"rating": "150", "normalized": 1.5, "original_response": "150", "unavailable_reason": None}
+            ),
             "'close/attempt-3'.*outside 0 to 100",
         ),
         (
-            with_attempt(confidence={"rating": "75", "normalized": 0.5, "original_response": "75", "unavailable_reason": None}),
+            with_attempt(
+                confidence={"rating": "75", "normalized": 0.5, "original_response": "75", "unavailable_reason": None}
+            ),
             "'close/attempt-3'.*confidence",
         ),
         (
             with_attempt(superseded_task_outcomes=[{"task_outcome": None}]),
             "'close/attempt-3'.*correction_provenance",
         ),
-        (changed(lambda scorecard: scorecard.update(superseded_results={"status": "superseded"})), "superseded results"),
+        (
+            changed(lambda scorecard: scorecard.update(superseded_results={"status": "superseded"})),
+            "superseded results",
+        ),
         (without("experiments"), "its experiments are not a list"),
         (
             with_attempt(lifecycle=[{"point": "teardown", "succeeded": True, "error": None}]),
@@ -575,7 +597,10 @@ def instead(supplied_instead):
         ),
         (with_attempt(intended_condition={"role": "baseline"}), "'close/attempt-3'.*condition_id"),
         (with_attempt(starting_state="pristine"), "'close/attempt-3'.*not a starting-state policy"),
-        (with_attempt(observed_condition={"met": "yes", "source": "log", "observations": {}}), "'close/attempt-3'.*met"),
+        (
+            with_attempt(observed_condition={"met": "yes", "source": "log", "observations": {}}),
+            "'close/attempt-3'.*met",
+        ),
         (
             changed(lambda scorecard: scorecard.update(token_usage={"total": 12})),
             "it holds what this version does not recalculate with: token_usage",
@@ -585,7 +610,9 @@ def instead(supplied_instead):
 def test_supplied_evidence_that_does_not_validate_fails_the_recalculation(supply, problem):
     earlier = supply(sweep({"close": HALF}, metrics=["outcome_consistency", "brier_based_score"], ratings=RATINGS))
 
-    with pytest.raises(RecalculationFailed, match=f"recalculation failed: the supplied evidence does not validate: .*{problem}"):
+    with pytest.raises(
+        RecalculationFailed, match=f"recalculation failed: the supplied evidence does not validate: .*{problem}"
+    ):
         recalculate(earlier_scorecard=earlier, outcome_corrections=[corrected("close/attempt-3", success=True)])
 
 
@@ -597,10 +624,19 @@ def with_metric(of, /, **result):
 @pytest.mark.parametrize(
     ("supply", "problem"),
     [
-        (changed(lambda scorecard: scorecard["metrics"].append("brier_based_score")), "a metric result is recorded as an object"),
-        (with_metric("outcome_consistency", metric_id="overall_reliability"), "'overall_reliability' is not a reliability metric"),
+        (
+            changed(lambda scorecard: scorecard["metrics"].append("brier_based_score")),
+            "a metric result is recorded as an object",
+        ),
+        (
+            with_metric("outcome_consistency", metric_id="overall_reliability"),
+            "'overall_reliability' is not a reliability metric",
+        ),
         (with_metric("calibration", metric_id="outcome_consistency"), "more than one result for 'outcome_consistency'"),
-        (changed(lambda scorecard: metric(scorecard, "outcome_consistency").pop("state")), "the result of 'outcome_consistency' is recorded without its state"),
+        (
+            changed(lambda scorecard: metric(scorecard, "outcome_consistency").pop("state")),
+            "the result of 'outcome_consistency' is recorded without its state",
+        ),
         (
             with_metric("calibration", state="available", value=0.5),
             "the result of 'calibration' is recorded without the Attempts its Evaluator used",
@@ -614,7 +650,9 @@ def with_metric(of, /, **result):
 def test_earlier_metric_results_that_cannot_be_read_fail_the_recalculation(supply, problem):
     earlier = supply(sweep({"close": HALF}))
 
-    with pytest.raises(RecalculationFailed, match=f"recalculation failed: the supplied evidence does not validate: .*{problem}"):
+    with pytest.raises(
+        RecalculationFailed, match=f"recalculation failed: the supplied evidence does not validate: .*{problem}"
+    ):
         recalculate(earlier_scorecard=earlier, outcome_corrections=[corrected("close/attempt-3", success=True)])
 
 
@@ -625,7 +663,10 @@ def test_earlier_metric_results_that_cannot_be_read_fail_the_recalculation(suppl
         (with_attempt(task_outcome={"success": True, "source": SOURCE}), "value, details"),
         # The earlier result is not the one that was calculated.
         (with_metric("outcome_consistency", value=0.9), "value"),
-        (with_metric("outcome_consistency", state="unavailable", value=None, reason="no Tasks"), "state, value, reason"),
+        (
+            with_metric("outcome_consistency", state="unavailable", value=None, reason="no Tasks"),
+            "state, value, reason",
+        ),
         # The earlier result was calculated by another version of the metric definition.
         (
             changed(lambda scorecard: metric(scorecard, "outcome_consistency")["definition"].update(version="0.9.0")),
@@ -678,7 +719,9 @@ def test_an_earlier_value_that_differs_only_in_its_last_binary_digit_is_the_same
     # Elapsed times of 1 and 3 seconds: mean 2, population standard deviation 1, CV 0.5.
     # Resource consistency is exp(-0.5), whose last digit depends on the platform's
     # mathematical library. The earlier result may have been calculated on another platform.
-    earlier = sweep({"close": HALF}, metrics=["outcome_consistency", "resource_consistency"], seconds=[1.0, 3.0, 1.0, 3.0])
+    earlier = sweep(
+        {"close": HALF}, metrics=["outcome_consistency", "resource_consistency"], seconds=[1.0, 3.0, 1.0, 3.0]
+    )
     calculated_here = metric(earlier, "resource_consistency")["value"]
     assert calculated_here == pytest.approx(0.6065306597126334, abs=1e-12)
     elsewhere = math.nextafter(calculated_here, 1.0)
@@ -836,7 +879,14 @@ def sweep_with_an_evaluator_configured_on_its_own():
     """
     target = FakeActingAgentTarget(
         {"close": ["success", "failure", "success", "success"]},
-        {"close": [["get_item", "update_item"], ["update_item", "get_item"], ["get_item", "update_item"], ["update_item"]]},
+        {
+            "close": [
+                ["get_item", "update_item"],
+                ["update_item", "get_item"],
+                ["get_item", "update_item"],
+                ["update_item"],
+            ]
+        },
     )
 
     def item_is_done(attempt, response):
@@ -848,14 +898,20 @@ def sweep_with_an_evaluator_configured_on_its_own():
     def calls_that_change_an_item(attempt, response):
         return [call for call in every_call(attempt, response) if call.tool_name != "get_item"]
 
-    native = ActionEvidenceDeclaration(evidence_source="native tool calls", record=every_call, action_types=ACTION_TYPES)
+    native = ActionEvidenceDeclaration(
+        evidence_source="native tool calls", record=every_call, action_types=ACTION_TYPES
+    )
     effects = ActionEvidenceDeclaration(
         evidence_source="service-side effects", record=calls_that_change_an_item, action_types=ACTION_TYPES
     )
     scorecard = run_sweep(
         tasks=[Task(task_id="close", prompt="Close the item.", success_rule=item_is_done, attempts=2)],
         agent_target=target,
-        metrics=["outcome_consistency", SEQUENTIAL, ConfiguredEvaluator(metric_id=DISTRIBUTIONAL, action_evidence=effects)],
+        metrics=[
+            "outcome_consistency",
+            SEQUENTIAL,
+            ConfiguredEvaluator(metric_id=DISTRIBUTIONAL, action_evidence=effects),
+        ],
         action_evidence=native,
     )
     return supplied(scorecard), native, effects
@@ -864,7 +920,9 @@ def sweep_with_an_evaluator_configured_on_its_own():
 def test_each_metric_is_recalculated_from_the_attempts_and_with_the_declaration_its_evaluator_had():
     # The failure among the first two Attempts is corrected to a success: p = 2/2, value 1.
     earlier, native, effects = sweep_with_an_evaluator_configured_on_its_own()
-    assert [metric(earlier, metric_id)["value"] for metric_id in ("outcome_consistency", SEQUENTIAL, DISTRIBUTIONAL)] == [0, 0, 1]
+    assert [
+        metric(earlier, metric_id)["value"] for metric_id in ("outcome_consistency", SEQUENTIAL, DISTRIBUTIONAL)
+    ] == [0, 0, 1]
 
     recalculated = recalculate(
         earlier_scorecard=earlier,
@@ -980,3 +1038,30 @@ def test_a_recalculated_scorecard_is_delivered_to_a_location_of_its_own_and_the_
     ]
     assert_faithful_rendering((delivered / "report.html").read_text(encoding="utf-8"), recalculated)
     assert {file.name: file.read_bytes() for file in (tmp_path / "run").iterdir()} == kept
+
+
+def test_two_attempts_with_one_identity_in_the_supplied_evidence_fail_the_recalculation_whatever_is_corrected():
+    # Evidence is matched by Attempt identity everywhere, so the evidence itself is refused.
+    earlier = sweep({"close": HALF}, metrics=[])
+    earlier["attempts"].append(dict(attempt(earlier, "close/attempt-3")))
+
+    with pytest.raises(
+        RecalculationFailed,
+        match="the supplied evidence does not validate: more than one Attempt has the identity 'close/attempt-3'",
+    ):
+        recalculate(earlier_scorecard=earlier, outcome_corrections=[corrected("close/attempt-1", success=False)])
+
+
+def test_corrections_given_as_they_are_produced_are_all_recorded():
+    earlier = sweep({"close": HALF})
+    produced = (corrected(attempt_id, success=True) for attempt_id in ("close/attempt-3", "close/attempt-4"))
+
+    recalculated = recalculate(earlier_scorecard=earlier, outcome_corrections=produced)
+
+    # p = 4/4: the value is 1.
+    assert metric(recalculated)["value"] == 1
+    (superseded,) = recalculated["superseded_results"]
+    assert [correction["attempt_id"] for correction in superseded["outcome_corrections"]] == [
+        "close/attempt-3",
+        "close/attempt-4",
+    ]

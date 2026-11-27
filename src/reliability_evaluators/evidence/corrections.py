@@ -25,9 +25,7 @@ class OutcomeCorrection:
         for name in ("attempt_id", "provenance"):
             value = getattr(self, name)
             if not isinstance(value, str) or not value.strip():
-                raise EvidenceError(
-                    f"a task outcome supplied after the run records its {name}. Got {value!r}"
-                )
+                raise EvidenceError(f"a task outcome supplied after the run records its {name}. Got {value!r}")
         if not isinstance(self.task_outcome, TaskOutcome):
             raise EvidenceError(
                 f"a task outcome supplied after the run is a TaskOutcome with its source. Got {self.task_outcome!r}"
@@ -79,9 +77,7 @@ def _corrected(attempt: Attempt, correction: OutcomeCorrection) -> Attempt:
             f"a task outcome is supplied for {attempt.attempt_id!r}, and the execution of {attempt.attempt_id!r} "
             "did not complete: it has no task outcome to supply or correct, and it is not a task failure"
         )
-    replaced = SupersededTaskOutcome(
-        task_outcome=attempt.task_outcome, correction_provenance=correction.provenance
-    )
+    replaced = SupersededTaskOutcome(task_outcome=attempt.task_outcome, correction_provenance=correction.provenance)
     return replace(
         attempt,
         task_outcome=correction.task_outcome,
