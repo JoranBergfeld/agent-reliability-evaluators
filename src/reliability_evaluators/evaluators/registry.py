@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from typing import Callable, Iterable
 
 from ..evidence import TaskEvidence
-from . import outcome_consistency
+from . import constraint_compliance, outcome_consistency
 from .result import MetricDefinition, MetricResult
 
 
@@ -20,5 +20,8 @@ class Evaluator:
 
 EVALUATORS: dict[str, Evaluator] = {
     evaluator.definition.metric.metric_id: evaluator
-    for evaluator in (Evaluator(outcome_consistency.DEFINITION, outcome_consistency.evaluate),)
+    for evaluator in (
+        Evaluator(outcome_consistency.DEFINITION, outcome_consistency.evaluate),
+        Evaluator(constraint_compliance.DEFINITION, constraint_compliance.evaluate),
+    )
 }
