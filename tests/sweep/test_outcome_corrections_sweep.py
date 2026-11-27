@@ -618,8 +618,8 @@ def condition_of_kind(kind):
             "'close/attempt-3'.*met",
         ),
         (
-            changed(lambda scorecard: scorecard.update(token_usage={"total": 12})),
-            "it holds what this version does not recalculate with: token_usage",
+            changed(lambda scorecard: scorecard.update(cost_estimate={"total": 12})),
+            "it holds what this version does not recalculate with: cost_estimate",
         ),
     ],
 )
@@ -805,6 +805,7 @@ def test_the_supplied_scorecard_is_left_as_it_was_and_the_new_scorecard_is_json_
         "metrics",
         "experiments",
         "tasks_without_experiment",
+        "token_usage",
         "attempts",
         "superseded_results",
     }

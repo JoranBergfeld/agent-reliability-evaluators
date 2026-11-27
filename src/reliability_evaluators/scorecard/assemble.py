@@ -18,8 +18,11 @@ from ..evaluators import (
 )
 from ..evidence import Attempt, EvidenceError, ExperimentStatus
 from .acceptance import AcceptanceCriterion, assess, criteria_by_metric
+from .usage import sweep_token_usage
 
 SCHEMA_VERSION = 1
+# Where a scorecard reports token usage. It is metadata, apart from the metrics and their acceptance.
+TOKEN_USAGE = "token_usage"
 
 
 class ScorecardStatus(str, Enum):
@@ -270,6 +273,7 @@ def build_scorecard(
         "tasks_without_experiment": [
             execution.to_dict() for execution in executions if execution.experiment_id is None
         ],
+        TOKEN_USAGE: sweep_token_usage(attempts),
         "attempts": [attempt.to_dict() for attempt in attempts],
     }
 

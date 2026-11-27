@@ -8,6 +8,7 @@ from .acceptance import AcceptanceCriterion, CustomerAssessment, criteria_by_met
 from .assemble import (
     RESCORE,
     SCHEMA_VERSION,
+    TOKEN_USAGE,
     CutShort,
     ExecutionRecord,
     MissingResult,
@@ -20,10 +21,12 @@ from .assemble import (
 )
 from .delivery import ArtifactLocation, ReportingFailure
 from .report import render_report
+from .usage import evaluator_token_usage
 
 __all__ = [
     "RESCORE",
     "SCHEMA_VERSION",
+    "TOKEN_USAGE",
     "AcceptanceCriterion",
     "ArtifactLocation",
     "CustomerAssessment",
@@ -35,6 +38,7 @@ __all__ = [
     "ScoredMetric",
     "build_scorecard",
     "criteria_by_metric",
+    "evaluator_token_usage",
     "read_execution_record",
     "render_report",
     "rescore_entry",

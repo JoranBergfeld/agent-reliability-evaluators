@@ -24,6 +24,7 @@ from ..evidence import (
 )
 from ..scorecard import (
     SCHEMA_VERSION,
+    TOKEN_USAGE,
     AcceptanceCriterion,
     CutShort,
     ExecutionRecord,
@@ -45,7 +46,8 @@ _METRICS, _EXPERIMENTS, _ATTEMPTS, _SUPERSEDED_RESULTS = "metrics", "experiments
 _STATUS, _MISSING, _CONCURRENCY, _TASKS = "status", "missing", "concurrency", "tasks_without_experiment"
 # How the sweep was executed, and what that left missing. A correction concerns none of it:
 # these parts are read, have to be what the supplied evidence gives, and are carried over.
-_EXECUTION_RECORD = (_STATUS, _MISSING, _CONCURRENCY, _EXPERIMENTS, _TASKS)
+# So is what the sweep used: a recalculation makes no Attempt and scores by code, so it uses no tokens.
+_EXECUTION_RECORD = (_STATUS, _MISSING, _CONCURRENCY, _EXPERIMENTS, _TASKS, TOKEN_USAGE)
 _READ = {"schema_version", _METRICS, _ATTEMPTS, _SUPERSEDED_RESULTS, *_EXECUTION_RECORD}
 
 
@@ -512,10 +514,11 @@ def _require_reproduced(earlier: _EarlierScorecard, reproduced: Mapping[str, Any
                 f"which differs in: {', '.join(differing)}"
             )
     for part in _EXECUTION_RECORD:
-        if not _same(reproduced[part], earlier.supplied[part]):
+        if part not in earlier.supplied or not _same(reproduced[part], earlier.supplied[part]):
             raise EvidenceError(
-                f"it does not reproduce the earlier {part!r}: the status of a scorecard, what it is missing "
-                "and how its sweep was executed follow from its attempt-level evidence and its execution records"
+                f"it does not reproduce the earlier {part!r}: the status of a scorecard, what it is missing, "
+                "how its sweep was executed and what that used follow from its attempt-level evidence and its "
+                "execution records"
             )
 
 
