@@ -6,7 +6,7 @@ import threading
 from dataclasses import dataclass
 from typing import Callable, Sequence
 
-from ..evidence import Attempt, ConditionRole, ExecutionStatus, ExperimentStatus
+from ..evidence import Attempt, ConditionRole, ExecutionStatus, ExperimentStatus, VariationKind
 from ..scorecard import ExecutionRecord
 from .declaration import Experiment, Task
 
@@ -74,22 +74,31 @@ class Execution:
     # The last execution of each planned Attempt that was made.
     last: tuple[Attempt, ...]
 
-    def planned_under(self, roles: Sequence[ConditionRole]) -> int:
-        """How many Attempts were planned under conditions that play one of these parts.
+    def conditions_for(self, kind: VariationKind | None) -> tuple[ConditionRole, ...]:
+        """The conditions of this Task's Attempts that an Evaluator is calculated from.
 
-        An Attempt at a Task given without an experiment had no variation applied to it,
-        so it counts as a baseline Attempt.
+        `kind` is the kind of variation the Evaluator compares with the baseline, or None
+        for one calculated from the baseline only. An Attempt at a Task given without an
+        experiment had no variation applied to it, so it counts as a baseline Attempt. An
+        Evaluator that compares a kind of variation is calculated from both conditions of
+        the experiments whose variation is of that kind, and from nothing else.
         """
-        if self.experiment is None:
-            return self.task.attempts * (ConditionRole.BASELINE in roles)
-        return self.task.attempts * sum(role in roles for role, _ in self.experiment.conditions())
+        if kind is None:
+            return (ConditionRole.BASELINE,)
+        variation = None if self.experiment is None else self.experiment.variation
+        if variation is not None and variation.kind is kind:
+            return (ConditionRole.BASELINE, ConditionRole.VARIATION)
+        return ()
 
-    def cut_short_under(self, roles: Sequence[ConditionRole]) -> bool:
-        """Whether the Attempts under these conditions were cut short: not all made, or not one completed."""
-        planned = self.planned_under(roles)
+    def cut_short_for(self, kind: VariationKind | None) -> bool:
+        """Whether the Attempts such an Evaluator is calculated from were cut short.
+
+        They were when not all of them were made, or not one of them completed.
+        """
+        roles = self.conditions_for(kind)
         made = [attempt for attempt in self.last if (attempt.condition_role or ConditionRole.BASELINE) in roles]
-        return planned > 0 and (
-            len(made) < planned
+        return bool(roles) and (
+            len(made) < self.task.attempts * len(roles)
             or not any(attempt.execution_status is ExecutionStatus.COMPLETED for attempt in made)
         )
 

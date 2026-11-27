@@ -22,6 +22,7 @@ from ..evidence import (
     ResourceType,
     TaskEvidence,
     TaskOutcome,
+    VariationKind,
     ViolationAssessment,
 )
 from ..scorecard import AcceptanceCriterion, ArtifactLocation, ScoredMetric, build_scorecard, criteria_by_metric
@@ -83,6 +84,11 @@ def run_sweep(
     the Attempts before it, and Attempts made for different needs are never scored
     together. An Evaluator is given only the Attempts made under the experimental
     conditions it is calculated from. The scorecard shows which Attempts each Evaluator used.
+
+    A metric that compares one kind of variation with the baseline, such as fault
+    robustness, is calculated from the Attempts of the experiments whose variation declares
+    that kind, under both conditions. At least one experiment has to declare it. Every
+    other metric is calculated from Attempts under the baseline only.
 
     `action_evidence` declares where the actions of every Attempt are recorded from and
     what action type each tool name is. The trajectory metrics need it, and it applies to
@@ -159,6 +165,8 @@ def _sweep(
     """
     selected = [_select(metric, action_evidence) for metric in metrics]
     _require_one_evaluator_per_metric(selected)
+    for evaluator in selected:
+        _require_compared_variation(evaluator.evaluator, experiments)
     _require_distinct_tasks([*tasks, *(experiment.task for experiment in experiments)])
     # Called for its check: a second criterion for one metric is rejected here, not after the Attempts.
     criteria_by_metric(acceptance_criteria)
@@ -215,24 +223,15 @@ def _sweep(
     scored = []
     for shared, (attempts_of_set, executions) in zip(sharing, made):
         for evaluator in shared.members:
-            roles = evaluator.evaluator.condition_roles
-            used = [attempt for attempt in attempts_of_set if evaluator.uses(attempt)]
-            # A Task whose Attempts for this Evaluator were not made is still a Task in its evidence.
-            evidence = [
-                TaskEvidence(
-                    execution.task.task_id,
-                    tuple(attempt for attempt in used if attempt.task_id == execution.task.task_id),
-                )
-                for execution in executions
-                if execution.planned_under(roles)
-            ]
+            kind = evaluator.evaluator.compares_variation
+            evidence = evaluator.evidence(attempts_of_set, executions)
             scored.append(
                 ScoredMetric(
                     result=evaluator.evaluate(evidence),
                     scoring_path=ScoringPath.CUSTOMER_PROCESS,
                     fidelity=Fidelity.AUTHORITATIVE,
-                    attempts_used=tuple(attempt.attempt_id for attempt in used),
-                    cut_short=tuple(execution.record for execution in executions if execution.cut_short_under(roles)),
+                    attempts_used=tuple(attempt.attempt_id for task in evidence for attempt in task.attempts),
+                    cut_short=tuple(execution.record for execution in executions if execution.cut_short_for(kind)),
                 )
             )
     return build_scorecard(
@@ -287,12 +286,33 @@ class _SelectedEvaluator:
             requirements["confidence"] = True
         return requirements
 
-    def uses(self, attempt: Attempt) -> bool:
-        """Whether the Attempt was made under an experimental condition this Evaluator is calculated from.
+    def evidence(self, attempts: Sequence[Attempt], executions: Sequence[Execution]) -> tuple[TaskEvidence, ...]:
+        """The Attempts of one set that this Evaluator is calculated from, grouped by Task.
 
-        An Attempt made outside an experiment had no variation applied to it, so it is used as a baseline Attempt.
+        `executions` are the Tasks and experiments of that set. Only Attempts made under an
+        experimental condition the Evaluator is calculated from are given to it. A Task that
+        Attempts were planned for under such a condition is a Task of its evidence even when
+        none of them was made.
         """
-        return (attempt.condition_role or ConditionRole.BASELINE) in self.evaluator.condition_roles
+        kind = self.evaluator.compares_variation
+        evidence = []
+        for execution in executions:
+            roles = execution.conditions_for(kind)
+            if roles:
+                # An Attempt made outside an experiment had no variation applied to it, so it is
+                # used as a baseline Attempt.
+                evidence.append(
+                    TaskEvidence(
+                        execution.task.task_id,
+                        tuple(
+                            attempt
+                            for attempt in attempts
+                            if attempt.task_id == execution.task.task_id
+                            and (attempt.condition_role or ConditionRole.BASELINE) in roles
+                        ),
+                    )
+                )
+        return tuple(evidence)
 
     def evaluate(self, evidence: Sequence[TaskEvidence]) -> MetricResult:
         declared = (_EVALUATED_WITH[name](self.declared[name]) for name in self.evaluator.declarations)
@@ -355,6 +375,19 @@ def _require_declarations(evaluator: Evaluator, declared: dict[str, Any]) -> Non
     for name in evaluator.declarations:
         if declared[name] is None:
             raise ValueError(f"{evaluator.definition.metric.metric_id!r} needs {undeclared[name]}")
+
+
+def _declares_variation(experiment: Experiment, kind: VariationKind) -> bool:
+    return experiment.variation is not None and experiment.variation.kind is kind
+
+
+def _require_compared_variation(evaluator: Evaluator, experiments: Sequence[Experiment]) -> None:
+    kind = evaluator.compares_variation
+    if kind is not None and not any(_declares_variation(experiment, kind) for experiment in experiments):
+        raise ValueError(
+            f"{evaluator.definition.metric.metric_id!r} needs an experiment whose variation declares "
+            f"the kind {kind.value!r}: it compares Attempts under that variation with Attempts under the baseline"
+        )
 
 
 def _require_one_evaluator_per_metric(selected: Sequence[_SelectedEvaluator]) -> None:

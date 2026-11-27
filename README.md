@@ -6,7 +6,7 @@ Vocabulary is defined in [`GLOSSARY.md`](GLOSSARY.md). Decisions that are hard t
 
 ## What exists today
 
-Nine metrics, end to end, scored in your own process:
+Ten metrics, end to end, scored in your own process:
 
 | Metric | Documentation |
 | --- | --- |
@@ -14,6 +14,7 @@ Nine metrics, end to end, scored in your own process:
 | Distributional trajectory consistency | [`docs/distributional_trajectory_consistency/readme.md`](docs/distributional_trajectory_consistency/readme.md) |
 | Sequential trajectory consistency | [`docs/sequential_trajectory_consistency/readme.md`](docs/sequential_trajectory_consistency/readme.md) |
 | Resource consistency | [`docs/resource_consistency/readme.md`](docs/resource_consistency/readme.md) |
+| Fault robustness | [`docs/fault_robustness/readme.md`](docs/fault_robustness/readme.md) |
 | Calibration | [`docs/calibration/readme.md`](docs/calibration/readme.md) |
 | Strict confidence discrimination | [`docs/strict_confidence_discrimination/readme.md`](docs/strict_confidence_discrimination/readme.md) |
 | Brier-based score | [`docs/brier_based_score/readme.md`](docs/brier_based_score/readme.md) |
@@ -24,11 +25,11 @@ You can declare your own acceptance criteria per metric, and the scorecard repor
 
 When a selected metric uses confidence, the sweep asks the agent for a confidence rating in a separate request after each Attempt. How that works, and when a rating is unavailable, is described in the [Brier-based score documentation](docs/brier_based_score/readme.md#how-the-confidence-rating-is-collected). Calibration, strict confidence discrimination and the Brier-based score are calculated from the same ratings and reported as three separate results.
 
-The Evaluator sweep can also run controlled experiments, with your own controls for preparing state, applying a condition, verifying what occurred and cleaning up: see [`docs/sweep/controlled-experiments.md`](docs/sweep/controlled-experiments.md).
+The Evaluator sweep can also run controlled experiments, with your own controls for preparing state, applying a condition, verifying what occurred and cleaning up: see [`docs/sweep/controlled-experiments.md`](docs/sweep/controlled-experiments.md). Fault robustness needs one: it compares Attempts under the baseline with Attempts under a fault that your controls apply and verify.
 
 Several metrics can be selected in one sweep. Evaluators share Attempts only where that is valid, and the scorecard shows which Attempts each one used: see [`docs/sweep/several-evaluators.md`](docs/sweep/several-evaluators.md).
 
-The other three metrics have no Evaluator yet. Every scorecard lists all twelve, and a metric that was not selected appears as not configured. No Foundry agent target and no Foundry-managed scoring exists yet; the agent target is an interface that you implement.
+The other two metrics have no Evaluator yet. Every scorecard lists all twelve, and a metric that was not selected appears as not configured. No Foundry agent target and no Foundry-managed scoring exists yet; the agent target is an interface that you implement.
 
 The sweep returns the machine-readable scorecard. Given a directory, it also writes the scorecard, a human-readable report rendered from it and the attempt-level evidence there, or raises an explicit reporting failure: see [`docs/report/readme.md`](docs/report/readme.md).
 
@@ -61,7 +62,7 @@ print(to_json(scorecard))
 
 `artifact_dir` is a directory you choose in the run or artifact context of your CI platform. With it, the sweep delivers all three files or raises `ReportingFailure`.
 
-An Evaluator can also be called on its own, without a sweep: see the metric's documentation. The two trajectory metrics also need a declared source of action evidence and an action-type mapping, which have no default.
+An Evaluator can also be called on its own, without a sweep: see the metric's documentation. The two trajectory metrics also need a declared source of action evidence and an action-type mapping, which have no default. Fault robustness needs an experiment that declares a fault.
 
 Attempt counts and execution limits are yours to set per Task, in an experiment or without one. Timeouts, cancellations and retries stay visible and are never scored as task failures, concurrency is opt-in, and a sweep that stops early still returns a scorecard that says it is partial: see [`docs/sweep/execution-limits.md`](docs/sweep/execution-limits.md).
 
@@ -71,7 +72,7 @@ The copyable source has one directory per module of the specification.
 
 | Module | Path | Contents |
 | --- | --- | --- |
-| Evaluators | `src/reliability_evaluators/evaluators/` | The canonical metric definitions, one file per metric, the metric result contract (`result.py`), the catalogue of the twelve metrics (`catalogue.py`), the registry of Evaluators that exist (`registry.py`) and the confidence/outcome pairs the predictability metrics share (`confidence_pairs.py`). |
+| Evaluators | `src/reliability_evaluators/evaluators/` | The canonical metric definitions, one file per metric, the metric result contract (`result.py`), the catalogue of the twelve metrics (`catalogue.py`), the registry of Evaluators that exist (`registry.py`), the confidence/outcome pairs the predictability metrics share (`confidence_pairs.py`) and the capped ratio of accuracies the robustness metrics share (`_robustness.py`). |
 | Evidence model | `src/reliability_evaluators/evidence/` | The Attempt record with its task outcome, ordered action evidence (`actions.py`), resource measurements, confidence evidence (`confidence.py`) and what it records about its experiment (`experiment.py`), its validation, and the grouping of Attempts by Task. |
 | Evaluator sweep | `src/reliability_evaluators/sweep/` | What a customer declares, execution limits included (`declaration.py`), the public entry point `run_sweep` (`runner.py`), the customer controls invoked around each Attempt of an experiment (`lifecycle.py`), the limits and the cancellation at work (`execution.py`), the confidence-only request that follows an Attempt (`confidence.py`) and the rule for which Evaluators share Attempts (`reuse.py`). |
 | Agent target | `src/reliability_evaluators/agent_target/` | The interface the sweep invokes an agent through, for an Attempt and for the confidence follow-up, with the target's declaration of whether that follow-up is isolated. |
@@ -92,12 +93,12 @@ Development tooling is managed with [uv](https://docs.astral.sh/uv/). Customers 
 | Default test run | `uv run pytest` |
 | Opt-in live Foundry checks | `uv run pytest -m live` |
 
-The default test run excludes tests marked `live`. Live checks need a disposable Foundry project and incur charges. None exists yet.
+The default test run excludes tests marked `live`. Live checks create billable Azure resources: they stand up the disposable fixture in [`live_fixture/`](live_fixture/README.md) (a to-do service, a Foundry prompt agent and a Foundry hosted agent) and tear it down again. The only live check so far verifies that fixture itself.
 
 Tests are written at three seams only:
 
 - **Evaluator seam** (`tests/evaluators/`): an Evaluator's public interface, called with grouped Attempt evidence.
 - **Evaluator sweep seam** (`tests/sweep/`): `run_sweep` with the fake agent targets and the fake customer controls in `tests/fakes.py`, asserting on the machine-readable scorecard only. The human-readable report is tested only as a rendering of that scorecard: `tests/report_reader.py` reads a report back and compares it with the scorecard value by value. Delivery and reporting failure are asserted on what the caller finds in the directory it chose and on the failure it is given.
-- **Live Foundry verification**: opt-in, marked `live`.
+- **Live Foundry verification**: opt-in, marked `live`. The fixture these checks run on is test infrastructure, so it is also checked without Azure in `tests/fixture/`: its to-do service and its task-success rule run on the local machine, through the interface the live checks use.
 
 Expected values are calculated by hand, never by the code under test.

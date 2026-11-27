@@ -233,7 +233,7 @@ A metric has no result when its Evaluator cannot calculate a value and the Attem
 
 An acceptance criterion on a metric without a result is not assessed, and the execution failure is its reason. A metric that kept its result in a partial scorecard is assessed like any other. To require a minimum amount of evidence, put `minimum_counts` in the criterion: see [acceptance criteria](../acceptance_criteria/readme.md).
 
-The Evaluators that exist are calculated from the Attempts of Tasks given without an experiment and from Attempts under the baseline of an experiment. Attempts under a variation that were not made make the scorecard partial and do not, on their own, leave a metric without a result. When Evaluators need separate Attempts, each is judged by the Attempts of its own set.
+Which Attempts supply a metric's evidence depends on the metric. Most are calculated from the Attempts of Tasks given without an experiment and from Attempts under the baseline of an experiment: for them, Attempts under a variation that were not made make the scorecard partial and do not, on their own, leave the metric without a result. A metric that compares a kind of variation with the baseline, such as fault robustness, is calculated from both conditions of the experiments that declare that kind, taken together. When Evaluators need separate Attempts, each is judged by the Attempts of its own set.
 
 ## Choices made here
 

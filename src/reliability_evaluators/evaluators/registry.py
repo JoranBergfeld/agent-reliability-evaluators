@@ -5,13 +5,14 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable
 
-from ..evidence import ConditionRole
+from ..evidence import VariationKind
 from . import (
     brier_based_score,
     calibration,
     conditional_harm_severity,
     constraint_compliance,
     distributional_trajectory_consistency,
+    fault_robustness,
     outcome_consistency,
     resource_consistency,
     sequential_trajectory_consistency,
@@ -33,9 +34,11 @@ class Evaluator:
     declarations: tuple[str, ...] = ()
     # Whether the calculation uses confidence ratings, which a sweep has to ask the agent for.
     needs_confidence: bool = False
-    # The experimental conditions the calculation is made from, by the part they play in
-    # their experiment. A sweep gives the Evaluator no Attempt made under another condition.
-    condition_roles: tuple[ConditionRole, ...] = (ConditionRole.BASELINE,)
+    # The experimental conditions the calculation is made from. None: Attempts under the baseline.
+    # A kind of variation: the baseline Attempts and the variation Attempts of the experiments whose
+    # variation is of that kind, which the calculation compares. A sweep gives the Evaluator no
+    # Attempt made under another condition.
+    compares_variation: VariationKind | None = None
 
 
 EVALUATORS: dict[str, Evaluator] = {
@@ -53,6 +56,9 @@ EVALUATORS: dict[str, Evaluator] = {
             declarations=("action_types",),
         ),
         Evaluator(resource_consistency.DEFINITION, resource_consistency.evaluate),
+        Evaluator(
+            fault_robustness.DEFINITION, fault_robustness.evaluate, compares_variation=VariationKind.FAULT
+        ),
         Evaluator(calibration.DEFINITION, calibration.evaluate, needs_confidence=True),
         Evaluator(
             strict_confidence_discrimination.DEFINITION,
