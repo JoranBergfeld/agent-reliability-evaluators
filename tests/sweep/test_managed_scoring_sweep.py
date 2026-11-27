@@ -177,6 +177,26 @@ def test_customer_process_scoring_stays_authoritative_and_reports_no_limitation(
     assert not {"limitation", "managed_scoring"} & set(outcome_consistency)
 
 
+def test_only_the_evidence_the_metric_is_calculated_from_is_submitted():
+    foundry = FakeFoundryProject()
+
+    scorecard = sweep({"close": ["success", "failure"]}, foundry)
+
+    # The sweep measured how long each Attempt took, and outcome consistency is not calculated from that.
+    assert all(attempt["resource_measurements"] for attempt in scorecard["attempts"])
+    (item,) = foundry.submitted_items
+    assert list(item) == ["outcome_consistency_evidence"]
+    _, _, evidence = item["outcome_consistency_evidence"].partition(":")
+    (task,) = json.loads(evidence)["tasks"]
+    assert [
+        (attempt["attempt_id"], attempt["execution_status"], attempt["task_outcome"], attempt["resource_measurements"])
+        for attempt in task["attempts"]
+    ] == [
+        ("close/attempt-1", "completed", {"success": True, "source": SOURCE}, []),
+        ("close/attempt-2", "completed", {"success": False, "source": SOURCE}, []),
+    ]
+
+
 # Registration in the customer's project.
 
 

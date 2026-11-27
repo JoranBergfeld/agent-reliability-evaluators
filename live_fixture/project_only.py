@@ -77,16 +77,21 @@ def provision_project(ticket, location="swedencentral", subscription="Sandbox", 
 
 
 def _wait_for_access(project, log):
-    """Role assignments made a moment ago can take a few minutes to be honoured by the project."""
+    """Wait until the new project answers its creator.
+
+    Role assignments made a moment ago can take a few minutes to be honoured, and the project
+    itself answered `HTTP 404 Project not found` right after it was created when observed.
+    """
+    not_ready_yet = ("HTTP 401", "HTTP 403", "HTTP 404")
     for attempt in range(40):
         try:
             project.project_request("GET", "/evaluators?api-version=v1")
             return
         except LiveFixtureError as error:
-            if attempt == 39 or not str(error).startswith(("HTTP 401", "HTTP 403")):
+            if attempt == 39 or not str(error).startswith(not_ready_yet):
                 raise
             if attempt == 0:
-                log("Waiting for the role assignments to be honoured")
+                log(f"Waiting for the new project to answer: {str(error)[:120]}")
             time.sleep(15)
 
 

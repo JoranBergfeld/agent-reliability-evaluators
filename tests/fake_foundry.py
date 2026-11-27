@@ -62,6 +62,8 @@ class FakeFoundryProject:
         self._output_items: dict[str, list[dict]] = {}
         self._polls: dict[str, int] = {}
         self.requests: list[tuple[str, str]] = []
+        # Every item that was submitted to a run, as it was sent.
+        self.submitted_items: list[dict] = []
 
     def register_other_code(self, name: str, code_text: str) -> str:
         """Register a version of an evaluator as someone else would have. Returns its version."""
@@ -136,6 +138,7 @@ class FakeFoundryProject:
     def _create_run(self, eval_id, *, body, **_):
         run_id = f"evalrun_{len(self.runs) + 1}"
         rows = [row["item"] for row in body["data_source"]["source"]["content"]]
+        self.submitted_items.extend(copy.deepcopy(rows))
         error, items = self._execute(eval_id, run_id, rows)
         self.runs[run_id] = {
             "id": run_id,
