@@ -61,14 +61,11 @@ def run_sweep(
     # Called for its check: a second criterion for one metric is rejected here, not after the Attempts.
     criteria_by_metric(acceptance_criteria)
     # With no Evaluator selected the planned Attempts are still made, once.
-    sharing = share_attempts((evaluator, evaluator.requirements) for evaluator in selected) or [SharedAttempts()]
+    sharing = share_attempts((evaluator, evaluator.requirements()) for evaluator in selected) or [SharedAttempts()]
     made = [
         [
             _run_attempt(
-                task,
-                _attempt_id(task, set_number, number),
-                agent_target,
-                shared.requirements.get("action_types", action_evidence),
+                task, _attempt_id(task, set_number, number), agent_target, _recorded_with(shared, action_evidence)
             )
             for task in tasks
             for number in range(1, task.attempts + 1)
@@ -101,12 +98,24 @@ class _SelectedEvaluator:
     """An Evaluator selected for the sweep, with what the customer declared for it."""
 
     evaluator: Evaluator
-    # What the Evaluator's Attempts have to be made with, by the name the Evaluator declares
-    # its need under. Evaluators share Attempts when their requirements match.
-    requirements: dict[str, Any]
+    # What the customer declared for each declaration the Evaluator names.
+    declared: dict[str, Any]
+
+    def requirements(self) -> dict[str, Any]:
+        """What the Attempts this Evaluator is scored from have to be made with.
+
+        A requirement is named after the evidence it is about, and holds only what decides
+        the evidence an Attempt gets. Evaluators share Attempts when their requirements match.
+        """
+        requirements: dict[str, Any] = {}
+        if "action_types" in self.declared:
+            # The action types are applied when scoring. They do not change what is recorded.
+            action_evidence = self.declared["action_types"]
+            requirements["action_evidence"] = (action_evidence.evidence_source, action_evidence.record)
+        return requirements
 
     def evaluate(self, evidence: Sequence[TaskEvidence]) -> MetricResult:
-        declared = (_EVALUATED_WITH[name](self.requirements[name]) for name in self.evaluator.declarations)
+        declared = (_EVALUATED_WITH[name](self.declared[name]) for name in self.evaluator.declarations)
         return self.evaluator.evaluate(evidence, *declared)
 
 
@@ -116,7 +125,8 @@ def _select(
     configured = metric if isinstance(metric, ConfiguredEvaluator) else ConfiguredEvaluator(metric_id=metric)
     evaluator = _evaluator(configured.metric_id)
     declared = {"action_types": configured.action_evidence or action_evidence}
-    return _SelectedEvaluator(evaluator, _requirements(evaluator, declared))
+    _require_declarations(evaluator, declared)
+    return _SelectedEvaluator(evaluator, {name: declared[name] for name in evaluator.declarations})
 
 
 def _evaluator(metric_id: str) -> Evaluator:
@@ -127,16 +137,28 @@ def _evaluator(metric_id: str) -> Evaluator:
     raise ValueError(f"{metric_id!r} is not a reliability metric")
 
 
-def _requirements(evaluator: Evaluator, declared: dict[str, Any]) -> dict[str, Any]:
-    """What the customer declared for each thing the Evaluator declares it needs."""
+def _require_declarations(evaluator: Evaluator, declared: dict[str, Any]) -> None:
     undeclared = {
         "action_types": "action evidence to be declared: the evidence source and the action types have no default",
     }
     for name in evaluator.declarations:
         if declared[name] is None:
             raise ValueError(f"{evaluator.definition.metric.metric_id!r} needs {undeclared[name]}")
-    return {name: declared[name] for name in evaluator.declarations}
 
+
+def _recorded_with(
+    shared: SharedAttempts, action_evidence: ActionEvidenceDeclaration | None
+) -> ActionEvidenceDeclaration | None:
+    """What the actions of a group's Attempts are recorded with.
+
+    The Evaluators of a group that need action evidence all need the same recording, so
+    any of their declarations records it. A group that needs none is recorded with what
+    the sweep declares.
+    """
+    return next(
+        (evaluator.declared["action_types"] for evaluator in shared.members if "action_types" in evaluator.declared),
+        action_evidence,
+    )
 
 def _attempt_id(task: Task, set_number: int, number: int) -> str:
     """The identity of a planned Attempt. Attempts made again for other Evaluators say so."""
