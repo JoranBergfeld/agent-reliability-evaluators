@@ -232,6 +232,61 @@ def test_every_metric_is_scored_in_a_managed_run_of_its_own():
     assert scorecard["status"] == "complete"
 
 
+class NotesTheRunsInProgress:
+    """A project that notes, for each run it is asked to make, which earlier runs it has not yet reported as ended."""
+
+    def __init__(self, project):
+        self._project = project
+        self._in_progress: list[str] = []
+        self.in_progress_when_made: dict[str, list[str]] = {}
+
+    def request(self, method, path, body=None, headers=None):
+        answer = self._project.request(method, path, body, headers)
+        if method == "POST" and path.endswith("/runs"):
+            self.in_progress_when_made[answer["id"]] = list(self._in_progress)
+            self._in_progress.append(answer["id"])
+        elif method == "GET" and "/runs/" in path and "output_items" not in path:
+            if answer["status"] in ("completed", "failed", "canceled") and answer["id"] in self._in_progress:
+                self._in_progress.remove(answer["id"])
+        return answer
+
+
+@pytest.mark.parametrize(
+    ("part", "asked_again_in", "made_before_it"),
+    [
+        # A part of the encoded result: both first runs and both second runs were made before it is asked for again.
+        ("7", "evalrun_5", ["evalrun_1", "evalrun_2", "evalrun_3", "evalrun_4"]),
+        # The plain value: both first runs were made before it is asked for again, and no second run yet.
+        ("value", "evalrun_3", ["evalrun_1", "evalrun_2"]),
+    ],
+)
+def test_a_part_is_asked_for_again_only_when_no_other_run_of_the_sweep_is_in_progress(
+    part, asked_again_in, made_before_it
+):
+    # Foundry was seen not to grade rows while other runs were in progress in the project, and to grade
+    # them when they were asked for again. Here it does not grade one row of outcome consistency, once.
+    remaining = [1]
+
+    def not_graded_once(item):
+        if "outcome_consistency_evidence" in item and item["result_part"] == part and remaining[0]:
+            remaining[0] -= 1
+            return GRADING_ERROR
+        return None
+
+    foundry = FakeFoundryProject(result_error=not_graded_once, polls_until_finished=1)
+    project = NotesTheRunsInProgress(foundry)
+    scoring = FoundryManagedScoring(project=project, poll_interval_seconds=0)
+
+    scorecard = sweep(MEASURED, foundry, metrics=BOTH_MANAGED, resources=RESOURCES, managed_scoring=scoring)
+
+    assert metric(scorecard)["value"] == pytest.approx(0.5, abs=1e-12)
+    assert metric(scorecard, "resource_consistency")["value"] == pytest.approx(RESOURCE_CONSISTENCY, abs=1e-12)
+    assert scorecard["status"] == "complete"
+    assert list(foundry.runs)[: len(made_before_it) + 1] == [*made_before_it, asked_again_in]
+    # Every run made before it had ended by then, the runs of the other metric included.
+    assert project.in_progress_when_made[asked_again_in] == []
+
+
 def test_an_acceptance_criterion_on_a_metric_without_a_managed_result_is_not_assessed():
     # Any value at all would meet this one.
     criterion = AcceptanceCriterion(metric_id="outcome_consistency", condition={"value": {"at_least": 0}})
