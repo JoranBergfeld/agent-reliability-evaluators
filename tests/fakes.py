@@ -1,5 +1,8 @@
 """Fakes for driving the Evaluator sweep through its public entry point."""
 
+import threading
+from dataclasses import dataclass
+
 from reliability_evaluators.agent_target import (
     AgentResponse,
     AttemptRequest,
@@ -23,14 +26,39 @@ def attempt_evidence(attempt: dict, *evidence: str) -> dict:
     return {key: attempt[key] for key in (*carried, *evidence)}
 
 
+@dataclass(frozen=True)
+class Scripted:
+    """One scripted invocation: what happens, and what else happens while it is in flight."""
+
+    behaviour: str
+    # How long the invocation takes on the fake's clock.
+    seconds: float = 0.0
+    # The caller asks for the sweep to be cancelled while this invocation is in flight.
+    cancels: bool = False
+
+
+def taking(seconds: float, behaviour: str) -> Scripted:
+    return Scripted(behaviour, seconds)
+
+
+def cancelling(behaviour: str) -> Scripted:
+    return Scripted(behaviour, cancels=True)
+
+
 class FakeAgentTarget:
     """A scripted agent that works on a fake service.
 
-    The script gives, per Task, what happens on each Attempt in order: "success" and
-    "failure" leave the service in the right or the wrong state, and "error" makes the
-    invocation itself fail. The agent always answers `output`, "Done." unless told
+    The script gives, per Task, what happens on each invocation in order: "success" and
+    "failure" leave the service in the right or the wrong state, "error" makes the
+    invocation itself fail, and "aborted" makes it end without an answer because the caller
+    closed the connection. The agent always answers `output`, "Done." unless told
     otherwise, so its response says nothing about success; the task-success rule has to
     read `service_state`.
+
+    `taking(seconds, behaviour)` makes an invocation take that long on `clock`. The agent
+    stops at the time limit it is given and raises TimeoutError, unless it was built with
+    `honours_time_limits=False`. `cancelling(behaviour)` sets `cancel_requested` while the
+    invocation is in flight.
 
     "success" or "failure" followed by " and deletes unrelated" also deletes the seeded
     item the agent was told to leave alone. `unrelated_item` holds what became of it.
@@ -62,7 +90,7 @@ class FakeAgentTarget:
 
     def __init__(
         self,
-        script: dict[str, list[str]],
+        script: dict[str, list[str | Scripted]],
         resources: dict[str, list[dict]] | None = None,
         *,
         confidence: dict[str, object] | None = None,
@@ -70,8 +98,14 @@ class FakeAgentTarget:
         invocation_errors: dict[str, Exception] | None = None,
         isolated_follow_up: IsolatedFollowUp | None = IsolatedFollowUp(supported=True),
         output: str = "Done.",
+        honours_time_limits: bool = True,
     ):
-        self._remaining = {task_id: list(behaviours) for task_id, behaviours in script.items()}
+        self._remaining = {
+            task_id: [step if isinstance(step, Scripted) else Scripted(step) for step in behaviours]
+            for task_id, behaviours in script.items()
+        }
+        self._honours_time_limits = honours_time_limits
+        self.cancel_requested = False
         self._resources = {task_id: list(used) for task_id, used in (resources or {}).items()}
         self._now = 0.0
         self._confidence = dict(confidence or {})
@@ -87,14 +121,24 @@ class FakeAgentTarget:
         return self._now
 
     def invoke(self, request: AttemptRequest) -> AgentResponse:
-        behaviour, _, side_effect = self._remaining[request.task_id].pop(0).partition(" and ")
+        step = self._remaining[request.task_id].pop(0)
+        behaviour, _, side_effect = step.behaviour.partition(" and ")
         scripted = self._resources.get(request.task_id)
         used = scripted.pop(0) if scripted else {}
-        self._now += used.get("seconds", 0.0)
+        seconds = used.get("seconds", 0.0) + step.seconds
+        limit = request.timeout_seconds
+        if self._honours_time_limits and limit is not None and seconds > limit:
+            self._now += limit
+            raise TimeoutError(f"no answer within {limit:g} seconds")
+        self._now += seconds
+        if step.cancels:
+            self.cancel_requested = True
         if behaviour == "error":
             raise self._invocation_errors.get(
                 request.attempt_id, ConnectionError("the agent endpoint returned 503")
             )
+        if behaviour == "aborted":
+            raise ConnectionAbortedError("the caller closed the connection")
         self.service_state[request.attempt_id] = "done" if behaviour == "success" else "open"
         self.unrelated_item[request.attempt_id] = "deleted" if side_effect == "deletes unrelated" else "unchanged"
         measurements = []
@@ -142,11 +186,17 @@ class FakeActingAgentTarget(FakeAgentTarget):
     The service logs each call under the Attempt's identity with its tool name,
     arguments, result and error; `broken_tool` always ends in an error. An Attempt
     scripted with None instead of a list is not logged at all, which is different from
-    an Attempt that is logged with no calls.
+    an Attempt that is logged with no calls. Everything else is given as for FakeAgentTarget.
     """
 
-    def __init__(self, script: dict[str, list[str]], actions: dict[str, list[list[str] | None]]):
-        super().__init__(script)
+    def __init__(
+        self,
+        script: dict[str, list[str]],
+        actions: dict[str, list[list[str] | None]],
+        resources: dict[str, list[dict]] | None = None,
+        **options,
+    ):
+        super().__init__(script, resources, **options)
         self._actions = {task_id: list(sequences) for task_id, sequences in actions.items()}
         self.service_log: dict[str, list[dict]] = {}
 
@@ -166,6 +216,25 @@ class FakeActingAgentTarget(FakeAgentTarget):
             "result": None if failed else "ok",
             "error": "503 unavailable" if failed else None,
         }
+
+
+class MeetingAgentTarget:
+    """An agent that answers only when two invocations are in flight at the same time.
+
+    An invocation waits up to `wait_seconds` for another one to arrive. If none does, it
+    fails, and so does every later invocation. Used to show through the scorecard whether
+    Attempts overlapped.
+    """
+
+    def __init__(self, *, wait_seconds: float):
+        self._meeting = threading.Barrier(2, timeout=wait_seconds)
+
+    def invoke(self, request: AttemptRequest) -> AgentResponse:
+        try:
+            self._meeting.wait()
+        except threading.BrokenBarrierError:
+            raise ConnectionError("no other invocation was in flight") from None
+        return AgentResponse(output="Done.")
 
 
 def todo_list(task_id: str) -> str:
@@ -201,19 +270,39 @@ class FakeTodoAgent:
 
     It answers "Done." even when the service refused the item, so only the state of the
     service says whether the Task succeeded. Invocations named in `unreachable_for` fail.
+
+    `went_wrong` scripts what else happens to an invocation, by Attempt identity:
+
+    - "times out": it raises TimeoutError before the agent did anything;
+    - "drops after adding": the agent adds its item and the connection then drops;
+    - "aborted by cancellation": the caller cancels the sweep and closes the connection;
+    - "cancelled while answering": the caller cancels the sweep, and the agent still answers.
+
+    `cancel_requested` says whether the caller asked for the sweep to be cancelled.
     """
 
-    def __init__(self, service: FakeTodoService, unreachable_for=()):
+    def __init__(self, service: FakeTodoService, unreachable_for=(), went_wrong=None):
         self._service = service
         self._unreachable_for = set(unreachable_for)
+        self._went_wrong = dict(went_wrong or {})
+        self.cancel_requested = False
 
     def invoke(self, request: AttemptRequest) -> AgentResponse:
         if request.attempt_id in self._unreachable_for:
             raise ConnectionError("the agent endpoint returned 503")
+        went_wrong = self._went_wrong.get(request.attempt_id)
+        if went_wrong == "times out":
+            raise TimeoutError("no answer from the agent endpoint")
+        if went_wrong in ("aborted by cancellation", "cancelled while answering"):
+            self.cancel_requested = True
+        if went_wrong == "aborted by cancellation":
+            raise ConnectionAbortedError("the caller closed the connection")
         try:
             self._service.add(todo_list(request.task_id), "buy milk")
         except ConnectionError:
             pass
+        if went_wrong == "drops after adding":
+            raise ConnectionError("the connection dropped")
         return AgentResponse(output="Done.")
 
 
@@ -263,8 +352,8 @@ class FakeSelfAssessingTodoAgent(FakeTodoAgent):
 
     isolated_follow_up = IsolatedFollowUp(supported=True)
 
-    def __init__(self, service: FakeTodoService, unreachable_for=()):
-        super().__init__(service, unreachable_for)
+    def __init__(self, service: FakeTodoService, unreachable_for=(), went_wrong=None):
+        super().__init__(service, unreachable_for, went_wrong)
         self._now = 0.0
 
     def clock(self) -> float:

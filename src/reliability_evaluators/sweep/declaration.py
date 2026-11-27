@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from math import isfinite
 from typing import Any, Callable, Mapping, Protocol, Sequence
 
 from ..agent_target import AgentResponse, AttemptRequest
@@ -22,7 +23,23 @@ from ..evidence import (
 
 # Decides the task outcome of one Attempt and says what it was decided from. It should
 # look at independent evidence, such as the state of a service, not only at the response.
-TaskSuccessRule = Callable[[AttemptRequest, AgentResponse], TaskOutcome]
+# A rule that cannot decide during the sweep returns NO_TASK_OUTCOME_YET.
+TaskSuccessRule = Callable[[AttemptRequest, AgentResponse], "TaskOutcome | NoTaskOutcomeYet"]
+
+
+class NoTaskOutcomeYet:
+    """What a task-success rule returns when the task outcome is not known during the sweep.
+
+    The Attempt is then recorded without a task outcome, for example because it is
+    labelled afterwards. It is not a task failure. The outcome can be supplied later,
+    with `recalculate`.
+    """
+
+    def __repr__(self) -> str:
+        return "NO_TASK_OUTCOME_YET"
+
+
+NO_TASK_OUTCOME_YET = NoTaskOutcomeYet()
 
 # Returns the actions of one Attempt, in order, from the declared evidence source. An empty
 # sequence confirms that the Attempt took no action; None says that nothing was recorded.
@@ -37,8 +54,55 @@ ViolationAssessor = Callable[[AttemptRequest, AgentResponse], Sequence[Violation
 
 
 @dataclass(frozen=True, kw_only=True)
+class ExecutionLimits:
+    """The limits a customer sets on the making of one Task's Attempts. None is imposed by default.
+
+    They belong to the Task, next to its number of Attempts. For a Task in an experiment
+    they are the limits of that experiment.
+
+    `attempt_timeout_seconds` is how long one invocation of the agent may take. The agent
+    target is given the limit and is expected to stop there; the sweep cannot interrupt
+    an invocation. Customer controls and the confidence follow-up are not counted.
+
+    `total_timeout_seconds` is how long all the Task's Attempts may take together, under
+    every condition of its experiment, counted from the start of the first one and with
+    everything done around them. Once it is reached no further Attempt or retry is started.
+    An Attempt that is already running is bounded by `attempt_timeout_seconds` only.
+
+    `max_retries` is how often a planned Attempt is made again after the invocation of the
+    agent failed or timed out. A completed Attempt is never retried, whatever its task
+    outcome, and neither is one that a customer control failed for.
+    """
+
+    attempt_timeout_seconds: float | None = None
+    total_timeout_seconds: float | None = None
+    max_retries: int = 0
+
+    def __post_init__(self) -> None:
+        for name in ("attempt_timeout_seconds", "total_timeout_seconds"):
+            limit = getattr(self, name)
+            if limit is None:
+                continue
+            if isinstance(limit, bool) or not isinstance(limit, (int, float)) or not isfinite(limit) or limit <= 0:
+                raise ValueError(f"{name} is a positive, finite number of seconds or None, got {limit!r}")
+        if type(self.max_retries) is not int or self.max_retries < 0:
+            raise ValueError(f"max_retries is a whole number of retries, 0 or more, got {self.max_retries!r}")
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "attempt_timeout_seconds": self.attempt_timeout_seconds,
+            "total_timeout_seconds": self.total_timeout_seconds,
+            "max_retries": self.max_retries,
+        }
+
+
+@dataclass(frozen=True, kw_only=True)
 class Task:
     """A unit of work for the agent, its task-success rule, and how many Attempts to make.
+
+    `attempts` is how many Attempts to make and `limits` are the execution limits on
+    making them. Both are the customer's choice per Task. In an experiment, `attempts` is
+    the number under each condition and `limits` are the limits of the experiment.
 
     `shareable_success_rule` is the task-success rule in words, as the agent may be shown
     it when it is asked for its confidence rating. Leave it out when the rule cannot be
@@ -52,6 +116,7 @@ class Task:
     prompt: str
     success_rule: TaskSuccessRule
     attempts: int
+    limits: ExecutionLimits = ExecutionLimits()
     shareable_success_rule: str | None = None
     operational_constraints: Sequence[OperationalConstraint] = ()
     violation_assessor: ViolationAssessor | None = None
@@ -61,6 +126,8 @@ class Task:
             raise ValueError(f"a Task is identified by a task_id, got {self.task_id!r}")
         if type(self.attempts) is not int or self.attempts < 1:
             raise ValueError(f"Task {self.task_id!r} needs at least one Attempt, got {self.attempts!r}")
+        if not isinstance(self.limits, ExecutionLimits):
+            raise ValueError(f"the limits of Task {self.task_id!r} are ExecutionLimits, got {self.limits!r}")
         rule = self.shareable_success_rule
         if rule is not None and (not isinstance(rule, str) or not rule.strip()):
             raise ValueError(

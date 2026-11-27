@@ -393,19 +393,21 @@ def test_an_agent_version_that_does_not_exist_is_an_execution_failure(todo_servi
             "tool_calls": None,
         },
     }
+    # No Attempt completed, so the metric has no state of its own: its experiment failed.
     outcome_consistency = metric(scorecard, "outcome_consistency")
-    assert outcome_consistency["state"] == "unavailable"
+    assert outcome_consistency["state"] is None
     assert outcome_consistency["value"] is None
+    assert outcome_consistency["execution_failure"]["experiment_ids"] == ["todo"]
 
 
-def test_an_invocation_that_outlasts_the_targets_time_limit_is_an_execution_failure(todo_service):
+def test_an_invocation_that_outlasts_the_targets_own_time_limit_timed_out(todo_service):
     # The first response takes half a second and the target waits a tenth of one.
     scorecard = sweep(todo_service, [0.5, "completes", "completes"], agent={"timeout_seconds": 0.1})
 
     assert attempt_evidence(scorecard["attempts"][0], "platform_evidence") == {
         "attempt_id": "todo/baseline/attempt-1",
         "task_id": "todo",
-        "execution_status": "failed",
+        "execution_status": "timed_out",
         "execution_error": "TimeoutError: the Foundry project did not answer within 0.1 seconds",
         "task_outcome": None,
         "platform_evidence": None,

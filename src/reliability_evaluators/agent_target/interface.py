@@ -10,11 +10,15 @@ from ..evidence import ActionEvent, PlatformEvidence, ResourceMeasurement
 
 @dataclass(frozen=True, kw_only=True)
 class AttemptRequest:
-    """What the agent is asked to do for one Attempt."""
+    """What the agent is asked to do for one Attempt.
+
+    `timeout_seconds` is the time limit the customer declared for the Attempt, or None.
+    """
 
     attempt_id: str
     task_id: str
     prompt: str
+    timeout_seconds: float | None = None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -98,6 +102,9 @@ class ConfidenceResponse:
 class AgentTarget(Protocol):
     """An agent the sweep can invoke. An invocation that fails raises, an InvocationError
     when the platform returned something about it.
+
+    The sweep cannot interrupt an invocation. An agent target stops at
+    `request.timeout_seconds` itself and raises `TimeoutError`.
 
     `isolated_follow_up` is the target's declaration of whether `elicit_confidence` can be
     answered in isolation. A target that does not support it need not implement

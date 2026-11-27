@@ -185,7 +185,8 @@ The rating says how likely the agent thinks the task **succeeded**. It is not ho
 | The agent target has no `isolated_follow_up` declaration | `the agent target does not declare whether it supports an isolated follow-up` |
 | The agent target declares `IsolatedFollowUp(supported=False, reason=...)` | `the agent target does not support an isolated follow-up`, followed by the target's reason |
 | The Task has no `shareable_success_rule` | `the Task's success rule cannot be shared with the agent` |
-| The Attempt did not complete | `the Attempt did not complete, so no confidence request was sent` |
+| The Attempt did not complete, which includes one that timed out, answered after its time limit or was cancelled | `the Attempt did not complete, so no confidence request was sent` |
+| The sweep was cancelled while the Attempt was in flight, and the Attempt completed | `the sweep was cancelled, so no confidence request was sent` |
 | No selected metric uses confidence | nothing: `confidence` is `null` |
 
 Isolated means two things: the agent answers in the conversation of that one completed Attempt, and it cannot take any action while it answers. A target that cannot ensure both must declare `supported=False`. There is no fallback. A rating that the agent wrote inside its task response is never read.
@@ -253,6 +254,8 @@ The metric's own entry carries:
 | Field | Content |
 | --- | --- |
 | `state`, `value`, `reason` | `available` with a value, or `unavailable` with a reason and no value |
+| `execution_failure` | `null`, unless the metric has no result because the Attempts that supply its evidence were cut short; see [execution limits and partial scorecards](../sweep/execution-limits.md#metrics-in-a-partial-scorecard) |
+| `cut_short` | The experiments, and the Tasks given without one, whose Attempts for this metric were cut short. Both lists are empty when none were |
 | `definition` | version, what it measures, the calculation, the fidelity conventions, the scale and the interpretation |
 | `scoring_path`, `fidelity` | `customer_process` and `authoritative` for a value scored in your own process |
 | `counts.confidence_outcome_pairs` | `total` is the number of Attempts, `valid` the number of valid pairs (the denominator), and `missing` and `excluded` the Attempts that gave no pair, by reason and by Attempt identity |
