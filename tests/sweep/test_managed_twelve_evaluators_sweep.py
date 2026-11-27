@@ -200,3 +200,51 @@ def test_a_rescore_with_other_action_types_than_were_submitted_is_refused():
             action_evidence=redeclared,
         )
     assert type(refused.value).__name__ == "RescoreFailed"
+
+
+class NotesTheRunsInProgress:
+    """A project that notes, for each run it is asked to make, which earlier runs it has not yet reported as ended."""
+
+    def __init__(self, project):
+        self._project = project
+        self._in_progress: list[str] = []
+        self.in_progress_when_made: dict[str, list[str]] = {}
+
+    def request(self, method, path, body=None, headers=None):
+        answer = self._project.request(method, path, body, headers)
+        if method == "POST" and path.endswith("/runs"):
+            self.in_progress_when_made[answer["id"]] = list(self._in_progress)
+            self._in_progress.append(answer["id"])
+        elif method == "GET" and "/runs/" in path and "output_items" not in path:
+            if answer["status"] in ("completed", "failed", "canceled") and answer["id"] in self._in_progress:
+                self._in_progress.remove(answer["id"])
+        return answer
+
+
+@pytest.mark.parametrize(
+    ("metrics_at_once", "most_runs_in_progress_when_one_is_made"),
+    [(None, 11), (4, 3), (1, 0)],
+    ids=["all twelve side by side", "four at a time", "one after another"],
+)
+def test_the_customer_chooses_how_many_metrics_are_scored_in_foundry_at_once(
+    metrics_at_once, most_runs_in_progress_when_one_is_made
+):
+    foundry = FakeFoundryProject(polls_until_finished=1)
+    project = NotesTheRunsInProgress(foundry)
+    scoring = FoundryManagedScoring(project=project, poll_interval_seconds=0, metrics_at_once=metrics_at_once)
+
+    scorecard = Declared(WORKED).sweep([managed(metric_id) for metric_id in METRIC_IDS], managed_scoring=scoring)
+
+    # The same twelve results, however many were scored at a time.
+    assert scorecard["status"] == "complete"
+    assert {entry["metric_id"]: entry["value"] for entry in scorecard["metrics"]} == pytest.approx(
+        WORKED_VALUES, abs=1e-12
+    )
+    assert len(foundry.runs) == 24
+    assert max(map(len, project.in_progress_when_made.values())) == most_runs_in_progress_when_one_is_made
+
+
+@pytest.mark.parametrize("metrics_at_once", [0, -1, 1.5, "4", True])
+def test_a_number_of_metrics_to_score_at_once_that_is_not_one_is_rejected(metrics_at_once):
+    with pytest.raises(ValueError, match="metrics_at_once"):
+        FoundryManagedScoring(project=FakeFoundryProject(), metrics_at_once=metrics_at_once)

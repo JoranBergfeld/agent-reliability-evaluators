@@ -218,6 +218,14 @@ class FoundryManagedScoring:
     project: Project
     poll_interval_seconds: float = 10.0
     run_timeout_seconds: float = 900.0
+    # How many metrics are scored at a time, with their runs in progress side by side. None: all of
+    # them. Rows were seen not to be graded when many runs were in progress in a project at once.
+    metrics_at_once: int | None = None
+
+    def __post_init__(self) -> None:
+        at_once = self.metrics_at_once
+        if at_once is not None and (type(at_once) is not int or at_once < 1):
+            raise ValueError(f"metrics_at_once is a whole number of metrics, 1 or more, or None for all. Got {at_once!r}")
 
     def register(self, metric_ids: Iterable[str]) -> dict[str, RegisteredEvaluator]:
         """Make sure the project holds the derived evaluator of each metric, and say which version it is.
@@ -254,6 +262,9 @@ class FoundryManagedScoring:
         after another, and only once every run that was started side by side has ended: rows
         were seen not to be graded while other runs were in progress in the project, and to
         be graded when they were asked for again.
+
+        With `metrics_at_once`, that many metrics are scored at a time, to the end, before the
+        runs of the next ones are made.
         """
         runs = {metric_id: _ManagedRun(metric_id) for metric_id in evidence}
         scored: dict[str, ManagedResult | ManagedFailure] = {}
@@ -267,10 +278,13 @@ class FoundryManagedScoring:
             self._ask_again,
             self._collect,
         )
-        for step in steps:
-            for metric_id, run in runs.items():
-                if metric_id not in scored and (ended := _attempted(run, step)) is not None:
-                    scored[metric_id] = ended
+        metric_ids = list(runs)
+        at_once = self.metrics_at_once or len(metric_ids) or 1
+        for first in range(0, len(metric_ids), at_once):
+            for step in steps:
+                for metric_id in metric_ids[first : first + at_once]:
+                    if metric_id not in scored and (ended := _attempted(runs[metric_id], step)) is not None:
+                        scored[metric_id] = ended
         return {metric_id: scored[metric_id] for metric_id in evidence}
 
     def _submit(self, run: _ManagedRun, tasks: Sequence[TaskEvidence], declared: Sequence[Any]) -> None:

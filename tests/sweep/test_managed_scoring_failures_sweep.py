@@ -452,6 +452,46 @@ def test_evidence_too_large_to_be_submitted_at_all_is_a_failure_before_any_run_i
     assert len(scorecard["attempts"]) == 3000
 
 
+class CutsTheEvidenceItStores:
+    """A project whose output items hold only the first characters of each submitted field.
+
+    A live project was seen to cut a field of 1,000,000 characters or more to its first 1,000 in the
+    output items of a run, without a marker, while its evaluator was given every character.
+    """
+
+    def __init__(self, project, characters):
+        self._project = project
+        self._characters = characters
+
+    def request(self, method, path, body=None, headers=None):
+        answer = self._project.request(method, path, body, headers)
+        if method == "GET" and "/output_items" in path:
+            for item in answer["data"]:
+                item["datasource_item"] = {
+                    field: text[: self._characters] for field, text in item["datasource_item"].items()
+                }
+        return answer
+
+
+def test_a_result_is_never_read_from_what_an_output_item_holds_of_the_evidence():
+    # 30 Tasks of five Attempts, each 4/5: (0.6)^2 = 0.36 at every Task, so 0.36.
+    foundry = FakeFoundryProject()
+    scoring = FoundryManagedScoring(project=CutsTheEvidenceItStores(foundry, characters=100), poll_interval_seconds=0)
+
+    scorecard = sweep({f"task-{number}": FOUR_IN_FIVE for number in range(30)}, foundry, managed_scoring=scoring)
+
+    outcome_consistency = metric(scorecard)
+    assert outcome_consistency["value"] == pytest.approx(0.36, abs=1e-12)
+    assert outcome_consistency["counts"]["attempts"] == {"total": 150, "valid": 150, "missing": [], "excluded": []}
+    assert len(outcome_consistency["evidence"]["attempt_ids"]) == 150
+    # The digest that is recorded, and that the encoded result was checked against, is the one of the
+    # evidence the sweep submitted, whole. The evidence is more than the project stored of it.
+    (submitted,) = {item["outcome_consistency_evidence"] for item in foundry.submitted_items}
+    assert len(submitted) > 100
+    assert outcome_consistency["managed_scoring"]["evidence_sha256"] == submitted.partition(":")[0]
+    assert scorecard["status"] == "complete"
+
+
 def test_a_part_that_foundry_never_grades_is_asked_for_three_times_and_then_leaves_no_result():
     # Foundry returns the row for part 7 as an error every time. Every other row is graded.
     def part_seven_is_not_graded(item):
