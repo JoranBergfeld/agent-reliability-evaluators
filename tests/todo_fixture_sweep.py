@@ -7,7 +7,7 @@ service recorded, never from the agent's response.
 
 from live_fixture import TASK_PROMPT, TodoServiceError, strict_task_outcome
 from reliability_evaluators.evidence import TaskOutcome
-from reliability_evaluators.sweep import Condition, Experiment, ObservedCondition, Task
+from reliability_evaluators.sweep import Condition, ExecutionLimits, Experiment, ObservedCondition, Task
 
 CONDITION_SOURCE = "events of the to-do service"
 BASELINE = Condition(condition_id="baseline", description="Every tool works.")
@@ -46,11 +46,15 @@ class TodoFixtureSweep:
         outcome = strict_task_outcome(self._service.evidence(self.state_name(request.attempt_id)))
         return TaskOutcome(success=outcome["success"], source=outcome["source"])
 
-    def experiment(self, *, attempts, variation=None, experiment_id="todo", agent_configuration=None):
+    def experiment(
+        self, *, attempts, variation=None, limits=ExecutionLimits(), experiment_id="todo", agent_configuration=None
+    ):
         """The fixture Task under fresh state: `attempts` Attempts under the baseline and under the variation."""
         return Experiment(
             experiment_id=experiment_id,
-            task=Task(task_id="todo", prompt=TASK_PROMPT, success_rule=self.success_rule, attempts=attempts),
+            task=Task(
+                task_id="todo", prompt=TASK_PROMPT, success_rule=self.success_rule, attempts=attempts, limits=limits
+            ),
             agent_configuration=agent_configuration or {"agent": "todo-prompt"},
             starting_state="fresh",
             baseline=BASELINE,

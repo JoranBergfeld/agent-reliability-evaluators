@@ -18,7 +18,7 @@ from reliability_evaluators.agent_target import (
     platform_tool_calls,
 )
 from reliability_evaluators.evidence import TaskOutcome
-from reliability_evaluators.sweep import ActionEvidenceDeclaration, Task, run_sweep
+from reliability_evaluators.sweep import ActionEvidenceDeclaration, ExecutionLimits, Task, run_sweep
 from tests.fake_foundry import fake_foundry_project
 from tests.fakes import attempt_evidence
 from tests.todo_fixture_sweep import CONDITION_SOURCE, UPDATE_FAILS, TodoFixtureSweep
@@ -68,6 +68,7 @@ def sweep(
     *,
     attempts=None,
     variation=None,
+    limits=ExecutionLimits(),
     agent=None,
     token=lambda: "fake-token",
     **declared,
@@ -85,7 +86,7 @@ def sweep(
             compose_input=fixture.compose_input,
             **(agent or {}),
         )
-        experiment = fixture.experiment(attempts=attempts or len(script), variation=variation)
+        experiment = fixture.experiment(attempts=attempts or len(script), variation=variation, limits=limits)
         return run_sweep(experiments=[experiment], agent_target=target, metrics=metrics, **declared)
 
 
@@ -414,6 +415,24 @@ def test_an_invocation_that_outlasts_the_targets_own_time_limit_timed_out(todo_s
     }
     assert [attempt["execution_status"] for attempt in scorecard["attempts"][1:]] == ["completed", "completed"]
     assert metric(scorecard, "outcome_consistency")["value"] == 1
+
+
+def test_the_target_stops_waiting_at_the_time_limit_the_customer_declares_for_an_attempt(todo_service):
+    # The first response takes half a second. The customer allows an Attempt a tenth of one,
+    # and the target's own limit is left at its default.
+    scorecard = sweep(
+        todo_service, [0.5, "completes", "completes"], limits=ExecutionLimits(attempt_timeout_seconds=0.1)
+    )
+
+    assert attempt_evidence(scorecard["attempts"][0], "platform_evidence") == {
+        "attempt_id": "todo/baseline/attempt-1",
+        "task_id": "todo",
+        "execution_status": "timed_out",
+        "execution_error": "TimeoutError: the Foundry project did not answer within 0.1 seconds",
+        "task_outcome": None,
+        "platform_evidence": None,
+    }
+    assert [attempt["execution_status"] for attempt in scorecard["attempts"][1:]] == ["completed", "completed"]
 
 
 def test_an_invocation_the_project_refuses_for_its_token_is_an_execution_failure(todo_service):

@@ -49,6 +49,6 @@ class FoundryPromptAgentTarget:
                 # Returned with the response, so that the response is tied to its Attempt on the platform too.
                 "metadata": {"attempt_id": request.attempt_id, "task_id": request.task_id},
             },
-            self._timeout_seconds,
+            request.timeout_seconds if request.timeout_seconds is not None else self._timeout_seconds,
         )
         return read_responses_reply(reply, EVIDENCE_SOURCE)
