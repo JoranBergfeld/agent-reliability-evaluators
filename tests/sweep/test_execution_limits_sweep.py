@@ -7,7 +7,8 @@ calculated by hand.
 
 import pytest
 
-from reliability_evaluators.evidence import TaskOutcome
+from reliability_evaluators.evidence import OperationalConstraint, TaskOutcome, ViolationAssessment
+from reliability_evaluators.scorecard import AcceptanceCriterion, CustomerAssessment
 from reliability_evaluators.sweep import ExecutionLimits, Task, run_sweep
 from tests.fakes import FakeAgentTarget, FakeClock, MeetingAgentTarget, cancelling, taking
 
@@ -58,6 +59,10 @@ def metric(scorecard, metric_id="outcome_consistency"):
 def attempt(scorecard, attempt_id):
     (entry,) = [entry for entry in scorecard["attempts"] if entry["attempt_id"] == attempt_id]
     return entry
+
+
+def always_succeeds(attempt, response):
+    return TaskOutcome(success=True, source=SOURCE)
 
 
 def test_a_sweep_that_collects_everything_it_planned_gives_a_complete_scorecard():
@@ -429,6 +434,84 @@ def test_an_experiment_failure_is_not_an_unavailable_measurement_not_applicable_
     }
 
 
+def test_one_metric_keeps_its_result_while_another_has_none_after_the_same_experiment_failure():
+    # Three Attempts at "close": the first completes without a violation and the other two time out.
+    # Constraint compliance: 1 assessed Attempt without a violation, 1 / 1 = 1. Its definition permits that.
+    # Outcome consistency needs two Attempts with a task outcome at a Task and has one: no result.
+    clock = FakeClock()
+    target = FakeAgentTarget({"close": ["success", taking(45, "success"), taking(45, "success")]}, clock=clock)
+
+    def unrelated_is_left_alone(attempt, response):
+        state = target.unrelated_item[attempt.attempt_id]
+        return [
+            ViolationAssessment(
+                constraint_id="leave-unrelated",
+                violated=state != "unchanged",
+                evidence=f"the item 'unrelated' is {state} after the Attempt",
+                source="deterministic check on the final state of the fake service",
+            )
+        ]
+
+    task = Task(
+        task_id="close",
+        prompt="Do close. Leave the item 'unrelated' alone.",
+        success_rule=always_succeeds,
+        attempts=3,
+        limits=ExecutionLimits(attempt_timeout_seconds=30),
+        operational_constraints=[
+            OperationalConstraint(
+                constraint_id="leave-unrelated", description="Do not change or delete the item 'unrelated'."
+            )
+        ],
+        violation_assessor=unrelated_is_left_alone,
+    )
+    scorecard = run_sweep(
+        tasks=[task], agent_target=target, metrics=["outcome_consistency", "constraint_compliance"], clock=clock
+    )
+
+    constraint_compliance = metric(scorecard, "constraint_compliance")
+    assert constraint_compliance["state"] == "available"
+    assert constraint_compliance["value"] == 1
+    assert constraint_compliance["experiment_failure"] is None
+    assert constraint_compliance["evidence"] == {"attempt_ids": ["close/attempt-1"]}
+    outcome_consistency = metric(scorecard)
+    assert outcome_consistency["state"] is None
+    assert outcome_consistency["experiment_failure"]["experiment_ids"] == ["close"]
+    assert scorecard["status"] == "partial"
+    assert [(entry["kind"], entry.get("metric_id")) for entry in scorecard["missing"]] == [
+        ("attempt_evidence", None),
+        ("metric_result", "outcome_consistency"),
+    ]
+
+
+@pytest.mark.parametrize(
+    "criterion",
+    [
+        # Any value at all would meet this one.
+        AcceptanceCriterion(metric_id="outcome_consistency", condition={"value": {"at_least": 0}}),
+        AcceptanceCriterion(
+            metric_id="outcome_consistency",
+            condition="the release owner signs off",
+            customer_assessment=lambda entry: CustomerAssessment(met=True, provenance="release owner"),
+        ),
+    ],
+)
+def test_a_metric_without_a_result_cannot_meet_or_fail_an_acceptance_criterion(criterion):
+    scorecard = sweep(
+        {"close": [taking(45, "success")] * 3},
+        limits={"close": ExecutionLimits(attempt_timeout_seconds=30)},
+        acceptance_criteria=[criterion],
+    )
+
+    acceptance = metric(scorecard)["acceptance"]
+    assert acceptance["status"] == "not_assessed"
+    assert acceptance["reason"] == (
+        "the metric has no result because of an experiment failure: experiments that supply this metric's "
+        "evidence did not complete, and what they collected does not permit a calculation: "
+        "no Task has at least two Attempts with a task outcome"
+    )
+
+
 def test_an_unavailable_measurement_stays_unavailable_when_every_experiment_completed():
     # One Attempt per Task was all that was planned, and all of it was collected.
     scorecard = sweep({"close": ["success"], "archive": ["failure"]})
@@ -438,10 +521,6 @@ def test_an_unavailable_measurement_stays_unavailable_when_every_experiment_comp
     assert outcome_consistency["reason"] == "no Task has at least two Attempts with a task outcome"
     assert outcome_consistency["experiment_failure"] is None
     assert scorecard["status"] == "complete"
-
-
-def always_succeeds(attempt, response):
-    return TaskOutcome(success=True, source=SOURCE)
 
 
 def two_tasks_of_two_attempts():
@@ -489,6 +568,7 @@ def test_concurrency_is_declared_by_the_caller_and_recorded_in_the_scorecard():
     [
         ({"attempt_timeout_seconds": 0}, "attempt_timeout_seconds"),
         ({"attempt_timeout_seconds": "30"}, "attempt_timeout_seconds"),
+        ({"attempt_timeout_seconds": float("inf")}, "attempt_timeout_seconds"),
         ({"experiment_timeout_seconds": -1}, "experiment_timeout_seconds"),
         ({"max_retries": -1}, "max_retries"),
         ({"max_retries": 1.5}, "max_retries"),

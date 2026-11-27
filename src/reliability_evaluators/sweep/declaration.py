@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from math import isfinite
 from typing import Any, Callable, Sequence
 
 from ..agent_target import AgentResponse, AttemptRequest
@@ -41,8 +42,10 @@ class ExecutionLimits:
     def __post_init__(self) -> None:
         for name in ("attempt_timeout_seconds", "experiment_timeout_seconds"):
             limit = getattr(self, name)
-            if limit is not None and (isinstance(limit, bool) or not isinstance(limit, (int, float)) or not limit > 0):
-                raise ValueError(f"{name} is a positive number of seconds or None, got {limit!r}")
+            if limit is None:
+                continue
+            if isinstance(limit, bool) or not isinstance(limit, (int, float)) or not isfinite(limit) or limit <= 0:
+                raise ValueError(f"{name} is a positive, finite number of seconds or None, got {limit!r}")
         if type(self.max_retries) is not int or self.max_retries < 0:
             raise ValueError(f"max_retries is a whole number of retries, 0 or more, got {self.max_retries!r}")
 

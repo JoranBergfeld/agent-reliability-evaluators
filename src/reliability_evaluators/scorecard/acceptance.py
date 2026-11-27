@@ -162,6 +162,9 @@ def _why_no_verdict_is_possible(entry: Mapping[str, Any]) -> str | None:
     Everything else, including a state or a fidelity this module does not know, is named
     as the reason for not assessing.
     """
+    experiment_failure = entry.get("experiment_failure")
+    if experiment_failure:
+        return f"the metric has no result because of an experiment failure: {experiment_failure['reason']}"
     state = entry["state"]
     if state != MetricState.AVAILABLE.value:
         described = f"the metric is {_STATES_WITHOUT_A_VALUE.get(state, state)}"
