@@ -125,7 +125,7 @@ A run larger than 1,900,000 characters is not submitted, and the metric has no r
 
 ## How a result comes back
 
-A Foundry code evaluator can return one number for each submitted row and nothing else. Every other way of returning something was tried and failed the run: see [what was tried](#returning-a-result-that-is-not-a-plain-value-observed-on-2026-11-27). So a result comes back as numbers, one row a number.
+A Foundry code evaluator can return one number for each submitted row and nothing else. Every other way of returning something was tried and failed the run: see [what was tried](#returning-a-result-that-is-not-a-plain-value-observed-on-2026-11-27). So a result comes back as numbers, one row a number. What else was considered is in [ADR 0006](../adr/0006-managed-results-come-back-as-encoded-parts.md).
 
 Every submitted row carries the evidence and one more field, `result_part`, which says which part of the result that row asks for. The evaluator calculates the result on every row and returns the part that was asked for.
 
@@ -160,14 +160,14 @@ Foundry grades the rows of a run one after another, at two to three seconds a ro
 | 2 Attempts in 2 Tasks, an unavailable measurement | 259 bytes | 44 | Seen live: the sweep took 141 seconds, registration and both runs included |
 | 8 Attempts in 2 Tasks, a value | 266 bytes | 45 | Seen live: the sweep took 164 and 203 seconds |
 | 50 Attempts in 10 Tasks | 365 bytes | 61 | Not run live. Three to four minutes at the pace that was seen |
-| 500 Attempts in 100 Tasks | 1,677 bytes | 280 | Not run live. About a quarter of an hour at that pace, more than the default `run_timeout_seconds`, and 1.4 million submitted characters |
+| 500 Attempts in 100 Tasks | 1,677 bytes | 280 | Not run live. Twelve to fifteen minutes at that pace for the second run alone, which is about the default `run_timeout_seconds`, and 1.4 million submitted characters |
 | 750 Attempts in 150 Tasks | | 420 | Refused by the sweep: the run would submit 3.0 million characters |
 
 The sizes of the last three rows were measured with the derived evaluator on this machine, with Attempt identities of the form `task-7/attempt-3`. Identities that have less in common deflate less. The limit of 1,900,000 characters is therefore reached somewhere between 500 and 750 such Attempts for outcome consistency, where the evidence alone would fit many more. A metric that reports more details has a larger result and reaches the limit sooner.
 
 Before this version a managed sweep made one run with one row and took 43 to 52 seconds. Returning the state, the reason and the counts is what the added minutes buy.
 
-**A row that Foundry does not grade is asked for again.** Twice, Foundry returned one row of a completed run as an error where the evaluator had not raised and the other rows were graded (observed). A result takes many rows, so the sweep asks again for the parts that did not come back, in a further run with only those rows, up to three times in all. The evaluator returns the same part for the same evidence, and the digest is checked whichever run a part came from. A part that does not come back in three runs leaves the metric without a result. `managed_scoring.encoded_result.run_ids` names every run that returned a part.
+**A row that Foundry does not grade is asked for again.** Twice, Foundry returned a row of a completed run as an error where the evaluator had not raised on that row (observed). A result takes many rows, so the sweep asks again for the parts that did not come back, in a further run with only those rows, up to three times in all. The evaluator returns the same part for the same evidence, and the digest is checked whichever run a part came from. A part that does not come back in three runs leaves the metric without a result. `managed_scoring.encoded_result.run_ids` names every run that returned a part.
 
 ## What the scorecard shows
 
@@ -315,7 +315,7 @@ Like a [recalculation](../sweep/late-and-corrected-outcomes.md#you-supply-the-ea
 | Argument | Content |
 | --- | --- |
 | `earlier_scorecard` | The scorecard of the sweep, read from its JSON. |
-| `metrics` | The metrics to rescore, by metric identity. At least one. Each has to be a metric that the scorecard attributes to Foundry-managed scoring, with a value or with a failure. Give the same `ConfiguredEvaluator` as the sweep when the Evaluator has declarations of its own. |
+| `metrics` | The metrics to rescore, by metric identity. At least one. Each has to be a metric that the scorecard attributes to Foundry-managed scoring, with a result or with a failure. Give the same `ConfiguredEvaluator` as the sweep when the Evaluator has declarations of its own. |
 | `action_evidence` | Declared again as for the sweep, when a rescored metric needs it. |
 | `acceptance_criteria` | Declared again as for the sweep. Required for a rescored metric that the earlier scorecard assessed a criterion for. |
 
@@ -346,10 +346,10 @@ The new scorecard is the earlier one with one addition per rescored metric: `cus
 }
 ```
 
-- **The managed result stays.** The entry of the metric still holds what Foundry-managed scoring gave: the unverified value with its limitation, or the failure with its execution error. `metrics[].value` is never the rescored value.
+- **The managed result stays.** The entry of the metric still holds what Foundry-managed scoring gave: the unverified value with its limitation, the unavailable measurement with its reason and counts, or the failure with its execution error. `metrics[].value` is never the rescored value.
 - **A partial scorecard stays partial.** A managed result that is missing is still listed in `missing`. The rescore does not make up for it.
 - **The rescore is a result of its own.** It has every field that a metric scored in your own process has, calculated by the same Evaluator from the Attempts the managed evaluator was given: its state, value, definition, counts, details and the Attempts the value rests on. It is attributed to `customer_process` and is `authoritative` for that path. It can be an unavailable measurement, with its reason, or have an execution failure of its own when the Attempts were cut short.
-- **Acceptance is assessed separately.** `metrics[].acceptance` is the assessment of the managed result and is not changed: an unverified value or a missing result is still `not_assessed`. Your criterion is also assessed on the rescore, in `customer_process_rescore.acceptance`. Which of the two your release gate reads is your decision. Reading the rescore means deciding on a value from your own process, not on the one Foundry returned.
+- **Acceptance is assessed separately.** `metrics[].acceptance` is the assessment of the managed result and is not changed: an unverified value, an unavailable measurement or a missing result is still `not_assessed`. Your criterion is also assessed on the rescore, in `customer_process_rescore.acceptance`. Which of the two your release gate reads is your decision. Reading the rescore means deciding on a value from your own process, not on the one Foundry returned.
 - **The same evidence.** `customer_process_rescore.evidence_sha256` is the digest of the evidence the rescore was calculated from, in the encoding it is submitted to Foundry in. It equals `managed_scoring.evidence_sha256`, the digest of what was submitted. A scorecard whose attempt-level evidence no longer gives that digest is refused.
 
 The [human-readable report](../report/readme.md) says at the top that the scorecard holds a rescore, and shows the rescore in a block of its own directly below the metric it was requested for, marked as not being the Foundry-managed result.
