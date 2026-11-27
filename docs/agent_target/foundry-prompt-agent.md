@@ -30,26 +30,17 @@ scorecard = run_sweep(experiments=[experiment], agent_target=target, metrics=["o
 | `project` | The Foundry project the agent is in, with the identity to call it as. | Required |
 | `agent_name` | The name of the prompt agent. | Required |
 | `agent_version` | The version of the agent that must answer. | The project chooses. The version that answered is recorded on each Attempt. |
-| `compose_input` | A function of the `AttemptRequest` that returns the text sent to the agent. | The Task's prompt, as it is. |
 | `timeout_seconds` | How long the target waits for the project when you declared no time limit for the Attempt. | 180 |
 
 When a Task declares `ExecutionLimits(attempt_timeout_seconds=...)`, the target waits that long instead. Either way it then raises `TimeoutError`, and the Attempt is `timed_out`: see [execution limits](../sweep/execution-limits.md).
 
 The target sends each invocation once. It never retries. Retries are yours to declare per Task, and every retry is a visible Attempt.
 
-### Telling the agent which test resource to work on
+### The prompt is sent exactly as it is
 
-A prompt agent cannot be configured per Attempt. If its tools need to know which test resource belongs to the Attempt, put that in the text with `compose_input`:
+The target sends the Task's prompt, or the exact text of a prompt variant, as the `input` of the request. It adds nothing and rewrites nothing.
 
-```python
-target = FoundryPromptAgentTarget(
-    project=project,
-    agent_name="todo-agent",
-    compose_input=lambda request: f"Work on list {my_list_for(request.attempt_id)}. {request.prompt}",
-)
-```
-
-`request.prompt` is the Task's prompt. Keep what you add the same for every Attempt except the name of the resource, so that the Attempts stay comparable.
+A prompt agent cannot be configured per Attempt. If its tools have to know which test resource to work on, name that resource in the Task's prompt, and let your prepare and clean-up controls bring that one resource into its starting state for every Attempt. The live check does this: its prompt names one state of the to-do service, which the controls create and remove.
 
 ## Authenticating, also in CI
 

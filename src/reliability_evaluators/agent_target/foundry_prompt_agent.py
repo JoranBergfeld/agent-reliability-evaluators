@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from math import isfinite
-from typing import Callable
 
 from .foundry import FoundryProject, read_responses_reply
 from .interface import AgentResponse, AttemptRequest, IsolatedFollowUp
@@ -20,12 +19,10 @@ class FoundryPromptAgentTarget:
     a new conversation for every Attempt. That resets nothing outside the conversation:
     whatever the agent's tools changed stays changed until a customer control restores it.
 
+    The prompt of the Attempt is sent exactly as it is. Nothing is added to it.
+
     `agent_version` pins the version of the agent that answers. Without it the project
     chooses, and the version that answered is in the evidence of each Attempt.
-
-    `compose_input` gives the text sent to the agent for an Attempt. Without it the Task's
-    prompt is sent as it is. Use it when the agent has to be told something per Attempt,
-    such as which test resource to work on.
 
     `timeout_seconds` is how long the target waits for the project when the customer
     declared no time limit for the Attempt. A declared limit is used instead.
@@ -44,7 +41,6 @@ class FoundryPromptAgentTarget:
         project: FoundryProject,
         agent_name: str,
         agent_version: str | None = None,
-        compose_input: Callable[[AttemptRequest], str] | None = None,
         timeout_seconds: float = DEFAULT_TIMEOUT_SECONDS,
     ):
         if not isinstance(project, FoundryProject):
@@ -59,14 +55,13 @@ class FoundryPromptAgentTarget:
         self._agent = {"type": "agent_reference", "name": agent_name}
         if agent_version is not None:
             self._agent["version"] = agent_version
-        self._compose_input = compose_input or (lambda request: request.prompt)
         self._timeout_seconds = timeout_seconds
 
     def invoke(self, request: AttemptRequest) -> AgentResponse:
         reply = self._project.post(
             RESPONSES_PATH,
             {
-                "input": self._compose_input(request),
+                "input": request.prompt,
                 "agent_reference": self._agent,
                 # The project returns it with the response, which ties the response to its Attempt.
                 "metadata": {"attempt_id": request.attempt_id, "task_id": request.task_id},

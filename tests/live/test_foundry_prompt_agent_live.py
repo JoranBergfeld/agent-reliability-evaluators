@@ -6,8 +6,15 @@ ARE_LIVE_FIXTURE_GROUP to an already provisioned resource group to reuse it; tha
 then left in place for you to tear down.
 
 One sweep is run and every check reads its scorecard, because each Attempt invokes the
-deployed agent. The expectations are calculated here from what the to-do service recorded
-for each Attempt, read by the fixture's clean-up control and not by the code under test.
+deployed agent. The expectations are calculated here from what the to-do service had
+recorded when each Attempt ended, read by the fixture's verify control and not by the code
+under test.
+
+The experiment declares continuing state: the state is prepared once per condition and
+every Attempt starts from what the one before left. The agent is asked to do the whole Task
+every time, in a new conversation. Only the first Attempt can leave the service with exactly
+the five operations of the Task, so the task outcomes differ without any Attempt being
+treated differently.
 """
 
 import json
@@ -26,9 +33,6 @@ pytestmark = pytest.mark.live
 ATTEMPTS = 5
 BASELINE_ATTEMPTS = [f"todo/baseline/attempt-{number}" for number in range(1, ATTEMPTS + 1)]
 FAULTED_ATTEMPTS = [f"todo/update-fails/attempt-{number}" for number in range(1, ATTEMPTS + 1)]
-# The Attempt whose instruction leaves out the last step, so that the task outcomes are not all alike.
-SHORTENED_ATTEMPT = BASELINE_ATTEMPTS[-1]
-LAST_STEP = " Finally update target to done=true."
 THE_TASK = [("read", "target"), ("create", "scratch"), ("read", "scratch"), ("delete", "scratch"), ("update", "target")]
 TOOL_OF = {
     "todos_readTodo": "read",
@@ -53,30 +57,20 @@ def live():
 @pytest.fixture(scope="module")
 def swept(live):
     """The scorecard of one sweep on the deployed prompt agent, and what the service recorded per Attempt."""
-    fixture = TodoFixtureSweep(live.service, run_id=f"live-{uuid.uuid4().hex[:8]}")
-
-    def compose_input(request):
-        text = fixture.compose_input(request)
-        if request.attempt_id == SHORTENED_ATTEMPT:
-            assert LAST_STEP in text
-            text = text.replace(LAST_STEP, "")
-        return text
-
-    target = FoundryPromptAgentTarget(
-        # No token provider: the identity signed in to the Azure CLI is used, as in a customer's CI.
-        project=FoundryProject(live.project_endpoint),
-        agent_name=live.prompt_agent,
-        compose_input=compose_input,
-    )
+    fixture = TodoFixtureSweep(live.service, state=f"live-{uuid.uuid4().hex[:8]}")
+    # No token provider: the identity signed in to the Azure CLI is used, as in a customer's CI.
+    target = FoundryPromptAgentTarget(project=FoundryProject(live.project_endpoint), agent_name=live.prompt_agent)
     experiment = fixture.experiment(
         attempts=ATTEMPTS,
+        starting_state="continuing",
         variation=UPDATE_FAILS,
         agent_configuration={"agent": live.prompt_agent, "model_deployment": live.model_deployment},
     )
     scorecard = run_sweep(
         experiments=[experiment], agent_target=target, metrics=["outcome_consistency", "fault_robustness"]
     )
-    print(json.dumps({"observed": [_observation(attempt, fixture.service_evidence) for attempt in scorecard["attempts"]]}))
+    observed = [_observation(attempt, fixture.service_evidence) for attempt in scorecard["attempts"]]
+    print(json.dumps({"observed": observed}))
     print(json.dumps({"metrics": [_metric_summary(entry) for entry in scorecard["metrics"] if "value" in entry]}))
     return scorecard, fixture.service_evidence
 
@@ -84,7 +78,7 @@ def swept(live):
 def _observation(attempt, service_evidence):
     """What one Attempt showed, for the record of the live run. No token, key or subscription identifier."""
     platform = attempt["platform_evidence"] or {}
-    events = service_evidence.get(attempt["attempt_id"], {}).get("events", [])
+    events = calls_of(attempt["attempt_id"], service_evidence) if attempt["attempt_id"] in service_evidence else []
     return {
         "attempt_id": attempt["attempt_id"],
         "execution_status": attempt["execution_status"],
@@ -94,7 +88,12 @@ def _observation(attempt, service_evidence):
         "token_usage": platform.get("token_usage"),
         "token_usage_missing": platform.get("token_usage_missing"),
         "tool_calls": [call["tool_name"] for call in platform.get("tool_calls") or []],
-        "service_events": [[event["tool"], event["todo_id"], event["status"], event["fault_injected"]] for event in events],
+        "service_events_of_the_attempt": [
+            [event["tool"], event["todo_id"], event["status"], event["fault_injected"]] for event in events
+        ],
+        "service_events_since_the_state_was_prepared": len(
+            service_evidence.get(attempt["attempt_id"], {}).get("events", [])
+        ),
         "elapsed_seconds": [
             round(measured["value"], 1)
             for measured in attempt["resource_measurements"]
@@ -116,8 +115,17 @@ def metric(scorecard, metric_id):
     return entry
 
 
+def calls_of(attempt_id, service_evidence):
+    """The calls the service received during one Attempt: those it recorded after the Attempt before ended."""
+    condition, number = attempt_id.rsplit("-", 1)
+    recorded = service_evidence[attempt_id]["events"]
+    if number == "1":
+        return recorded
+    return recorded[len(service_evidence[f"{condition}-{int(number) - 1}"]["events"]) :]
+
+
 def succeeded_on_the_service(evidence):
-    """This check's own reading of the strict task-success rule, from what the service recorded."""
+    """This check's own reading of the strict task-success rule, from what the service had recorded."""
     operations = [(event["tool"], event["todo_id"]) for event in evidence["events"] if 200 <= event["status"] < 300]
     after = evidence["after"]
     return (
@@ -149,8 +157,21 @@ def test_outcome_consistency_matches_an_independent_calculation_from_service_evi
     assert outcome_consistency["state"] == "available"
     assert outcome_consistency["evidence"] == {"attempt_ids": BASELINE_ATTEMPTS}
     assert outcome_consistency["value"] == pytest.approx(independent_value, abs=1e-12)
-    # The shortened Attempt is there so that this is not a comparison of 1 with 1.
-    assert successes[-1] is False and any(successes)
+    # Under continuing state only the first Attempt can succeed, so this is not a comparison of 1 with 1.
+    assert successes == [True, False, False, False, False]
+
+
+def test_a_new_conversation_for_every_attempt_did_not_reset_the_state_of_the_service(swept):
+    scorecard, service_evidence = swept
+    attempts = by_id(scorecard)
+
+    # Every Attempt was a response of its own, and the service kept everything the Attempts before it did.
+    recorded = [len(service_evidence[attempt_id]["events"]) for attempt_id in BASELINE_ATTEMPTS]
+    assert recorded == sorted(recorded) and recorded[0] < recorded[-1]
+    assert service_evidence[BASELINE_ATTEMPTS[-1]]["after"]["target"]["done"] is True
+    assert {attempts[attempt_id]["starting_state"] for attempt_id in BASELINE_ATTEMPTS} == {"continuing"}
+    for attempt_id in BASELINE_ATTEMPTS[1:]:
+        assert attempts[attempt_id]["task_outcome"]["success"] is False
 
 
 def test_each_completed_attempt_keeps_its_response_identity_its_usage_and_its_ordered_tool_calls(swept, live):
@@ -173,12 +194,11 @@ def test_each_completed_attempt_keeps_its_response_identity_its_usage_and_its_or
         usage = platform["token_usage"]
         assert usage["total_tokens"] == usage["input_tokens"] + usage["output_tokens"] > 0
         assert platform["token_usage_missing"] is None
-        # The tool calls the project exposed are the calls the service received, in the same order.
-        assert [TOOL_OF[call["tool_name"]] for call in platform["tool_calls"]] == [
-            event["tool"] for event in service_evidence[attempt_id]["events"]
-        ]
+        # The tool calls the project exposed are the calls the service received during the Attempt, in order.
+        received = calls_of(attempt_id, service_evidence)
+        assert [TOOL_OF[call["tool_name"]] for call in platform["tool_calls"]] == [event["tool"] for event in received]
         (counted,) = [m for m in attempt["resource_measurements"] if m["resource_type"] == "tool_calls"]
-        assert counted["value"] == len(service_evidence[attempt_id]["events"])
+        assert counted["value"] == len(received)
     assert len(set(response_ids)) == ATTEMPTS
 
 
@@ -188,7 +208,7 @@ def test_an_injected_tool_fault_fails_the_invocation_and_only_the_service_shows_
 
     for attempt_id in FAULTED_ATTEMPTS:
         attempt = attempts[attempt_id]
-        faults = [event for event in service_evidence[attempt_id]["events"] if event["fault_injected"]]
+        faults = [event for event in calls_of(attempt_id, service_evidence) if event["fault_injected"]]
         assert faults and all((event["tool"], event["status"]) == ("update", 503) for event in faults)
         assert attempt["observed_condition"]["met"] is True
         # The caller gets an error and no response. That is an execution failure, never a task failure.

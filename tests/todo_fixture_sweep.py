@@ -5,7 +5,7 @@ deployed one. Either way the task outcome and the observed condition come from w
 service recorded, never from the agent's response.
 """
 
-from live_fixture import TASK_PROMPT, TodoServiceError, strict_task_outcome
+from live_fixture import TodoServiceError, strict_task_outcome, task_prompt
 from reliability_evaluators.evidence import TaskOutcome
 from reliability_evaluators.sweep import Condition, ExecutionLimits, Experiment, ObservedCondition, Task
 
@@ -14,7 +14,7 @@ BASELINE = Condition(condition_id="baseline", description="Every tool works.")
 UPDATE_FAILS = Condition(
     condition_id="update-fails",
     kind="fault",
-    description="The update tool answers HTTP 503 for this Attempt.",
+    description="The update tool answers HTTP 503.",
     parameters={"failing_tool": "update"},
 )
 
@@ -22,73 +22,78 @@ UPDATE_FAILS = Condition(
 class TodoFixtureSweep:
     """The customer's side of a sweep on the fixture: its controls and its task-success rule.
 
-    Each Attempt has its own state on the service, named after `run_id` and the identity of
-    the Attempt. The agent cannot be configured per Attempt, so `compose_input` puts that
-    name in front of the Task's prompt.
+    The agent works on one state of the service, named `state`, which is the experiment's
+    only test resource. The Task's prompt names it, so the prompt is the same for every
+    Attempt. The prepare control creates that state and the clean-up control removes it.
 
-    `service_evidence` holds what the service recorded for each Attempt, by Attempt
-    identity, read by the clean-up control just before it removes the Attempt. A test
-    calculates its own expectation from it.
+    `service_evidence` holds what the service had recorded for the state when each Attempt
+    ended, by Attempt identity, read by the verify control. Under continuing state that
+    includes the calls of the Attempts before it. A test calculates its own expectation from it.
     """
 
-    def __init__(self, service, run_id):
+    def __init__(self, service, state):
         self._service = service
-        self._run_id = run_id
+        self.state = state
         self.service_evidence = {}
-
-    def state_name(self, attempt_id):
-        return f"{self._run_id}-{attempt_id.replace('/', '-')}"
-
-    def compose_input(self, request):
-        return f"Use attempt_id {self.state_name(request.attempt_id)}. {request.prompt}"
+        # How many calls the service had recorded for the state when the Attempt before ended.
+        self._calls_before = 0
 
     def success_rule(self, request, response):
-        outcome = strict_task_outcome(self._service.evidence(self.state_name(request.attempt_id)))
+        outcome = strict_task_outcome(self._service.evidence(self.state))
         return TaskOutcome(success=outcome["success"], source=outcome["source"])
 
     def experiment(
-        self, *, attempts, variation=None, limits=ExecutionLimits(), experiment_id="todo", agent_configuration=None
+        self,
+        *,
+        attempts,
+        starting_state="fresh",
+        variation=None,
+        limits=ExecutionLimits(),
+        agent_configuration=None,
     ):
-        """The fixture Task under fresh state: `attempts` Attempts under the baseline and under the variation."""
+        """The fixture Task: `attempts` Attempts under the baseline and as many under the variation."""
         return Experiment(
-            experiment_id=experiment_id,
+            experiment_id="todo",
             task=Task(
-                task_id="todo", prompt=TASK_PROMPT, success_rule=self.success_rule, attempts=attempts, limits=limits
+                task_id="todo",
+                prompt=task_prompt(self.state),
+                success_rule=self.success_rule,
+                attempts=attempts,
+                limits=limits,
             ),
             agent_configuration=agent_configuration or {"agent": "todo-prompt"},
-            starting_state="fresh",
+            starting_state=starting_state,
             baseline=BASELINE,
             variation=variation,
             controls=self,
             write_capable=True,
-            authorized_resources=[f"Attempts of run {self._run_id} on the to-do service"],
+            authorized_resources=[f"state {self.state} of the to-do service"],
         )
 
     def prepare_state(self, context):
-        self._service.prepare_attempt(self.state_name(context.attempt_id))
+        self._service.prepare_attempt(self.state)
+        self._calls_before = 0
 
     def apply_condition(self, context):
-        self._service.set_failing_tool(
-            self.state_name(context.attempt_id), context.condition.parameters.get("failing_tool")
-        )
+        self._service.set_failing_tool(self.state, context.condition.parameters.get("failing_tool"))
 
     def verify_condition(self, context):
-        events = self._service.evidence(self.state_name(context.attempt_id))["events"]
-        faulted = [event["tool"] for event in events if event["fault_injected"]]
+        evidence = self._service.evidence(self.state)
+        self.service_evidence[context.attempt_id] = evidence
+        calls = evidence["events"][self._calls_before :]
+        self._calls_before = len(evidence["events"])
+        faulted = [event["tool"] for event in calls if event["fault_injected"]]
         intended = context.condition.parameters.get("failing_tool")
         return ObservedCondition(
             met=bool(faulted) and set(faulted) == {intended} if intended else not faulted,
             source=CONDITION_SOURCE,
-            observations={"calls": len(events), "faulted_calls": faulted},
+            observations={"calls": len(calls), "faulted_calls": faulted},
         )
 
     def clean_up(self, context):
-        name = self.state_name(context.attempt_id)
         try:
-            self.service_evidence[context.attempt_id] = self._service.evidence(name)
+            self._service.remove_attempt(self.state)
         except TodoServiceError as error:
-            if "HTTP 404" in str(error):
-                # The Attempt was never prepared, so there is nothing to remove.
-                return
-            raise
-        self._service.remove_attempt(name)
+            # A state that was never prepared is not there to remove.
+            if "HTTP 404" not in str(error):
+                raise

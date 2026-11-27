@@ -10,15 +10,14 @@ import json
 
 import pytest
 
-from live_fixture import TASK_PROMPT, local_service, strict_task_outcome
+from live_fixture import local_service
 from reliability_evaluators.agent_target import (
     AzureCliToken,
     FoundryProject,
     FoundryPromptAgentTarget,
     platform_tool_calls,
 )
-from reliability_evaluators.evidence import TaskOutcome
-from reliability_evaluators.sweep import ActionEvidenceDeclaration, ExecutionLimits, Task, run_sweep
+from reliability_evaluators.sweep import ActionEvidenceDeclaration, ExecutionLimits, run_sweep
 from tests.fake_foundry import fake_foundry_project
 from tests.fakes import attempt_evidence
 from tests.todo_fixture_sweep import CONDITION_SOURCE, UPDATE_FAILS, TodoFixtureSweep
@@ -26,6 +25,8 @@ from tests.todo_fixture_sweep import CONDITION_SOURCE, UPDATE_FAILS, TodoFixture
 OUTCOME_SOURCE = "to-do service events and before/after state"
 PLATFORM_SOURCE = "Foundry Responses API, called from customer code"
 TOOL_CALL_BOUNDARY = "tool calls in the output of the Foundry response, counted by the agent target"
+# The state of the to-do service that the Task's prompt names and the controls prepare and remove.
+STATE = "run-1"
 TARGET = {"id": "target", "title": "Synthetic target", "done": False}
 SCRATCH = {"id": "scratch", "title": "Temporary", "done": False}
 
@@ -67,6 +68,7 @@ def sweep(
     metrics=("outcome_consistency",),
     *,
     attempts=None,
+    starting_state="fresh",
     variation=None,
     limits=ExecutionLimits(),
     agent=None,
@@ -78,15 +80,14 @@ def sweep(
     `agent` is what the target is told about the agent besides its name, and `token` is
     the caller's token provider. Everything else is declared to the sweep.
     """
-    fixture = TodoFixtureSweep(todo_service, run_id="run-1")
+    fixture = TodoFixtureSweep(todo_service, state=STATE)
     with fake_foundry_project(todo_service, script) as project:
         target = FoundryPromptAgentTarget(
-            project=FoundryProject(project.endpoint, token=token),
-            agent_name="todo-prompt",
-            compose_input=fixture.compose_input,
-            **(agent or {}),
+            project=FoundryProject(project.endpoint, token=token), agent_name="todo-prompt", **(agent or {})
         )
-        experiment = fixture.experiment(attempts=attempts or len(script), variation=variation, limits=limits)
+        experiment = fixture.experiment(
+            attempts=attempts or len(script), starting_state=starting_state, variation=variation, limits=limits
+        )
         return run_sweep(experiments=[experiment], agent_target=target, metrics=metrics, **declared)
 
 
@@ -113,7 +114,6 @@ def test_a_sweep_scores_a_prompt_agent_from_what_the_service_recorded_not_from_i
 def test_each_attempt_keeps_the_response_identifiers_the_usage_and_the_ordered_tool_calls(todo_service):
     scorecard = sweep(todo_service, ["skips the update", "completes"])
 
-    state = "run-1-todo-baseline-attempt-1"
     assert scorecard["attempts"][0]["platform_evidence"] == {
         "source": PLATFORM_SOURCE,
         "identifiers": {
@@ -130,10 +130,10 @@ def test_each_attempt_keeps_the_response_identifiers_the_usage_and_the_ordered_t
         "token_usage": usage(500, 60),
         "token_usage_missing": None,
         "tool_calls": [
-            tool_call("todos_readTodo", {"attempt_id": state, "todo_id": "target"}, TARGET),
-            tool_call("todos_createTodo", {"id": "scratch", "title": "Temporary", "attempt_id": state}, SCRATCH),
-            tool_call("todos_readTodo", {"attempt_id": state, "todo_id": "scratch"}, SCRATCH),
-            tool_call("todos_deleteTodo", {"attempt_id": state, "todo_id": "scratch"}, SCRATCH),
+            tool_call("todos_readTodo", {"attempt_id": STATE, "todo_id": "target"}, TARGET),
+            tool_call("todos_createTodo", {"id": "scratch", "title": "Temporary", "attempt_id": STATE}, SCRATCH),
+            tool_call("todos_readTodo", {"attempt_id": STATE, "todo_id": "scratch"}, SCRATCH),
+            tool_call("todos_deleteTodo", {"attempt_id": STATE, "todo_id": "scratch"}, SCRATCH),
         ],
     }
     second = scorecard["attempts"][1]["platform_evidence"]
@@ -276,9 +276,7 @@ def test_a_response_that_was_delivered_but_did_not_complete_is_an_execution_fail
             "token_usage": usage(200, 30),
             "token_usage_missing": None,
             "tool_calls": [
-                tool_call(
-                    "todos_readTodo", {"attempt_id": "run-1-todo-baseline-attempt-2", "todo_id": "target"}, TARGET
-                ),
+                tool_call("todos_readTodo", {"attempt_id": STATE, "todo_id": "target"}, TARGET),
             ],
         },
     }
@@ -307,34 +305,39 @@ def test_a_reply_that_is_not_a_response_is_an_execution_failure(todo_service):
     }
 
 
-def test_a_new_conversation_for_every_attempt_is_not_recorded_as_a_reset_of_external_state(todo_service):
-    # A Task given without an experiment: no control prepares its state, and both Attempts work on
-    # the same state of the service. Every invocation is a response of its own, linked to no earlier one.
-    # The second Attempt still starts from what the first left: the service then holds ten operations
-    # instead of the five of the Task, so it fails. p = 1/2, (2 * 0.5 - 1)^2 = 0.
-    todo_service.prepare_attempt("shared")
+def test_a_new_conversation_for_every_attempt_does_not_reset_what_the_agent_changed(todo_service):
+    # Continuing state is declared: the state is prepared once and every Attempt starts from what the
+    # one before left. Every invocation is a response of its own, linked to no earlier one, and the
+    # agent does the whole Task each time. The first Attempt succeeds. After the second the service
+    # holds ten operations instead of the five of the Task, and so on: the other four fail.
+    # p = 1/5, (2 * 0.2 - 1)^2 = 0.36. Were each new conversation a reset, p would be 1 and the value 1.
+    scorecard = sweep(todo_service, ["completes"] * 5, starting_state="continuing")
 
-    def strict_rule(request, response):
-        outcome = strict_task_outcome(todo_service.evidence("shared"))
-        return TaskOutcome(success=outcome["success"], source=outcome["source"])
+    attempts = scorecard["attempts"]
+    assert [attempt["platform_evidence"]["identifiers"]["response_id"] for attempt in attempts] == [
+        f"resp_fake_{number}" for number in (1, 2, 3, 4, 5)
+    ]
+    assert [len(attempt["platform_evidence"]["tool_calls"]) for attempt in attempts] == [5] * 5
+    assert [attempt["task_outcome"]["success"] for attempt in attempts] == [True, False, False, False, False]
+    assert {attempt["starting_state"] for attempt in attempts} == {"continuing"}
+    assert metric(scorecard, "outcome_consistency")["value"] == pytest.approx(0.36, abs=1e-12)
 
-    with fake_foundry_project(todo_service, ["completes", "completes"]) as project:
+
+def test_the_target_puts_no_starting_state_policy_in_the_place_of_one_that_was_not_declared(todo_service):
+    # A Task given without an experiment: no control prepares its state, so both Attempts work on
+    # the same state of the service, and the second fails as above. p = 1/2, (2 * 0.5 - 1)^2 = 0.
+    todo_service.prepare_attempt(STATE)
+    fixture = TodoFixtureSweep(todo_service, state=STATE)
+    task = fixture.experiment(attempts=2).task
+
+    with fake_foundry_project(todo_service) as project:
         target = FoundryPromptAgentTarget(
-            project=FoundryProject(project.endpoint, token=lambda: "fake-token"),
-            agent_name="todo-prompt",
-            compose_input=lambda request: f"Use attempt_id shared. {request.prompt}",
+            project=FoundryProject(project.endpoint, token=lambda: "fake-token"), agent_name="todo-prompt"
         )
-        scorecard = run_sweep(
-            tasks=[Task(task_id="todo", prompt=TASK_PROMPT, success_rule=strict_rule, attempts=2)],
-            agent_target=target,
-            metrics=["outcome_consistency"],
-        )
+        scorecard = run_sweep(tasks=[task], agent_target=target, metrics=["outcome_consistency"])
 
     first, second = scorecard["attempts"]
-    assert first["platform_evidence"]["identifiers"]["response_id"] == "resp_fake_1"
-    assert second["platform_evidence"]["identifiers"]["response_id"] == "resp_fake_2"
     assert [first["task_outcome"]["success"], second["task_outcome"]["success"]] == [True, False]
-    # Nothing declared a starting-state policy, and the agent target does not put one in its place.
     assert [first["starting_state"], second["starting_state"]] == [None, None]
     assert metric(scorecard, "outcome_consistency")["value"] == 0
 
@@ -479,13 +482,12 @@ class FakeAzureCli:
 
 
 def sweep_as_the_azure_cli_identity(todo_service, attempts, signed_in=True):
-    fixture = TodoFixtureSweep(todo_service, run_id="run-1")
+    fixture = TodoFixtureSweep(todo_service, state=STATE)
     with fake_foundry_project(todo_service, valid_tokens=()) as project:
         cli = FakeAzureCli(project, signed_in)
         target = FoundryPromptAgentTarget(
             project=FoundryProject(project.endpoint, token=AzureCliToken(run_cli=cli.run, clock=cli.clock)),
             agent_name="todo-prompt",
-            compose_input=fixture.compose_input,
         )
         scorecard = run_sweep(
             experiments=[fixture.experiment(attempts=attempts)], agent_target=target, metrics=["outcome_consistency"]
