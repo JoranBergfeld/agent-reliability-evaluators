@@ -5,7 +5,7 @@ from __future__ import annotations
 from time import perf_counter
 from typing import Any, Callable, Sequence
 
-from ..agent_target import AgentTarget, AttemptRequest
+from ..agent_target import AgentResponse, AgentTarget, AttemptRequest
 from ..evaluators import EVALUATORS, RELIABILITY_METRICS, Evaluator, Fidelity, ScoringPath
 from ..evidence import (
     Attempt,
@@ -14,6 +14,7 @@ from ..evidence import (
     ResourceMeasurement,
     ResourceType,
     TaskOutcome,
+    ViolationAssessment,
     group_by_task,
 )
 from ..scorecard import AcceptanceCriterion, ScoredMetric, build_scorecard, criteria_by_metric
@@ -48,7 +49,9 @@ def run_sweep(
     instead. Every other resource measurement comes from the agent target.
 
     A declaration that cannot be run is rejected before any Attempt is made. A task-success
-    rule that does not return a sourced, binary TaskOutcome stops the sweep.
+    rule that does not return a sourced, binary TaskOutcome stops the sweep. So does a
+    violation assessor that does not return sourced violation assessments of the operational
+    constraints its Task declares.
     """
     evaluators = [_evaluator(metric_id) for metric_id in metrics]
     _require_distinct_tasks(tasks)
@@ -100,6 +103,7 @@ def _run_attempt(task: Task, number: int, agent_target: AgentTarget, clock: Call
             task_id=task.task_id,
             execution_status=ExecutionStatus.FAILED,
             execution_error=f"{type(error).__name__}: {error}",
+            operational_constraints=task.operational_constraints,
         )
     elapsed = clock() - started
     outcome = task.success_rule(request, response)
@@ -114,6 +118,8 @@ def _run_attempt(task: Task, number: int, agent_target: AgentTarget, clock: Call
         execution_status=ExecutionStatus.COMPLETED,
         task_outcome=outcome,
         resource_measurements=_resource_measurements(elapsed, response.resource_measurements),
+        operational_constraints=task.operational_constraints,
+        violation_assessments=_assess_violations(task, request, response),
     )
 
 
@@ -130,3 +136,21 @@ def _resource_measurements(
         boundary=ELAPSED_TIME_BOUNDARY,
     )
     return (timed, *reported)
+
+
+def _assess_violations(
+    task: Task, request: AttemptRequest, response: AgentResponse
+) -> Sequence[ViolationAssessment]:
+    if task.violation_assessor is None:
+        return ()
+    assessments = task.violation_assessor(request, response)
+    if (
+        not isinstance(assessments, Sequence)
+        or isinstance(assessments, str)
+        or not all(isinstance(assessment, ViolationAssessment) for assessment in assessments)
+    ):
+        raise EvidenceError(
+            f"the violation assessor of Task {task.task_id!r} must return a sequence of ViolationAssessment, "
+            f"each with its evidence and source, got {assessments!r}"
+        )
+    return assessments

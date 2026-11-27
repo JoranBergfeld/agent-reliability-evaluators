@@ -13,7 +13,7 @@ import pytest
 from reliability_evaluators.evidence import TaskOutcome
 from reliability_evaluators.scorecard import to_json
 from reliability_evaluators.sweep import Task, run_sweep
-from tests.fakes import OWN_ELAPSED_BOUNDARY, TOOL_CALL_BOUNDARY, FakeAgentTarget
+from tests.fakes import OWN_ELAPSED_BOUNDARY, TOOL_CALL_BOUNDARY, FakeAgentTarget, attempt_evidence
 
 SOURCE = "final state of the fake service"
 SWEEP_ELAPSED_BOUNDARY = (
@@ -68,7 +68,7 @@ def test_a_sweep_scores_resource_consistency_in_the_scorecard():
 def test_each_attempt_in_the_scorecard_carries_its_elapsed_time_and_tool_call_count():
     scorecard = sweep(SCRIPT, RESOURCES)
 
-    assert scorecard["attempts"][1] == {
+    assert attempt_evidence(scorecard["attempts"][1], "resource_measurements") == {
         "attempt_id": "close/attempt-2",
         "task_id": "close",
         "execution_status": "completed",
@@ -116,8 +116,8 @@ def test_the_scorecard_says_how_resource_consistency_is_defined_and_how_to_read_
     assert any("Successful and failed Attempts are both included" in convention for convention in conventions)
     assert any("zero in every Attempt" in convention for convention in conventions)
     assert any("reliably sourced" in convention for convention in conventions)
-    assert any("spec assumption 13" in convention and "excluded for that Task" in convention for convention in conventions)
-    assert any("spec assumption 10" in convention and "eligible Tasks" in convention for convention in conventions)
+    assert any("spec assumption 13" in said and "excluded for that Task" in said for said in conventions)
+    assert any("spec assumption 10" in said and "eligible Tasks" in said for said in conventions)
     assert (definition["scale"]["minimum"], definition["scale"]["maximum"]) == (0, 1)
     assert "Stability is not efficiency" in definition["interpretation"]
 
@@ -196,9 +196,10 @@ def test_an_invocation_that_fails_carries_no_measurement_and_is_left_out():
 
 
 def test_no_task_with_repeated_attempts_gives_an_unavailable_measurement_and_no_number():
-    resource_consistency = metric(
-        sweep({"close": ["success"], "archive": ["failure"]}, {"close": [{"seconds": 1.0}], "archive": [{"seconds": 2.0}]})
-    )
+    script = {"close": ["success"], "archive": ["failure"]}
+    resources = {"close": [{"seconds": 1.0}], "archive": [{"seconds": 2.0}]}
+
+    resource_consistency = metric(sweep(script, resources))
 
     assert resource_consistency["state"] == "unavailable"
     assert resource_consistency["value"] is None

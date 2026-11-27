@@ -5,7 +5,7 @@ Evaluator can be called on its own, for example
 `outcome_consistency.evaluate(group_by_task(attempts))`.
 """
 
-from . import outcome_consistency, resource_consistency
+from . import constraint_compliance, outcome_consistency, resource_consistency
 from .catalogue import RELIABILITY_METRICS, ReliabilityMetric
 from .registry import EVALUATORS, Evaluator
 from .result import (
@@ -33,6 +33,7 @@ __all__ = [
     "ReliabilityMetric",
     "Scale",
     "ScoringPath",
+    "constraint_compliance",
     "counted",
     "outcome_consistency",
     "resource_consistency",

@@ -6,16 +6,17 @@ Vocabulary is defined in [`GLOSSARY.md`](GLOSSARY.md). Decisions that are hard t
 
 ## What exists today
 
-Two metrics, end to end, scored in your own process:
+Three metrics, end to end, scored in your own process:
 
 | Metric | Documentation |
 | --- | --- |
 | Outcome consistency | [`docs/outcome_consistency/readme.md`](docs/outcome_consistency/readme.md) |
 | Resource consistency | [`docs/resource_consistency/readme.md`](docs/resource_consistency/readme.md) |
+| Constraint compliance | [`docs/constraint_compliance/readme.md`](docs/constraint_compliance/readme.md) |
 
 You can declare your own acceptance criteria per metric, and the scorecard reports each as met, not met, or not assessed with a reason: see [`docs/acceptance_criteria/readme.md`](docs/acceptance_criteria/readme.md).
 
-The other ten metrics have no Evaluator yet. Every scorecard lists all twelve, and a metric that was not selected appears as not configured. No Foundry agent target and no Foundry-managed scoring exists yet; the agent target is an interface that you implement.
+The other nine metrics have no Evaluator yet. Every scorecard lists all twelve, and a metric that was not selected appears as not configured. No Foundry agent target and no Foundry-managed scoring exists yet; the agent target is an interface that you implement.
 
 ## Using it in your project
 

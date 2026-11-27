@@ -36,21 +36,18 @@ MIXED_BOUNDARIES = "measured with more than one measurement boundary across the 
 
 
 def elapsed(seconds, **overrides):
-    return ResourceMeasurement(
-        **{"resource_type": "elapsed_time", "value": seconds, "unit": "seconds", "boundary": ELAPSED_BOUNDARY, **overrides}
-    )
+    measured = {"resource_type": "elapsed_time", "value": seconds, "unit": "seconds", "boundary": ELAPSED_BOUNDARY}
+    return ResourceMeasurement(**{**measured, **overrides})
 
 
 def tool_calls(count, **overrides):
-    return ResourceMeasurement(
-        **{"resource_type": "tool_calls", "value": count, "unit": "calls", "boundary": TOOL_CALL_BOUNDARY, **overrides}
-    )
+    measured = {"resource_type": "tool_calls", "value": count, "unit": "calls", "boundary": TOOL_CALL_BOUNDARY}
+    return ResourceMeasurement(**{**measured, **overrides})
 
 
 def tokens(count, **overrides):
-    return ResourceMeasurement(
-        **{"resource_type": "token_usage", "value": count, "unit": "tokens", "boundary": TOKEN_BOUNDARY, **overrides}
-    )
+    measured = {"resource_type": "token_usage", "value": count, "unit": "tokens", "boundary": TOKEN_BOUNDARY}
+    return ResourceMeasurement(**{**measured, **overrides})
 
 
 def attempts(task_id, measurements_per_attempt):
@@ -117,7 +114,7 @@ def test_tasks_are_weighted_equally_and_their_measurements_are_never_pooled():
                 },
             ],
             "excluded_resource_types": [
-                {"resource_type": "token_usage", "reason": "not measured in any Attempt of the Task", "attempt_ids": []},
+                {"resource_type": "token_usage", "reason": NOT_MEASURED, "attempt_ids": []},
             ],
             "value": pytest.approx(0.7788007830714049, abs=1e-12),
         },
@@ -141,7 +138,7 @@ def test_tasks_are_weighted_equally_and_their_measurements_are_never_pooled():
                 },
             ],
             "excluded_resource_types": [
-                {"resource_type": "token_usage", "reason": "not measured in any Attempt of the Task", "attempt_ids": []},
+                {"resource_type": "token_usage", "reason": NOT_MEASURED, "attempt_ids": []},
             ],
             "value": pytest.approx(0.8824969025845955, abs=1e-12),
         },

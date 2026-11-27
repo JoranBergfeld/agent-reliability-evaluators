@@ -7,9 +7,11 @@ from .attempt import (
     Attempt,
     EvidenceError,
     ExecutionStatus,
+    OperationalConstraint,
     ResourceMeasurement,
     ResourceType,
     TaskOutcome,
+    ViolationAssessment,
 )
 from .grouping import TaskEvidence, group_by_task, require_unambiguous
 
@@ -17,10 +19,12 @@ __all__ = [
     "Attempt",
     "EvidenceError",
     "ExecutionStatus",
+    "OperationalConstraint",
     "ResourceMeasurement",
     "ResourceType",
     "TaskEvidence",
     "TaskOutcome",
+    "ViolationAssessment",
     "group_by_task",
     "require_unambiguous",
 ]
