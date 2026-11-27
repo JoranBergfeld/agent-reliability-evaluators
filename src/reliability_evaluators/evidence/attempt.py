@@ -5,12 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 from math import isfinite
-from typing import Any
+from typing import Any, Mapping
 
 from .actions import ActionEvidence
 from .confidence import ConfidenceRating, ConfidenceUnavailable
 from .errors import EvidenceError
-from .experiment import Condition, ConditionRole, LifecycleStep, ObservedCondition, StartingStatePolicy
+from .experiment import Condition, ConditionRole, LifecycleStep, ObservedCondition, StartingStatePolicy, json_data
 
 
 def _require_text(owner: str, **fields: Any) -> None:
@@ -245,6 +245,9 @@ class Attempt:
     action_evidence: ActionEvidence | None = None
     # At most one measurement per resource type.
     resource_measurements: tuple[ResourceMeasurement, ...] = ()
+    # What the agent target recorded of the invocation: the identifiers the platform returned,
+    # the token usage it reported and the tool calls it exposed. None: it recorded nothing.
+    invocation: Mapping[str, Any] | None = None
     # None when the agent was not asked for a confidence rating for this Attempt.
     confidence: ConfidenceRating | ConfidenceUnavailable | None = None
     # The operational constraints that apply to this Attempt, and the assessments made of them.
@@ -280,6 +283,14 @@ class Attempt:
                 f"action evidence is an ActionEvidence with its source. Got {self.action_evidence!r}"
             )
         self._require_one_measurement_per_resource_type()
+        if self.invocation is not None:
+            if not isinstance(self.invocation, Mapping):
+                raise EvidenceError(
+                    f"what an agent target records of an invocation is a mapping. Got {self.invocation!r}"
+                )
+            object.__setattr__(
+                self, "invocation", json_data(self.invocation, f"the invocation of Attempt {self.attempt_id!r}")
+            )
         confidence = self.confidence
         if confidence is not None and not isinstance(confidence, (ConfidenceRating, ConfidenceUnavailable)):
             raise EvidenceError(
@@ -379,6 +390,7 @@ class Attempt:
             "task_outcome": None if self.task_outcome is None else self.task_outcome.to_dict(),
             "action_evidence": None if self.action_evidence is None else self.action_evidence.to_dict(),
             "resource_measurements": [measurement.to_dict() for measurement in self.resource_measurements],
+            "invocation": self.invocation,
             "confidence": None if self.confidence is None else self.confidence.to_dict(),
             "operational_constraints": [constraint.to_dict() for constraint in self.operational_constraints],
             "violation_assessments": [assessment.to_dict() for assessment in self.violation_assessments],

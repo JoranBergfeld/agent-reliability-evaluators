@@ -423,6 +423,7 @@ def _invoke_agent(
         execution_status=ExecutionStatus.COMPLETED,
         task_outcome=outcome,
         resource_measurements=_resource_measurements(elapsed, response.resource_measurements),
+        invocation=response.invocation,
         operational_constraints=task.operational_constraints,
         violation_assessments=violation_assessments,
         action_evidence=actions,
