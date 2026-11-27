@@ -267,6 +267,26 @@ def test_a_worst_weight_below_high_needs_a_usable_rating_for_every_violation_of_
     }
 
 
+def test_an_attempt_with_an_unrated_and_an_unmapped_violation_is_counted_once():
+    # a1 has one violation with no rating and one with an unmapped label. Over a2 (medium): 1 - 0.5 = 0.5.
+    result = evaluate(
+        attempt(
+            "a1",
+            operational_constraints=[LEAVE_UNRELATED, NO_BULK_DELETE],
+            violation_assessments=[violation(LEAVE_UNRELATED, critical()), unrated(NO_BULK_DELETE)],
+        ),
+        attempt("a2", {LEAVE_UNRELATED: "medium"}),
+    )
+
+    assert result.value == 0.5
+    assert result.counts["attempts"].to_dict() == {
+        "total": 2,
+        "valid": 1,
+        "missing": [{"reason": "a violation has no severity rating", "count": 1, "ids": ["a1"]}],
+        "excluded": [],
+    }
+
+
 def test_a_recorded_high_violation_counts_even_when_another_violation_of_the_attempt_has_no_usable_rating():
     # a1: high and an unmapped critical. a2: high and an unrated violation. No rating is worse than high,
     # so both worst weights are 1 whatever the others would be. a3 is low.
