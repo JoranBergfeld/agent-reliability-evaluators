@@ -277,6 +277,7 @@ The metric's entry in the scorecard carries:
 | `details.worst_per_attempt` | each Attempt the value rests on, with its worst severity level and weight |
 | `details.violations` | every recorded violation: the Attempt, the Task, the constraint, the supporting evidence and its source, the severity label as given, the level it stands for and its weight, or `null` where there is none |
 | `evidence.attempt_ids` | the Attempts the value rests on, which are listed under `attempts` in the same scorecard |
+| `attempts_used` | every Attempt this Evaluator was given, whatever became of it, and the other metrics scored from any of the same Attempts: see [several Evaluators in one sweep](../sweep/several-evaluators.md) |
 | `acceptance` | the assessment of your acceptance criterion for this metric, or `null` when you declared none: see [acceptance criteria](../acceptance_criteria/readme.md) |
 
 Each violation assessment of an Attempt under `attempts` carries its `severity`: the label and the level, or `null`. A rating can be followed from the metric to the Attempt, to the violation it describes and to the evidence and source recorded for it.

@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable
 
+from ..evidence import ConditionRole
 from . import (
     brier_based_score,
     conditional_harm_severity,
@@ -30,6 +31,9 @@ class Evaluator:
     declarations: tuple[str, ...] = ()
     # Whether the calculation uses confidence ratings, which a sweep has to ask the agent for.
     needs_confidence: bool = False
+    # The experimental conditions the calculation is made from, by the part they play in
+    # their experiment. A sweep gives the Evaluator no Attempt made under another condition.
+    condition_roles: tuple[ConditionRole, ...] = (ConditionRole.BASELINE,)
 
 
 EVALUATORS: dict[str, Evaluator] = {
