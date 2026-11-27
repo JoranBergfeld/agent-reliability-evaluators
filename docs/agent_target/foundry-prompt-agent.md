@@ -191,14 +191,19 @@ Observed on 2026-11-27 in Sweden Central, on the disposable fixture in [`live_fi
 
 ### The live check
 
-`tests/live/test_foundry_prompt_agent_live.py` runs one sweep through `run_sweep` and this target: five Attempts under the baseline and five under a fault on the update tool, scoring outcome consistency and fault robustness. It was run three times on the same fixture, the last time on the code as it is here, and passed each time with the same result.
+`tests/live/test_foundry_prompt_agent_live.py` runs one sweep through `run_sweep` and this target, scoring outcome consistency and fault robustness. The experiment declares continuing state, with five Attempts under the baseline and five under a fault on the update tool. The agent is asked to do the whole Task in every Attempt. It ran twice on the code as it is here and passed both times, with the same result.
 
-- **Outcome consistency matched an independent calculation.** Four baseline Attempts completed the Task. The fifth was sent the Task without its last step, so that the outcomes would differ, and failed the strict task-success rule. The check decides each outcome itself from the service's events and final state, which the clean-up control reads: p = 4/5, (2 × 0.8 − 1)² = 0.36. The scorecard reported 0.36, from the same five Attempts and with the same five task outcomes.
-- **Each completed Attempt** had a `response_id` of its own, the agent version `1`, the model deployment, the served model `gpt-4.1-mini-2025-04-14`, the returned `metadata` naming the Attempt, and usage of 757 to 896 total tokens. The tool calls the project exposed were the calls the service received, in the same order, and the tool-call count was their number. An Attempt took 4.9 to 10.3 seconds, the first one including the call to the Azure CLI.
-- **Each Attempt under the fault** was answered with HTTP 400 `tool_user_error` and recorded as `failed`, with no task outcome, no usage and the reason for that. The service recorded four successful calls and then the update, answered with 503 by the injected fault. The verify control observed the fault from those events.
+- **Outcome consistency matched an independent calculation.** The check decides each task outcome itself, from the events and the final state the service had recorded when the Attempt ended, which the verify control reads. The first baseline Attempt left the service with exactly the five operations of the Task and succeeded. Each later one added five more and failed the strict task-success rule. p = 1/5, (2 × 0.2 − 1)² = 0.36. The scorecard reported 0.36, from the same five Attempts and with the same five task outcomes.
+- **A new conversation did not reset the service.** Every Attempt was a response of its own. The service held 5, 10, 15, 20 and 25 operations after the five baseline Attempts. Had each new conversation been a reset, every Attempt would have succeeded and the value would have been 1.
+- **Each completed Attempt** had a `response_id` of its own, the agent version `1`, the model deployment, the served model `gpt-4.1-mini-2025-04-14`, the returned `metadata` naming the Attempt, and usage of 782 to 823 total tokens. The tool calls the project exposed were the calls the service received during the Attempt, in the same order, and the tool-call count was their number. An Attempt took 4.3 to 10.8 seconds, the first one including the call to the Azure CLI.
+- **Each Attempt under the fault** was answered with HTTP 400 `tool_user_error` and recorded as `failed`, with no task outcome, no usage and the reason for that. During each, the service recorded four successful calls and then the update, answered with 503 by the injected fault. The verify control observed the fault from those events.
 - **Fault robustness** was unavailable, with the reason `no valid Attempt under the fault variation`.
 
+An earlier form of the check ran three times before that, on an earlier fixture and with the same findings for completed and faulted Attempts. It used fresh state with a state of the service per Attempt, and sent one of five baseline Attempts the Task without its last step: four succeeded, one failed, and the scorecard reported 0.36 as the check calculated. That form put text of its own in front of the prompt, which the target no longer allows.
+
 ### Single invocations through the target, outside the check
+
+Made on the earlier fixture.
 
 - **Time limit.** With a limit of 1 second, set on the target, and of 1.5 seconds, declared for the Attempt, the target raised `TimeoutError` after that long. Twenty seconds later the service had recorded two calls for the first and one for the second, and no more: the agent had acted before the caller stopped waiting, and did not finish. So an Attempt that timed out can leave changes behind, and your clean-up control has to cope with them. Getting a token from the Azure CLI is not counted in the target's limit: the first invocation took 3.7 seconds in all.
 - **Pinned version.** With `agent_version="1"`, version `1` answered. With a version that does not exist, the project answered HTTP 404 `not_found`, with the identity of the request in `error.additionalInfo.request_id`.
@@ -210,11 +215,19 @@ Observed on 2026-11-27 in Sweden Central, on the disposable fixture in [`live_fi
 
 ### Resources
 
-TEARDOWN
+Three resource groups were created for this work, all in the subscription named `Sandbox`:
+
+| Resource group | What it was for |
+| --- | --- |
+| `rg-are-43-4844d30a` | The fixture of the earlier form of the check and of the single invocations and requests. |
+| `rg-are-43-791299ee` | Never became a fixture. Its model deployment was refused with `(InvalidResourceProperties) Failed to validate policies for model gpt-4.1-mini/2025-04-14`. Provisioning again a minute later, with nothing changed, succeeded. The cause is not known. |
+| `rg-are-43-7ec9c0dc` | The fixture of the check as it is here. |
+
+Each was deleted with the fixture's `teardown`, the second by the provisioning that failed, and the soft-deleted Foundry accounts were purged. Afterwards a separate `az group exists` returned `false` for each of the three. Deleting a group that held a whole fixture took 27 and 29 minutes.
 
 ### Not verified
 
-- The self-contained form of the live check, in which it provisions and tears down its own fixture. The check was run on a fixture provisioned beforehand.
+- The self-contained form of the live check, in which it provisions and tears down its own fixture. The check was run on fixtures provisioned beforehand with `python -m live_fixture provision`.
 - A response that arrives with a status other than `completed`. The target's handling of it is tested on the fake project only.
 - Signing in from GitHub Actions or Azure DevOps, and a token function other than the Azure CLI.
 - Tool types other than OpenAPI, a second version of the agent, and which roles are really required.
