@@ -77,7 +77,8 @@ def run_sweep(
     ManagedScoringFailure before any Attempt. After the Attempts, an Evaluator whose managed
     run gives no result has none: the scorecard is partial, names the missing result with its
     execution error, and keeps the evidence and the result of every other metric. The sweep
-    never scores such an Evaluator in this process instead.
+    never scores such an Evaluator in this process instead. `rescore_in_customer_process`
+    does, when the customer asks for it, and reports that result beside the managed one.
 
     `experiments` are controlled experiments: the sweep invokes their customer controls
     around every Attempt and follows their starting-state policy. `tasks` are Tasks given

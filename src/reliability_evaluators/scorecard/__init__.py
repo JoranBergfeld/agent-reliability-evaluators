@@ -6,6 +6,7 @@ rendered from it, and both are delivered with the evidence to a location the cal
 
 from .acceptance import AcceptanceCriterion, CustomerAssessment, criteria_by_metric
 from .assemble import (
+    RESCORE,
     SCHEMA_VERSION,
     CutShort,
     ExecutionRecord,
@@ -14,12 +15,14 @@ from .assemble import (
     ScoredMetric,
     build_scorecard,
     read_execution_record,
+    rescore_entry,
     to_json,
 )
 from .delivery import ArtifactLocation, ReportingFailure
 from .report import render_report
 
 __all__ = [
+    "RESCORE",
     "SCHEMA_VERSION",
     "AcceptanceCriterion",
     "ArtifactLocation",
@@ -34,5 +37,6 @@ __all__ = [
     "criteria_by_metric",
     "read_execution_record",
     "render_report",
+    "rescore_entry",
     "to_json",
 ]

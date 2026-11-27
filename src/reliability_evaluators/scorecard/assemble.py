@@ -398,6 +398,34 @@ def _with_acceptance(entry: dict[str, Any], criterion: AcceptanceCriterion | Non
     return {**entry, "acceptance": None if criterion is None else assess(criterion, entry)}
 
 
+# Where the entry of a metric records the customer-process rescore that the customer requested for it.
+RESCORE = "customer_process_rescore"
+RESCORE_MEANING = (
+    "A customer-process rescore: the customer asked for the evidence that Foundry-managed scoring was given "
+    "for this metric to be scored in their own process. It is a result of its own, attributed to the "
+    "customer-process scoring path. It is not the Foundry-managed result of the metric and does not replace "
+    "it: what Foundry-managed scoring gave stays in the entry of the metric as it was."
+)
+
+
+def rescore_entry(
+    scored: ScoredMetric, evidence_sha256: str | None, criterion: AcceptanceCriterion | None
+) -> dict[str, Any]:
+    """A customer-process rescore as the entry of its metric records it, beside the Foundry-managed result.
+
+    It holds what the entry of a metric scored in the customer's own process holds, and
+    its own acceptance assessment. `evidence_sha256` is the digest of the evidence it was
+    calculated from, as that evidence is submitted to Foundry.
+    """
+    metric = scored.definition.metric
+    entry = {
+        "meaning": RESCORE_MEANING,
+        "evidence_sha256": evidence_sha256,
+        **_metric_entry(metric, scored, _execution_failure(scored)),
+    }
+    return _with_acceptance(entry, criterion)
+
+
 def to_json(scorecard: dict[str, Any]) -> str:
     """Serialise a scorecard as strict JSON. Numbers keep the precision they were computed at."""
     return json.dumps(scorecard, indent=2, allow_nan=False)

@@ -302,6 +302,16 @@ def _evidence_digest(encoded: str) -> str:
     return encoded.partition(":")[0]
 
 
+def submitted_evidence_sha256(metric_id: str, tasks: Iterable[TaskEvidence]) -> str:
+    """The digest that the grouped Attempt evidence of a metric is submitted to Foundry with.
+
+    A managed result records it. Evidence that gives the same digest is the evidence the
+    managed evaluator was sent. Raises DerivationError for a metric without a Foundry evaluator.
+    """
+    artifact = derive_artifact(metric_id)
+    return _evidence_digest(artifact.item(tasks)[artifact.evidence_field])
+
+
 def _artifact(metric_id: str) -> ManagedArtifact:
     try:
         return derive_artifact(metric_id)
