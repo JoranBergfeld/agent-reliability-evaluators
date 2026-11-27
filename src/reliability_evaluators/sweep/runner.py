@@ -2,38 +2,52 @@
 
 from __future__ import annotations
 
-import threading
-import time
+import os
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 from functools import partial
-from typing import Any, Callable, Iterator, Sequence
+from time import perf_counter
+from typing import Any, Callable, Sequence
 
 from ..agent_target import AgentResponse, AgentTarget, AttemptRequest
 from ..evaluators import EVALUATORS, RELIABILITY_METRICS, Evaluator, Fidelity, ScoringPath
 from ..evidence import (
     ActionEvidence,
     Attempt,
+    ConditionRole,
+    ConfidenceUnavailable,
     EvidenceError,
     ExecutionStatus,
+    ResourceMeasurement,
+    ResourceType,
     TaskEvidence,
     TaskOutcome,
     ViolationAssessment,
 )
-from ..scorecard import AcceptanceCriterion, ExperimentRun, ScoredMetric, build_scorecard, criteria_by_metric
-from .declaration import ActionEvidenceDeclaration, Task
+from ..scorecard import AcceptanceCriterion, ArtifactLocation, ScoredMetric, build_scorecard, criteria_by_metric
+from .confidence import ATTEMPT_NOT_COMPLETED, SWEEP_CANCELLED, elicit_confidence
+from .declaration import ActionEvidenceDeclaration, Experiment, Task
+from .execution import RETRYABLE, Budget, Cancellation, planned_attempts
+from .lifecycle import ConfidenceFollowUp, planned_attempt_ids, run_experiments
+
+ELAPSED_TIME_UNIT = "seconds"
+ELAPSED_TIME_BOUNDARY = (
+    "wall clock from just before the agent target is invoked until it returns, measured by the Evaluator sweep"
+)
 
 
 def run_sweep(
     *,
-    tasks: Sequence[Task],
+    tasks: Sequence[Task] = (),
+    experiments: Sequence[Experiment] = (),
     agent_target: AgentTarget,
     metrics: Sequence[str],
     action_evidence: ActionEvidenceDeclaration | None = None,
     acceptance_criteria: Sequence[AcceptanceCriterion] = (),
     max_concurrent_attempts: int = 1,
     cancellation: Callable[[], bool] | None = None,
-    clock: Callable[[], float] = time.monotonic,
+    clock: Callable[[], float] = perf_counter,
+    artifact_dir: str | os.PathLike[str] | None = None,
 ) -> dict[str, Any]:
     """Make the declared Attempts, score the selected metrics, and return the scorecard.
 
@@ -41,74 +55,158 @@ def run_sweep(
     in this process. The result is the machine-readable reliability scorecard, as
     JSON-compatible data.
 
-    Attempts run one after another, Task by Task, unless `max_concurrent_attempts` is more
-    than 1. Then up to that many Attempts are in flight at once, and the agent target and
-    everything the customer supplies (task-success rules, violation assessors, the action
-    recorder and `cancellation`) are called from several threads. The scorecard records
-    which of the two it was. Shared state and timing are the caller's to control.
+    `experiments` are controlled experiments: the sweep invokes their customer controls
+    around every Attempt and follows their starting-state policy. `tasks` are Tasks given
+    without an experiment: nothing prepares or restores their state, and their Attempts
+    record no starting-state policy and no condition. The sweep never assumes that the
+    agent target resets conversation or external state.
 
-    The Attempts planned at one Task are one experiment, run under that Task's execution
-    limits. `cancellation` is asked before every Attempt and retry; once it returns True no
-    further one is started. Attempts that are in flight are not interrupted. What was
-    collected until then is scored, and the scorecard is partial and names what is missing.
+    Attempts run one after another, Task by Task and then experiment by experiment. With
+    `max_concurrent_attempts` above 1, up to that many Attempts of the Tasks given without
+    an experiment are in flight at once, and the agent target and everything the customer
+    supplies for those Tasks are called from several threads, `cancellation` included.
+    The Attempts of an experiment always run one after another, after those Tasks, because
+    each depends on the state the customer controls prepare. The scorecard records what
+    was declared. Shared state and timing are the caller's to control.
 
-    `clock` returns seconds and is what time limits are measured with.
+    Every Task has its own execution limits, in an experiment or without one. A planned
+    Attempt whose invocation failed or timed out is made again while it has retries left.
+    `cancellation` is asked before every Attempt and retry; once it returns True no further
+    one is started and no further request is sent to the agent. Attempts that are in flight
+    are not interrupted. What was collected until then is scored, and the scorecard is
+    partial and names what is missing.
 
     `action_evidence` declares where the actions of every Attempt are recorded from and
     what action type each tool name is. The trajectory metrics need it, and every metric
     that needs it is scored from the same Attempts.
 
+    When a selected metric uses confidence, each completed Attempt is followed by one
+    separate confidence-only request through the agent target, before the next Attempt.
+    In an experiment the request is sent after the condition is verified and before the
+    clean-up control, and only when the condition was met.
+
     `acceptance_criteria` are the customer's own, at most one per metric. Each is reported
     with its metric as met, not met, or not assessed with a reason. Without one, a metric
     has no acceptance verdict.
+
+    The sweep times every invocation that returns, on `clock`, which gives seconds and
+    never runs backwards. An agent target that reports its own elapsed time is recorded
+    instead. Every other resource measurement comes from the agent target. Time limits are
+    measured on the same clock.
 
     A declaration that cannot be run is rejected before any Attempt is made. A task-success
     rule that does not return a sourced, binary TaskOutcome stops the sweep. So does a
     violation assessor that does not return sourced violation assessments of the operational
     constraints its Task declares, and an action recording that is not a sequence of ActionEvent.
+
+    With `artifact_dir`, the attempt-level evidence, the scorecard and the human-readable
+    report rendered from it are also written to that directory. The caller chooses it in the
+    run or artifact context of the platform it runs on. The sweep then either delivers all
+    three or raises ReportingFailure: whatever stops it, a rejected declaration included, is
+    raised as that, and the evidence collected until then is kept at the location.
+    """
+    location = None if artifact_dir is None else ArtifactLocation(artifact_dir)
+    attempts: list[Attempt] = []
+    try:
+        scorecard = _sweep(
+            attempts,
+            tasks=tasks,
+            experiments=experiments,
+            agent_target=agent_target,
+            metrics=metrics,
+            action_evidence=action_evidence,
+            acceptance_criteria=acceptance_criteria,
+            max_concurrent_attempts=max_concurrent_attempts,
+            cancellation=cancellation,
+            clock=clock,
+        )
+    except Exception as error:
+        if location is None:
+            raise
+        raise location.failed(
+            "the Evaluator sweep stopped before it produced a scorecard",
+            error,
+            evidence=[attempt.to_dict() for attempt in attempts],
+        ) from error
+    if location is not None:
+        location.deliver(scorecard)
+    return scorecard
+
+
+def _sweep(
+    attempts: list[Attempt],
+    *,
+    tasks: Sequence[Task],
+    experiments: Sequence[Experiment],
+    agent_target: AgentTarget,
+    metrics: Sequence[str],
+    action_evidence: ActionEvidenceDeclaration | None,
+    acceptance_criteria: Sequence[AcceptanceCriterion],
+    max_concurrent_attempts: int,
+    cancellation: Callable[[], bool] | None,
+    clock: Callable[[], float],
+) -> dict[str, Any]:
+    """Make the Attempts and score them. Each Attempt is added to `attempts` as it is made,
+    so that `run_sweep` still has the evidence if this stops.
     """
     evaluators = [_evaluator(metric_id) for metric_id in metrics]
     declared = {"action_types": None if action_evidence is None else action_evidence.mapping}
     for evaluator in evaluators:
         _require_declarations(evaluator, declared)
-    _require_distinct_tasks(tasks)
+    _require_distinct_tasks([*tasks, *(experiment.task for experiment in experiments)])
+    _require_distinct_identities(tasks, experiments)
     # Called for its check: a second criterion for one metric is rejected here, not after the Attempts.
     criteria_by_metric(acceptance_criteria)
     if type(max_concurrent_attempts) is not int or max_concurrent_attempts < 1:
         raise ValueError(f"max_concurrent_attempts is a whole number, 1 or more, got {max_concurrent_attempts!r}")
-    cancelled = _Cancellation(cancellation)
-    running = [_Experiment(task, agent_target, action_evidence, cancelled, clock) for task in tasks]
-    planned = _run_planned_attempts(
+    ask_confidence = any(evaluator.needs_confidence for evaluator in evaluators)
+    cancelled = Cancellation(cancellation)
+    make_attempt = partial(
+        _invoke_agent,
+        agent_target=agent_target,
+        action_evidence=action_evidence,
+        ask_confidence=ask_confidence,
+        cancellation=cancelled,
+        clock=clock,
+    )
+    budgets = [Budget(task, cancelled, clock) for task in tasks]
+    made = _run_planned_attempts(
         [
-            partial(experiment.run_planned_attempt, number)
-            for task, experiment in zip(tasks, running)
+            partial(_run_planned_attempt, task, number, make_attempt, budget, attempts)
+            for task, budget in zip(tasks, budgets)
             for number in range(1, task.attempts + 1)
         ],
         max_concurrent_attempts,
     )
-    attempts: list[Attempt] = []
-    experiments: list[ExperimentRun] = []
-    evidence: list[TaskEvidence] = []
-    for task, experiment in zip(tasks, running):
-        of_experiment = [next(planned) for _ in range(task.attempts)]
-        made = [attempt for executions in of_experiment for attempt in executions]
-        attempts.extend(made)
-        experiments.append(experiment.summary(of_experiment))
-        # A Task whose Attempts were not made is still a Task in the evidence.
-        evidence.append(TaskEvidence(task.task_id, tuple(made)))
+    # In the order planned, whatever the order they finished in.
+    attempts[:] = [attempt for executions in made for attempt in executions]
+    planned = []
+    for task, budget in zip(tasks, budgets):
+        of_task, made = made[: task.attempts], made[task.attempts :]
+        planned.append(planned_attempts(task, [executions for executions in of_task if executions], budget))
+    planned += run_experiments(
+        experiments, make_attempt, ask_confidence, lambda task: Budget(task, cancelled, clock), attempts
+    )
+    # The Evaluators that exist score Attempts under the baseline. Attempts under a variation
+    # are kept in the scorecard and are not mixed in.
+    scored_attempts = [attempt for attempt in attempts if attempt.condition_role is not ConditionRole.VARIATION]
+    # A Task whose Attempts were not made is still a Task in the evidence.
+    evidence = [
+        TaskEvidence(task.task_id, tuple(attempt for attempt in scored_attempts if attempt.task_id == task.task_id))
+        for task in (*tasks, *(experiment.task for experiment in experiments))
+    ]
     scored = [
         ScoredMetric(
             result=evaluator.evaluate(evidence, *(declared[name] for name in evaluator.declarations)),
             scoring_path=ScoringPath.CUSTOMER_PROCESS,
             fidelity=Fidelity.AUTHORITATIVE,
-            experiment_ids=tuple(experiment.experiment_id for experiment in experiments),
         )
         for evaluator in evaluators
     ]
     return build_scorecard(
         metrics=scored,
         attempts=attempts,
-        experiments=experiments,
+        planned=planned,
         max_concurrent_attempts=max_concurrent_attempts,
         acceptance_criteria=acceptance_criteria,
     )
@@ -116,14 +214,14 @@ def run_sweep(
 
 def _run_planned_attempts(
     planned: Sequence[Callable[[], list[Attempt]]], max_concurrent_attempts: int
-) -> Iterator[list[Attempt]]:
+) -> list[list[Attempt]]:
     """Run every planned Attempt and give their executions in the order they were planned."""
     if max_concurrent_attempts == 1:
-        return iter([run() for run in planned])
+        return [run() for run in planned]
     with ThreadPoolExecutor(max_workers=max_concurrent_attempts) as pool:
         futures = [pool.submit(run) for run in planned]
         try:
-            return iter([future.result() for future in futures])
+            return [future.result() for future in futures]
         except BaseException:
             for future in futures:
                 future.cancel()
@@ -155,180 +253,166 @@ def _require_distinct_tasks(tasks: Sequence[Task]) -> None:
         seen.add(task.task_id)
 
 
-_RETRYABLE = (ExecutionStatus.FAILED, ExecutionStatus.TIMED_OUT)
+def _require_distinct_identities(tasks: Sequence[Task], experiments: Sequence[Experiment]) -> None:
+    seen: set[str] = set()
+    for experiment in experiments:
+        if experiment.experiment_id in seen:
+            raise ValueError(f"more than one experiment is declared as {experiment.experiment_id!r}")
+        seen.add(experiment.experiment_id)
+    planned: set[str] = set()
+    for attempt_id in (
+        *(_attempt_id(task, number) for task in tasks for number in range(1, task.attempts + 1)),
+        *(attempt_id for experiment in experiments for attempt_id in planned_attempt_ids(experiment)),
+    ):
+        if attempt_id in planned:
+            raise ValueError(f"more than one Attempt would have the identity {attempt_id!r}")
+        planned.add(attempt_id)
 
 
-class _Cancellation:
-    """Whether the caller asked for the sweep to stop. Once asked, it stays asked."""
-
-    def __init__(self, requested: Callable[[], bool] | None) -> None:
-        self._requested = requested
-        self._latched = False
-
-    def requested(self) -> bool:
-        if not self._latched and self._requested is not None and self._requested():
-            self._latched = True
-        return self._latched
+def _attempt_id(task: Task, number: int) -> str:
+    return f"{task.task_id}/attempt-{number}"
 
 
-class _Experiment:
-    """The Attempts planned at one Task, made under the Task's execution limits."""
+def _run_planned_attempt(
+    task: Task,
+    number: int,
+    make_attempt: Callable[..., tuple[Attempt, ConfidenceFollowUp]],
+    budget: Budget,
+    attempts: list[Attempt],
+) -> list[Attempt]:
+    """Make one planned Attempt of a Task given without an experiment, and its retries.
 
-    def __init__(
-        self,
-        task: Task,
-        agent_target: AgentTarget,
-        action_evidence: ActionEvidenceDeclaration | None,
-        cancellation: _Cancellation,
-        clock: Callable[[], float],
-    ) -> None:
-        self._task = task
-        self._agent_target = agent_target
-        self._action_evidence = action_evidence
-        self._cancellation = cancellation
-        self._clock = clock
-        # Planned Attempts of one experiment may run on several threads.
-        self._lock = threading.Lock()
-        self._started: float | None = None
-        # Why no further Attempt of this experiment is started, once that is so.
-        self._stopped: ExecutionStatus | None = None
+    Every execution is returned, in order, and added to `attempts` as it is made. Nothing
+    is returned for a planned Attempt that may no longer start.
+    """
+    first = _attempt_id(task, number)
+    executions: list[Attempt] = []
+    retries = budget.may_start()
+    while retries:
+        retry = len(executions)
+        attempt, follow_up = make_attempt(
+            task, first if retry == 0 else f"{first}/retry-{retry}", executions[-1].attempt_id if executions else None
+        )
+        attempt = follow_up(attempt)
+        retries = (
+            attempt.execution_status in RETRYABLE and retry < task.limits.max_retries and budget.may_start()
+        )
+        if retries:
+            # The Attempt stays in the evidence with why it did not complete. The retry is another Attempt.
+            attempt = replace(attempt, execution_status=ExecutionStatus.RETRIED)
+        executions.append(attempt)
+        attempts.append(attempt)
+    return executions
 
-    def run_planned_attempt(self, number: int) -> list[Attempt]:
-        """Make one planned Attempt and its retries. Every execution is returned, in order.
 
-        Nothing is returned for a planned Attempt that may no longer start.
-        """
-        first = f"{self._task.task_id}/attempt-{number}"
-        executions: list[Attempt] = []
-        for retry in range(self._task.limits.max_retries + 1):
-            if executions and executions[-1].execution_status not in _RETRYABLE:
-                break
-            if not self._may_start():
-                break
-            retry_of = None
-            if executions:
-                # The Attempt stays in the evidence with why it did not complete. The retry is another Attempt.
-                executions[-1] = replace(executions[-1], execution_status=ExecutionStatus.RETRIED)
-                retry_of = executions[-1].attempt_id
-            executions.append(self._run_attempt(first if retry == 0 else f"{first}/retry-{retry}", retry_of))
-        return executions
+def _invoke_agent(
+    task: Task,
+    attempt_id: str,
+    retry_of: str | None,
+    *,
+    agent_target: AgentTarget,
+    action_evidence: ActionEvidenceDeclaration | None,
+    ask_confidence: bool,
+    cancellation: Cancellation,
+    clock: Callable[[], float],
+) -> tuple[Attempt, ConfidenceFollowUp]:
+    """Invoke the agent for one Attempt and collect the evidence of it, short of its confidence evidence.
 
-    def _may_start(self) -> bool:
-        with self._lock:
-            if self._stopped is not None:
-                return False
-            if self._cancellation.requested():
-                self._stopped = ExecutionStatus.CANCELLED
-                return False
-            now = self._clock()
-            if self._started is None:
-                self._started = now
-            limit = self._task.limits.experiment_timeout_seconds
-            if limit is not None and now - self._started >= limit:
-                self._stopped = ExecutionStatus.TIMED_OUT
-                return False
-            return True
+    Returns the Attempt and the follow-up that completes it with its confidence evidence.
+    The two are separate so that an experiment can verify its condition in between.
+    """
+    limit = task.limits.attempt_timeout_seconds
+    request = AttemptRequest(attempt_id=attempt_id, task_id=task.task_id, prompt=task.prompt, timeout_seconds=limit)
 
-    def _run_attempt(self, attempt_id: str, retry_of: str | None) -> Attempt:
-        task = self._task
-        limit = task.limits.attempt_timeout_seconds
-        request = AttemptRequest(attempt_id=attempt_id, task_id=task.task_id, prompt=task.prompt, timeout_seconds=limit)
-
-        def not_completed(status: ExecutionStatus, why: str) -> Attempt:
-            return Attempt(
-                attempt_id=attempt_id,
-                task_id=task.task_id,
-                execution_status=status,
-                execution_error=why,
-                retry_of=retry_of,
-                operational_constraints=task.operational_constraints,
-            )
-
-        error = None
-        started = self._clock()
-        try:
-            response = self._agent_target.invoke(request)
-        except Exception as raised:
-            error = raised
-        # The sweep cannot interrupt an invocation. It measures, so that the limit holds
-        # whether or not the agent target stopped at it.
-        over_the_limit = limit is not None and self._clock() - started > limit
-        if error is not None:
-            why = f"{type(error).__name__}: {error}"
-            if isinstance(error, TimeoutError):
-                return not_completed(ExecutionStatus.TIMED_OUT, why)
-            if over_the_limit:
-                return not_completed(
-                    ExecutionStatus.TIMED_OUT, f"{why}, after the Attempt's time limit of {limit:g} seconds"
-                )
-            if self._cancellation.requested():
-                return not_completed(ExecutionStatus.CANCELLED, f"{why}, after the sweep was cancelled")
-            return not_completed(ExecutionStatus.FAILED, why)
-        if over_the_limit:
-            # The limit applies to every Attempt alike, so a late answer is not scored.
-            return not_completed(
-                ExecutionStatus.TIMED_OUT,
-                f"the agent target answered after the Attempt's time limit of {limit:g} seconds",
-            )
-        outcome = task.success_rule(request, response)
-        if not isinstance(outcome, TaskOutcome):
-            raise EvidenceError(
-                f"the task-success rule of Task {task.task_id!r} must return a TaskOutcome with its source, "
-                f"got {outcome!r}"
-            )
-        return Attempt(
+    def not_completed(status: ExecutionStatus, why: str) -> tuple[Attempt, ConfidenceFollowUp]:
+        attempt = Attempt(
             attempt_id=attempt_id,
             task_id=task.task_id,
-            execution_status=ExecutionStatus.COMPLETED,
-            task_outcome=outcome,
+            execution_status=status,
+            execution_error=why,
             retry_of=retry_of,
             operational_constraints=task.operational_constraints,
-            violation_assessments=_assess_violations(task, request, response),
-            action_evidence=(
-                None
-                if self._action_evidence is None
-                else _recorded_actions(self._action_evidence, request, response)
-            ),
         )
+        # The agent is not asked about an Attempt that did not complete.
+        return attempt, partial(_with_confidence, ask=None, ask_confidence=ask_confidence, cancellation=cancellation)
 
-    def summary(self, planned: Sequence[Sequence[Attempt]]) -> ExperimentRun:
-        """How the experiment ended, from its planned Attempts, each given as its executions in order."""
-        task = self._task
-        not_made = sum(1 for executions in planned if not executions)
-        not_completed = tuple(
-            executions[-1].attempt_id
-            for executions in planned
-            if executions and executions[-1].execution_status is not ExecutionStatus.COMPLETED
+    started = clock()
+    try:
+        response = agent_target.invoke(request)
+    except Exception as error:
+        why = f"{type(error).__name__}: {error}"
+        if isinstance(error, TimeoutError):
+            return not_completed(ExecutionStatus.TIMED_OUT, why)
+        # The sweep cannot interrupt an invocation. It measures, so that the limit holds
+        # whether or not the agent target stopped at it.
+        if limit is not None and clock() - started > limit:
+            return not_completed(
+                ExecutionStatus.TIMED_OUT, f"{why}, after the Attempt's time limit of {limit:g} seconds"
+            )
+        if cancellation.requested():
+            return not_completed(ExecutionStatus.CANCELLED, f"{why}, after the sweep was cancelled")
+        return not_completed(ExecutionStatus.FAILED, why)
+    elapsed = clock() - started
+    if limit is not None and elapsed > limit:
+        # The limit applies to every Attempt alike, so a late answer is not scored.
+        return not_completed(
+            ExecutionStatus.TIMED_OUT, f"the agent target answered after the Attempt's time limit of {limit:g} seconds"
         )
-        missing = []
-        if not_made:
-            missing.append(f"{not_made} of {task.attempts} planned Attempts were not made")
-        if not_completed:
-            missing.append(f"{len(not_completed)} of {task.attempts} planned Attempts did not complete")
-        status, reason = ExecutionStatus.COMPLETED, None
-        if missing:
-            status, reason = ExecutionStatus.FAILED, "; ".join(missing)
-            if self._stopped is ExecutionStatus.TIMED_OUT:
-                status = ExecutionStatus.TIMED_OUT
-                limit = task.limits.experiment_timeout_seconds
-                reason = f"its time limit of {limit:g} seconds was reached: {reason}"
-            elif self._stopped is ExecutionStatus.CANCELLED or any(
-                executions and executions[-1].execution_status is ExecutionStatus.CANCELLED for executions in planned
-            ):
-                status, reason = ExecutionStatus.CANCELLED, f"the sweep was cancelled: {reason}"
-        return ExperimentRun(
-            # The Attempts planned at one Task are one experiment.
-            experiment_id=task.task_id,
-            task_id=task.task_id,
-            planned_attempts=task.attempts,
-            limits=task.limits.to_dict(),
-            execution_status=status,
-            reason=reason,
-            attempt_ids=tuple(attempt.attempt_id for executions in planned for attempt in executions),
-            not_completed=not_completed,
-            not_made=not_made,
-            retries=sum(max(len(executions) - 1, 0) for executions in planned),
+    outcome = task.success_rule(request, response)
+    if not isinstance(outcome, TaskOutcome):
+        raise EvidenceError(
+            f"the task-success rule of Task {task.task_id!r} must return a TaskOutcome with its source, "
+            f"got {outcome!r}"
         )
+    # The task outcome is decided before the agent is asked for its confidence rating, so the
+    # rating cannot enter the outcome, and the follow-up cannot disturb what the outcome is decided from.
+    # The same holds for the violation assessments and the recorded actions.
+    violation_assessments = _assess_violations(task, request, response)
+    actions = None if action_evidence is None else _recorded_actions(action_evidence, request, response)
+    attempt = Attempt(
+        attempt_id=attempt_id,
+        task_id=task.task_id,
+        execution_status=ExecutionStatus.COMPLETED,
+        task_outcome=outcome,
+        retry_of=retry_of,
+        resource_measurements=_resource_measurements(elapsed, response.resource_measurements),
+        operational_constraints=task.operational_constraints,
+        violation_assessments=violation_assessments,
+        action_evidence=actions,
+    )
+    ask = partial(elicit_confidence, task, request, response, agent_target)
+    return attempt, partial(_with_confidence, ask=ask, ask_confidence=ask_confidence, cancellation=cancellation)
+
+
+def _with_confidence(
+    attempt: Attempt, *, ask: Callable[[], Any] | None, ask_confidence: bool, cancellation: Cancellation
+) -> Attempt:
+    """The Attempt with its confidence evidence.
+
+    The agent is asked only when the Attempt completed and the sweep was not cancelled since.
+    """
+    if not ask_confidence:
+        return attempt
+    if ask is None or attempt.execution_status is not ExecutionStatus.COMPLETED:
+        return replace(attempt, confidence=ConfidenceUnavailable(reason=ATTEMPT_NOT_COMPLETED))
+    if cancellation.requested():
+        return replace(attempt, confidence=ConfidenceUnavailable(reason=SWEEP_CANCELLED))
+    return replace(attempt, confidence=ask())
+
+
+def _resource_measurements(
+    elapsed: float, reported: Sequence[ResourceMeasurement]
+) -> tuple[ResourceMeasurement, ...]:
+    """What the agent target reported, with the sweep's own elapsed time unless the target gave one."""
+    if any(getattr(measurement, "resource_type", None) is ResourceType.ELAPSED_TIME for measurement in reported):
+        return tuple(reported)
+    timed = ResourceMeasurement(
+        resource_type=ResourceType.ELAPSED_TIME,
+        value=elapsed,
+        unit=ELAPSED_TIME_UNIT,
+        boundary=ELAPSED_TIME_BOUNDARY,
+    )
+    return (timed, *reported)
 
 
 def _assess_violations(

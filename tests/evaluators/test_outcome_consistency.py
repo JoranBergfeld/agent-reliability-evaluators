@@ -9,8 +9,10 @@ import pytest
 from reliability_evaluators.evaluators import outcome_consistency
 from reliability_evaluators.evidence import (
     Attempt,
+    Condition,
     EvidenceError,
     ExecutionStatus,
+    ObservedCondition,
     TaskEvidence,
     TaskOutcome,
     group_by_task,
@@ -201,3 +203,37 @@ def test_two_attempts_with_the_same_identity_are_rejected_rather_than_matched_ar
 def test_an_attempt_grouped_under_another_task_is_rejected():
     with pytest.raises(EvidenceError, match="other/attempt-1"):
         outcome_consistency.evaluate([TaskEvidence("task", tuple(attempts("other", [1, 1])))])
+
+
+TOOL_FAULT = Condition(condition_id="tool-fault", description="The update tool returns 503.")
+
+
+@pytest.mark.parametrize(
+    ("recorded", "problem"),
+    [
+        ({"intended_condition": "tool-fault", "condition_role": "variation"}, "intended condition"),
+        ({"intended_condition": TOOL_FAULT}, "baseline or the variation"),
+        ({"intended_condition": TOOL_FAULT, "condition_role": "control"}, "baseline or the variation"),
+        ({"condition_role": "variation"}, "intended condition"),
+        ({"observed_condition": True}, "observed condition"),
+        ({"observed_condition": "tool-fault"}, "observed condition"),
+        ({"starting_state": "reset"}, "starting-state policy"),
+    ],
+)
+def test_an_attempt_whose_condition_is_only_a_label_is_rejected(recorded, problem):
+    with pytest.raises(EvidenceError, match=problem):
+        Attempt(attempt_id="task/attempt-1", task_id="task", execution_status=ExecutionStatus.COMPLETED, **recorded)
+
+
+@pytest.mark.parametrize(
+    ("observed", "problem"),
+    [
+        ({"met": "yes", "source": "request log of the test tool"}, "met"),
+        ({"met": 1, "source": "request log of the test tool"}, "met"),
+        ({"met": True, "source": " "}, "source"),
+        ({"met": True, "source": "request log of the test tool", "observations": {"at": object()}}, "JSON-compatible"),
+    ],
+)
+def test_an_observed_condition_says_whether_it_was_met_and_what_it_was_observed_from(observed, problem):
+    with pytest.raises(EvidenceError, match=problem):
+        ObservedCondition(**observed)

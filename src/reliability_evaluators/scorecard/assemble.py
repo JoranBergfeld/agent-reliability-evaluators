@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Sequence
 
 from ..evaluators import RELIABILITY_METRICS, Fidelity, MetricResult, MetricState, ReliabilityMetric, ScoringPath
-from ..evidence import Attempt, ExecutionStatus
+from ..evidence import Attempt, ExperimentStatus
 from .acceptance import AcceptanceCriterion, assess, criteria_by_metric
 
 SCHEMA_VERSION = 1
@@ -19,6 +19,8 @@ class ScorecardStatus(str, Enum):
 
     COMPLETE = "complete"
     PARTIAL = "partial"
+    # No scorecard was delivered. Only the record of a reporting failure has this status.
+    REPORTING_FAILED = "reporting_failed"
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -28,84 +30,89 @@ class ScoredMetric:
     result: MetricResult
     scoring_path: ScoringPath
     fidelity: Fidelity
-    # The experiments that supplied the evidence the result was calculated from.
-    experiment_ids: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, kw_only=True)
-class ExperimentRun:
-    """The running of one experiment: what was planned for it, what was made, and how it ended.
+class PlannedAttempts:
+    """The Attempts planned for one experiment, or for one Task given without an experiment.
 
-    The execution status is completed only when every planned Attempt completed. Otherwise
-    it says why evidence is missing, with a reason. It is not a metric state.
+    It says what was planned, what was made, and how the making ended. `status` is not a
+    metric state, and it is completed whenever every planned Attempt was made: whether
+    each of those completed is counted separately.
     """
 
-    experiment_id: str
     task_id: str
-    planned_attempts: int
+    # None: the Task was given without an experiment.
+    experiment_id: str | None = None
+    # What the experiment declared, as the scorecard records it.
+    declaration: dict[str, Any] = field(default_factory=dict)
     # The execution limits the customer declared, as JSON-compatible data.
     limits: dict[str, Any]
-    execution_status: ExecutionStatus
+    status: ExperimentStatus
+    # Why planned Attempts were not made, or why a retry was not.
     reason: str | None = None
-    # Every Attempt made, in the order planned.
-    attempt_ids: tuple[str, ...]
+    planned: int
+    # Attempts in the scorecard, retries included.
+    recorded: int
     # Planned Attempts that were made and did not complete, by the identity of their last execution.
     not_completed: tuple[str, ...] = ()
     # Planned Attempts that were never started.
     not_made: int = 0
-    # Retries made. Each is an Attempt of its own in `attempt_ids`.
+    # Retries made. Each is an Attempt of its own.
     retries: int = 0
+    # Whether the Attempts that the Evaluators score were cut short: not all of them were
+    # made, or not one of them completed. Attempts under a variation are not scored yet.
+    cut_short: bool = False
 
     def to_dict(self) -> dict[str, Any]:
-        return {
-            "experiment_id": self.experiment_id,
-            "task_id": self.task_id,
-            "execution_status": self.execution_status.value,
+        execution = {
+            "status": self.status.value,
             "reason": self.reason,
-            "limits": self.limits,
-            "attempts": {
-                "planned": self.planned_attempts,
-                "completed": self.planned_attempts - len(self.not_completed) - self.not_made,
-                "not_completed": list(self.not_completed),
-                "not_made": self.not_made,
-                "retries": self.retries,
-            },
-            "attempt_ids": list(self.attempt_ids),
+            "attempts_planned": self.planned,
+            "attempts_recorded": self.recorded,
+            "attempts_completed": self.planned - len(self.not_completed) - self.not_made,
+            "attempts_not_completed": list(self.not_completed),
+            "attempts_not_made": self.not_made,
+            "retries": self.retries,
         }
+        declared = self.declaration if self.experiment_id is not None else {"task_id": self.task_id}
+        return {**declared, "limits": self.limits, "execution": execution}
 
 
 def build_scorecard(
     *,
     metrics: Sequence[ScoredMetric],
     attempts: Sequence[Attempt],
-    experiments: Sequence[ExperimentRun],
+    planned: Sequence[PlannedAttempts],
     max_concurrent_attempts: int,
     acceptance_criteria: Sequence[AcceptanceCriterion] = (),
 ) -> dict[str, Any]:
     """Assemble the scorecard as JSON-compatible data.
 
     All twelve metrics are listed individually, in catalogue order. A metric that was not
-    scored is not configured. Metric entries and `experiments` refer to `attempts` by
-    Attempt identity. `max_concurrent_attempts` is how many Attempts the sweep allowed in
-    flight at once; 1 means they ran one after another.
+    scored is not configured. Metric entries refer to `attempts` by Attempt identity.
+    A metric's `acceptance` is the assessment of the customer's criterion for it, or None
+    when the customer declared none.
 
-    The scorecard is complete when nothing that was planned is missing. Otherwise it is
+    `planned` is what was planned for each experiment and for each Task given without one,
+    and how making it ended. The first are listed under `experiments` with what the
+    experiment declared, the second under `tasks_without_experiment`. Attempts refer to
+    their experiment by experiment identity.
+
+    The scorecard is complete when every planned Attempt completed. Otherwise it is
     partial, and `missing` names what is missing and why. A metric keeps its result when
     its Evaluator still calculates a value from the evidence that was collected.
 
-    A metric's `acceptance` is the assessment of the customer's criterion for it, or None
-    when the customer declared none.
+    `max_concurrent_attempts` is how many Attempts of Tasks given without an experiment
+    the sweep allowed in flight at once; 1 means they ran one after another.
     """
     scored_by_id = {scored.result.definition.metric.metric_id: scored for scored in metrics}
     criteria = criteria_by_metric(acceptance_criteria)
     attempts_by_id = {attempt.attempt_id: attempt for attempt in attempts}
-    not_completed = [
-        experiment for experiment in experiments if experiment.execution_status is not ExecutionStatus.COMPLETED
-    ]
-    failures = {
-        metric_id: _experiment_failure(scored, not_completed) for metric_id, scored in scored_by_id.items()
-    }
-    missing = [_missing_attempt_evidence(experiment, attempts_by_id) for experiment in not_completed] + [
+    failures = {metric_id: _execution_failure(scored, planned) for metric_id, scored in scored_by_id.items()}
+    missing = [
+        _missing_attempt_evidence(plan, attempts_by_id) for plan in planned if plan.not_made or plan.not_completed
+    ] + [
         {"kind": "metric_result", "metric_id": metric_id, **failure}
         for metric_id, failure in failures.items()
         if failure is not None
@@ -114,11 +121,9 @@ def build_scorecard(
         "schema_version": SCHEMA_VERSION,
         "status": (ScorecardStatus.PARTIAL if missing else ScorecardStatus.COMPLETE).value,
         "missing": missing,
-        "execution": {
-            "concurrency": {
-                "mode": "sequential" if max_concurrent_attempts == 1 else "concurrent",
-                "max_concurrent_attempts": max_concurrent_attempts,
-            }
+        "concurrency": {
+            "mode": "sequential" if max_concurrent_attempts == 1 else "concurrent",
+            "max_concurrent_attempts": max_concurrent_attempts,
         },
         "metrics": [
             _with_acceptance(
@@ -127,51 +132,53 @@ def build_scorecard(
             )
             for metric in RELIABILITY_METRICS
         ],
-        "experiments": [experiment.to_dict() for experiment in experiments],
+        "experiments": [plan.to_dict() for plan in planned if plan.experiment_id is not None],
+        "tasks_without_experiment": [plan.to_dict() for plan in planned if plan.experiment_id is None],
         "attempts": [attempt.to_dict() for attempt in attempts],
     }
 
 
-def _experiment_failure(scored: ScoredMetric, not_completed: Sequence[ExperimentRun]) -> dict[str, Any] | None:
-    """Why a metric has no result, when that is because its experiments did not complete.
+def _execution_failure(scored: ScoredMetric, planned: Sequence[PlannedAttempts]) -> dict[str, Any] | None:
+    """Why a metric has no result, when that is because the Attempts planned for it were cut short.
 
-    Evidence that is short because an experiment failed is not an unavailable measurement:
-    what the complete evidence would have shown is not known.
+    An Evaluator that finds too little in evidence that was cut short has not measured
+    anything: that is an execution failure and not an unavailable measurement. Where every
+    planned Attempt was made and some of them completed, the Evaluator's own result stands.
     """
-    failed = [
-        experiment.experiment_id for experiment in not_completed if experiment.experiment_id in scored.experiment_ids
-    ]
-    if scored.result.state is not MetricState.UNAVAILABLE or not failed:
+    short = [plan for plan in planned if plan.cut_short]
+    if scored.result.state is not MetricState.UNAVAILABLE or not short:
         return None
     return {
         "reason": (
-            "experiments that supply this metric's evidence did not complete, and what they collected "
+            "the Attempts that supply this metric's evidence were cut short, and what was collected "
             f"does not permit a calculation: {scored.result.reason}"
         ),
-        "experiment_ids": failed,
+        "experiment_ids": [plan.experiment_id for plan in short if plan.experiment_id is not None],
+        "task_ids": [plan.task_id for plan in short if plan.experiment_id is None],
     }
 
 
-def _missing_attempt_evidence(experiment: ExperimentRun, attempts_by_id: dict[str, Attempt]) -> dict[str, Any]:
+def _missing_attempt_evidence(plan: PlannedAttempts, attempts_by_id: dict[str, Attempt]) -> dict[str, Any]:
     return {
         "kind": "attempt_evidence",
-        "experiment_id": experiment.experiment_id,
-        "execution_status": experiment.execution_status.value,
-        "reason": experiment.reason,
+        "experiment_id": plan.experiment_id,
+        "task_id": plan.task_id,
+        "status": plan.status.value,
+        "reason": plan.reason,
+        "attempts_not_made": plan.not_made,
         "attempts_not_completed": [
             {
                 "attempt_id": attempt_id,
                 "execution_status": attempts_by_id[attempt_id].execution_status.value,
                 "execution_error": attempts_by_id[attempt_id].execution_error,
             }
-            for attempt_id in experiment.not_completed
+            for attempt_id in plan.not_completed
         ],
-        "attempts_not_made": experiment.not_made,
     }
 
 
 def _metric_entry(
-    metric: ReliabilityMetric, scored: ScoredMetric | None, experiment_failure: dict[str, Any] | None
+    metric: ReliabilityMetric, scored: ScoredMetric | None, execution_failure: dict[str, Any] | None
 ) -> dict[str, Any]:
     if scored is None:
         return {
@@ -182,11 +189,11 @@ def _metric_entry(
         }
     entry = {
         **scored.result.to_dict(),
-        "experiment_failure": experiment_failure,
+        "execution_failure": execution_failure,
         "scoring_path": scored.scoring_path.value,
         "fidelity": scored.fidelity.value,
     }
-    if experiment_failure is not None:
+    if execution_failure is not None:
         # There is no metric result, so the metric is in no metric state.
         entry.update(state=None, reason=None)
     return entry

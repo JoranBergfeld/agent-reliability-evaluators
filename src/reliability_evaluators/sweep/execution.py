@@ -1,0 +1,108 @@
+"""Execution limits at work: whether a further Attempt may start, and what became of the Attempts planned."""
+
+from __future__ import annotations
+
+import threading
+from typing import Callable, Sequence
+
+from ..evidence import Attempt, ConditionRole, ExecutionStatus, ExperimentStatus
+from ..scorecard import PlannedAttempts
+from .declaration import Experiment, Task
+
+# An Attempt whose invocation of the agent ended this way is made again while it has retries left.
+RETRYABLE = (ExecutionStatus.FAILED, ExecutionStatus.TIMED_OUT)
+
+CANCELLED = "the sweep was cancelled"
+
+
+class Cancellation:
+    """Whether the caller asked for the sweep to stop. Once asked, it stays asked."""
+
+    def __init__(self, requested: Callable[[], bool] | None) -> None:
+        self._requested = requested
+        self._latched = False
+
+    def requested(self) -> bool:
+        if not self._latched and self._requested is not None and self._requested():
+            self._latched = True
+        return self._latched
+
+
+class Budget:
+    """Whether a further Attempt or retry of one Task may start.
+
+    It may not once the sweep was cancelled or the Task's total time limit was reached.
+    `stopped` and `reason` then say which, and stay as they are.
+    """
+
+    def __init__(self, task: Task, cancellation: Cancellation, clock: Callable[[], float]) -> None:
+        self._limit = task.limits.total_timeout_seconds
+        self._cancellation = cancellation
+        self._clock = clock
+        # The Attempts of a Task given without an experiment may run on several threads.
+        self._lock = threading.Lock()
+        self._started: float | None = None
+        self.stopped: ExperimentStatus | None = None
+        self.reason: str | None = None
+
+    def may_start(self) -> bool:
+        with self._lock:
+            if self.stopped is not None:
+                return False
+            if self._cancellation.requested():
+                self.stopped, self.reason = ExperimentStatus.CANCELLED, CANCELLED
+                return False
+            if self._limit is not None:
+                now = self._clock()
+                if self._started is None:
+                    self._started = now
+                elif now - self._started >= self._limit:
+                    self.stopped = ExperimentStatus.TIMED_OUT
+                    self.reason = f"the time limit of {self._limit:g} seconds for all its Attempts was reached"
+                    return False
+            return True
+
+
+def planned_attempts(
+    task: Task,
+    made: Sequence[Sequence[Attempt]],
+    budget: Budget,
+    *,
+    experiment: Experiment | None = None,
+    stop_reason: str | None = None,
+) -> PlannedAttempts:
+    """What became of the Attempts planned for a Task, in its experiment or without one.
+
+    `made` has one entry for each planned Attempt that was made: its executions in order,
+    the Attempt first and then its retries. `stop_reason` is why a customer control
+    stopped the experiment, if one did.
+    """
+    planned = task.attempts * (len(experiment.conditions()) if experiment is not None else 1)
+    last = [executions[-1] for executions in made]
+    not_made = planned - len(last)
+    if budget.stopped is not None:
+        status, reason = budget.stopped, budget.reason
+    elif any(attempt.execution_status is ExecutionStatus.CANCELLED for attempt in last):
+        status, reason = ExperimentStatus.CANCELLED, CANCELLED
+    elif not_made:
+        status, reason = ExperimentStatus.STOPPED, stop_reason
+    else:
+        status, reason = ExperimentStatus.COMPLETED, None
+    scored = [attempt for attempt in last if attempt.condition_role is not ConditionRole.VARIATION]
+    return PlannedAttempts(
+        task_id=task.task_id,
+        experiment_id=None if experiment is None else experiment.experiment_id,
+        declaration={} if experiment is None else experiment.to_dict(),
+        limits=task.limits.to_dict(),
+        status=status,
+        reason=reason,
+        planned=planned,
+        recorded=sum(len(executions) for executions in made),
+        not_completed=tuple(
+            attempt.attempt_id for attempt in last if attempt.execution_status is not ExecutionStatus.COMPLETED
+        ),
+        not_made=not_made,
+        retries=sum(len(executions) - 1 for executions in made),
+        cut_short=len(scored) < task.attempts
+        or not any(attempt.execution_status is ExecutionStatus.COMPLETED for attempt in scored),
+    )

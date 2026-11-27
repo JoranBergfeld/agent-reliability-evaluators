@@ -6,9 +6,12 @@ from dataclasses import dataclass
 from typing import Callable
 
 from . import (
+    brier_based_score,
+    conditional_harm_severity,
     constraint_compliance,
     distributional_trajectory_consistency,
     outcome_consistency,
+    resource_consistency,
     sequential_trajectory_consistency,
 )
 from .result import MetricDefinition, MetricResult
@@ -25,6 +28,8 @@ class Evaluator:
     definition: MetricDefinition
     evaluate: Callable[..., MetricResult]
     declarations: tuple[str, ...] = ()
+    # Whether the calculation uses confidence ratings, which a sweep has to ask the agent for.
+    needs_confidence: bool = False
 
 
 EVALUATORS: dict[str, Evaluator] = {
@@ -41,6 +46,9 @@ EVALUATORS: dict[str, Evaluator] = {
             sequential_trajectory_consistency.evaluate,
             declarations=("action_types",),
         ),
+        Evaluator(resource_consistency.DEFINITION, resource_consistency.evaluate),
+        Evaluator(brier_based_score.DEFINITION, brier_based_score.evaluate, needs_confidence=True),
         Evaluator(constraint_compliance.DEFINITION, constraint_compliance.evaluate),
+        Evaluator(conditional_harm_severity.DEFINITION, conditional_harm_severity.evaluate),
     )
 }

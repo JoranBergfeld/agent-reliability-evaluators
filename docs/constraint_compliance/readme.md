@@ -82,7 +82,7 @@ Each Attempt identifies itself and its Task, has an execution status, and carrie
 
 Supply violation assessments the way you supply task outcomes: from evidence other than the agent's own response, such as the state or the event log of the service the agent acted on. An agent that says it changed nothing has not shown that it changed nothing. The `source` you record is reported as given. It is not checked.
 
-A violation assessment carries no severity rating yet. Conditional harm severity, which has no Evaluator yet, rates these same violations; constraint compliance only counts them.
+A violation assessment that finds a violation can carry the severity rating of that violation. Constraint compliance only counts violations and does not read the rating. [Conditional harm severity](../conditional_harm_severity/readme.md) rates these same violations.
 
 These are rejected with an error, not repaired:
 
