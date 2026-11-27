@@ -16,7 +16,7 @@ from ..evidence import (
     TaskOutcome,
     group_by_task,
 )
-from ..scorecard import ScoredMetric, build_scorecard
+from ..scorecard import AcceptanceCriterion, ScoredMetric, build_scorecard, criteria_by_metric
 from .declaration import Task
 
 ELAPSED_TIME_UNIT = "seconds"
@@ -30,6 +30,7 @@ def run_sweep(
     tasks: Sequence[Task],
     agent_target: AgentTarget,
     metrics: Sequence[str],
+    acceptance_criteria: Sequence[AcceptanceCriterion] = (),
     clock: Callable[[], float] = perf_counter,
 ) -> dict[str, Any]:
     """Make the declared Attempts, score the selected metrics, and return the scorecard.
@@ -37,6 +38,10 @@ def run_sweep(
     `metrics` names the reliability metrics to score, by metric identity. Attempts run one
     after another, Task by Task, and scoring happens in this process. The result is the
     machine-readable reliability scorecard, as JSON-compatible data.
+
+    `acceptance_criteria` are the customer's own, at most one per metric. Each is reported
+    with its metric as met, not met, or not assessed with a reason. Without one, a metric
+    has no acceptance verdict.
 
     The sweep times every invocation that returns, on `clock`, which gives seconds and
     never runs backwards. An agent target that reports its own elapsed time is recorded
@@ -47,6 +52,8 @@ def run_sweep(
     """
     evaluators = [_evaluator(metric_id) for metric_id in metrics]
     _require_distinct_tasks(tasks)
+    # Called for its check: a second criterion for one metric is rejected here, not after the Attempts.
+    criteria_by_metric(acceptance_criteria)
     attempts = [
         _run_attempt(task, number, agent_target, clock)
         for task in tasks
@@ -61,7 +68,7 @@ def run_sweep(
         )
         for evaluator in evaluators
     ]
-    return build_scorecard(metrics=scored, attempts=attempts)
+    return build_scorecard(metrics=scored, attempts=attempts, acceptance_criteria=acceptance_criteria)
 
 
 def _evaluator(metric_id: str) -> Evaluator:
