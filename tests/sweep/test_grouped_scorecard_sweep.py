@@ -17,7 +17,14 @@ from reliability_evaluators.sweep import (
     Task,
     run_sweep,
 )
-from tests.fakes import FakeActingAgentTarget, FakeControls, FakeTodoAgent, FakeTodoService, todo_list
+from tests.fakes import (
+    FakeActingAgentTarget,
+    FakeAgentTarget,
+    FakeControls,
+    FakeTodoAgent,
+    FakeTodoService,
+    todo_list,
+)
 
 OUTCOME = "outcome_consistency"
 DISTRIBUTIONAL = "distributional_trajectory_consistency"
@@ -576,3 +583,47 @@ def test_an_experiment_is_not_run_again_on_state_that_its_first_run_did_not_rest
     assert sequential["state"] == "unavailable"
     assert sequential["value"] is None
     assert sequential["attempts_used"] == {"attempt_ids": [], "shared_with": []}
+
+def test_the_agent_is_asked_for_its_confidence_only_in_the_attempts_of_an_evaluator_that_uses_it():
+    # The Brier-based score and distributional share the first two Attempts, which are rated 80 and 40.
+    #   Squared errors (0.8 - 1)^2 = 0.04 and (0.4 - 0)^2 = 0.16. Mean 0.1: 0.9.
+    # Sequential reads another recording, so the Task is attempted twice more. Nothing there uses confidence.
+    target = FakeAgentTarget(
+        {"close": ["success", "failure", "success", "success"]},
+        confidence={"close/attempt-1": "80", "close/attempt-2": "40"},
+    )
+    close = Task(
+        task_id="close",
+        prompt="Close the item.",
+        success_rule=lambda attempt, response: TaskOutcome(
+            success=target.service_state[attempt.attempt_id] == "done", source="final state of the fake service"
+        ),
+        shareable_success_rule="The item is marked done in the to-do service.",
+        attempts=2,
+    )
+
+    scorecard = run_sweep(
+        tasks=[close],
+        agent_target=target,
+        metrics=[
+            "brier_based_score",
+            ConfiguredEvaluator(metric_id=DISTRIBUTIONAL, action_evidence=Controlled.recording("native tool calls")),
+            ConfiguredEvaluator(metric_id=SEQUENTIAL, action_evidence=Controlled.recording("service-side effects")),
+        ],
+    )
+
+    shared, separate = scorecard["attempts"][:2], scorecard["attempts"][2:]
+    assert [(attempt["attempt_id"], attempt["confidence"]["rating"]) for attempt in shared] == [
+        ("close/attempt-1", "80"),
+        ("close/attempt-2", "40"),
+    ]
+    assert [(attempt["attempt_id"], attempt["confidence"]) for attempt in separate] == [
+        ("close/set-2/attempt-1", None),
+        ("close/set-2/attempt-2", None),
+    ]
+    brier = metric(scorecard, "brier_based_score")
+    assert brier["value"] == 0.9
+    assert brier["attempts_used"] == {
+        "attempt_ids": ["close/attempt-1", "close/attempt-2"],
+        "shared_with": [DISTRIBUTIONAL],
+    }

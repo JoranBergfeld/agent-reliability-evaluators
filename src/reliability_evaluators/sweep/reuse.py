@@ -1,9 +1,12 @@
 """Attempt reuse: which Evaluators of a sweep are scored from the same Attempts.
 
-An Evaluator's requirements are what its Attempts have to be made with, by name: today
-where and how its action evidence is recorded, later also the experimental condition.
-An Evaluator names only what it needs, so one that needs nothing in particular can be
-scored from any Attempts.
+An Evaluator's requirements are what its Attempts have to be made with, by name: where
+and how its action evidence is recorded, and whether the agent is asked for its
+confidence. An Evaluator names only what it needs, so one that needs nothing in
+particular can be scored from any Attempts.
+
+Which of the Attempts of its set an Evaluator is given is a separate matter: only those
+made under the experimental conditions it is calculated from. The sweep sees to that.
 """
 
 from __future__ import annotations

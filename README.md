@@ -24,7 +24,7 @@ When a selected metric uses confidence, the sweep asks the agent for a confidenc
 
 The Evaluator sweep can also run controlled experiments, with your own controls for preparing state, applying a condition, verifying what occurred and cleaning up: see [`docs/sweep/controlled-experiments.md`](docs/sweep/controlled-experiments.md).
 
-Several metrics can be selected in one sweep. Evaluators share Attempts only where that is valid, and the scorecard shows which Attempts each one used: see [`docs/evaluator_sweep/several-evaluators.md`](docs/evaluator_sweep/several-evaluators.md).
+Several metrics can be selected in one sweep. Evaluators share Attempts only where that is valid, and the scorecard shows which Attempts each one used: see [`docs/sweep/several-evaluators.md`](docs/sweep/several-evaluators.md).
 
 The other five metrics have no Evaluator yet. Every scorecard lists all twelve, and a metric that was not selected appears as not configured. No Foundry agent target and no Foundry-managed scoring exists yet; the agent target is an interface that you implement.
 
