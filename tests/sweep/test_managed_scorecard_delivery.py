@@ -15,6 +15,7 @@ from reliability_evaluators.scorecard import ReportingFailure
 from reliability_evaluators.sweep import ConfiguredEvaluator, Task, run_sweep
 from tests.fake_foundry import FakeFoundryProject
 from tests.fakes import FakeAgentTarget
+from tests.managed_artifact import altered_evidence
 from tests.report_reader import assert_faithful_rendering
 
 SOURCE = "final state of the fake service"
@@ -60,8 +61,7 @@ def sweep(script, foundry, artifact_dir, metrics=(MANAGED,), target=None):
 
 def one_outcome_flipped(item):
     """What a project that altered the submitted evidence would hand the evaluator, which then raises."""
-    (field, text), = item.items()
-    return {field: text.replace('"success":true', '"success":false', 1)}
+    return altered_evidence(item, '"success":true', '"success":false')
 
 
 def metric(scorecard, metric_id="outcome_consistency"):
@@ -125,6 +125,7 @@ def test_a_partial_managed_run_is_delivered_marked_partial_in_the_scorecard_and_
     assert [(entry["kind"], entry["metric_id"]) for entry in delivered["missing"]] == [
         ("metric_result", "outcome_consistency")
     ]
+    assert "the Foundry-managed run evalrun_1 of eval_1 ended as failed" in delivered["missing"][0]["reason"]
     report = assert_faithful_rendering((tmp_path / "report.html").read_text(encoding="utf-8"), delivered)
     assert report.value("/status") == "partial"
     assert report.value("/missing/0/reason") == delivered["missing"][0]["reason"]
@@ -132,6 +133,32 @@ def test_a_partial_managed_run_is_delivered_marked_partial_in_the_scorecard_and_
     evidence = read_json(tmp_path / "evidence.json")
     assert [attempt["task_outcome"]["success"] for attempt in evidence["attempts"]] == [True] * 4 + [False] * 4
     assert evidence["attempts"] == delivered["attempts"]
+
+
+def test_an_unavailable_measurement_from_foundry_is_delivered_as_one_in_the_scorecard_and_in_the_report(tmp_path):
+    # One Attempt at each Task: no Task has two, so outcome consistency cannot be calculated.
+    scorecard = sweep({"close": ["success"], "archive": ["failure"]}, FakeFoundryProject(), tmp_path)
+
+    assert files_in(tmp_path) == ["evidence.json", "report.html", "scorecard.json"]
+    delivered = read_json(tmp_path / "scorecard.json")
+    assert delivered == scorecard
+    # The run did not fail and nothing is missing: the measurement is unavailable, with its reason and counts.
+    assert (delivered["status"], delivered["missing"]) == ("complete", [])
+    outcome_consistency = metric(delivered)
+    assert (outcome_consistency["state"], outcome_consistency["value"]) == ("unavailable", None)
+    assert outcome_consistency["reason"] == "no Task has at least two Attempts with a task outcome"
+    tasks = outcome_consistency["counts"]["tasks"]
+    assert (tasks["total"], tasks["valid"]) == (2, 0)
+    assert [(excluded["count"], excluded["ids"]) for excluded in tasks["excluded"]] == [(2, ["close", "archive"])]
+    assert outcome_consistency["scoring_path"] == "foundry_managed"
+    report = assert_faithful_rendering((tmp_path / "report.html").read_text(encoding="utf-8"), delivered)
+    position = position_of(delivered, "outcome_consistency")
+    assert report.value(f"/metrics/{position}/state") == "unavailable"
+    assert report.value(f"/metrics/{position}/value") == "\N{EM DASH}"
+    assert report.value(f"/metrics/{position}/reason") == outcome_consistency["reason"]
+    wording = report.article_wording[f"metric-{position}"]
+    assert "Unavailable measurement" in wording
+    assert "Managed scoring failure" not in wording
 
 
 def test_a_delivery_failure_after_a_managed_run_is_a_reporting_failure_that_carries_the_managed_result(tmp_path):
