@@ -222,16 +222,16 @@ class NotesTheRunsInProgress:
 
 
 @pytest.mark.parametrize(
-    ("metrics_at_once", "most_runs_in_progress_when_one_is_made"),
-    [(None, 11), (4, 3), (1, 0)],
-    ids=["all twelve side by side", "four at a time", "one after another"],
+    ("chosen", "most_runs_in_progress_when_one_is_made"),
+    [({}, 3), ({"metrics_at_once": None}, 11), ({"metrics_at_once": 6}, 5), ({"metrics_at_once": 1}, 0)],
+    ids=["four at a time unless chosen otherwise", "all twelve side by side", "six at a time", "one after another"],
 )
 def test_the_customer_chooses_how_many_metrics_are_scored_in_foundry_at_once(
-    metrics_at_once, most_runs_in_progress_when_one_is_made
+    chosen, most_runs_in_progress_when_one_is_made
 ):
     foundry = FakeFoundryProject(polls_until_finished=1)
     project = NotesTheRunsInProgress(foundry)
-    scoring = FoundryManagedScoring(project=project, poll_interval_seconds=0, metrics_at_once=metrics_at_once)
+    scoring = FoundryManagedScoring(project=project, poll_interval_seconds=0, **chosen)
 
     scorecard = Declared(WORKED).sweep([managed(metric_id) for metric_id in METRIC_IDS], managed_scoring=scoring)
 

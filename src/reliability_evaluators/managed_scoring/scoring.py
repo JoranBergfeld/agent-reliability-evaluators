@@ -219,8 +219,10 @@ class FoundryManagedScoring:
     poll_interval_seconds: float = 10.0
     run_timeout_seconds: float = 900.0
     # How many metrics are scored at a time, with their runs in progress side by side. None: all of
-    # them. Rows were seen not to be graded when many runs were in progress in a project at once.
-    metrics_at_once: int | None = None
+    # them. Rows were seen not to be graded when many runs were in progress in a project at once: 158
+    # of 861 with the runs of twelve metrics, and those of one result in twelve with four at a time,
+    # which also took less time.
+    metrics_at_once: int | None = 4
 
     def __post_init__(self) -> None:
         at_once = self.metrics_at_once
