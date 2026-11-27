@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
+from typing import Any
 
 
 class EvidenceError(ValueError):
@@ -37,6 +38,9 @@ class TaskOutcome:
         if not isinstance(self.source, str) or not self.source.strip():
             raise EvidenceError("a task outcome records its source")
 
+    def to_dict(self) -> dict[str, Any]:
+        return {"success": self.success, "source": self.source}
+
 
 @dataclass(frozen=True, kw_only=True)
 class Attempt:
@@ -50,6 +54,8 @@ class Attempt:
     task_id: str
     execution_status: ExecutionStatus
     task_outcome: TaskOutcome | None = None
+    # Why the execution did not complete, when it did not.
+    execution_error: str | None = None
 
     def __post_init__(self) -> None:
         for name in ("attempt_id", "task_id"):
@@ -61,3 +67,12 @@ class Attempt:
             raise EvidenceError(
                 f"a task outcome is a TaskOutcome with its source. Got {self.task_outcome!r}"
             )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "attempt_id": self.attempt_id,
+            "task_id": self.task_id,
+            "execution_status": self.execution_status.value,
+            "execution_error": self.execution_error,
+            "task_outcome": None if self.task_outcome is None else self.task_outcome.to_dict(),
+        }

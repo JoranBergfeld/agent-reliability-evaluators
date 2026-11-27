@@ -24,6 +24,20 @@ class MetricState(str, Enum):
     NOT_CONFIGURED = "not_configured"
 
 
+class ScoringPath(str, Enum):
+    """Where a metric was scored. A result is always attributed to exactly one path."""
+
+    CUSTOMER_PROCESS = "customer_process"
+    FOUNDRY_MANAGED = "foundry_managed"
+
+
+class Fidelity(str, Enum):
+    """Whether a value is known to equal what the Evaluator computed."""
+
+    AUTHORITATIVE = "authoritative"
+    UNVERIFIED = "unverified"
+
+
 @dataclass(frozen=True)
 class Scale:
     minimum: float
