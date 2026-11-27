@@ -35,6 +35,14 @@ def metric(scorecard, metric_id="outcome_consistency"):
     return entry
 
 
+def outcome_evidence(attempt):
+    """An Attempt in the scorecard, without the evidence that only other Evaluators use."""
+    return {
+        key: attempt[key]
+        for key in ("attempt_id", "task_id", "execution_status", "execution_error", "task_outcome")
+    }
+
+
 FOUR_IN_FIVE = ["success", "success", "success", "success", "failure"]
 ALWAYS_FAILS = ["failure", "failure", "failure"]
 
@@ -87,7 +95,7 @@ def test_the_value_refers_to_attempt_level_evidence_in_the_scorecard():
     scorecard = sweep({"close": ["success", "failure"]})
 
     assert metric(scorecard)["evidence"] == {"attempt_ids": ["close/attempt-1", "close/attempt-2"]}
-    assert scorecard["attempts"] == [
+    assert [outcome_evidence(attempt) for attempt in scorecard["attempts"]] == [
         {
             "attempt_id": "close/attempt-1",
             "task_id": "close",
@@ -159,7 +167,7 @@ def test_an_invocation_that_fails_is_an_execution_status_and_not_a_task_failure(
     # Scoring the failed invocation as a task failure would give (2 * 2/3 - 1)^2 = 0.111...
     scorecard = sweep({"close": ["success", "error", "success"]})
 
-    assert scorecard["attempts"][1] == {
+    assert outcome_evidence(scorecard["attempts"][1]) == {
         "attempt_id": "close/attempt-2",
         "task_id": "close",
         "execution_status": "failed",

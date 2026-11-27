@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Protocol
 
+from ..evidence import ResourceMeasurement
+
 
 @dataclass(frozen=True, kw_only=True)
 class AttemptRequest:
@@ -17,9 +19,14 @@ class AttemptRequest:
 
 @dataclass(frozen=True, kw_only=True)
 class AgentResponse:
-    """What the agent answered. A response alone never decides the task outcome."""
+    """What the agent answered. A response alone never decides the task outcome.
+
+    `resource_measurements` is what the agent target measured of the Attempt's resource
+    use, such as its tool-call count. A measurement it could not make is left out.
+    """
 
     output: str
+    resource_measurements: tuple[ResourceMeasurement, ...] = ()
 
 
 class AgentTarget(Protocol):
