@@ -21,16 +21,24 @@ class ScoredMetric:
     fidelity: Fidelity
 
 
-def build_scorecard(*, metrics: Sequence[ScoredMetric], attempts: Sequence[Attempt]) -> dict[str, Any]:
+def build_scorecard(
+    *,
+    metrics: Sequence[ScoredMetric],
+    attempts: Sequence[Attempt],
+    experiments: Sequence[dict[str, Any]] = (),
+) -> dict[str, Any]:
     """Assemble the scorecard as JSON-compatible data.
 
     All twelve metrics are listed individually, in catalogue order. A metric that was not
     scored is not configured. Metric entries refer to `attempts` by Attempt identity.
+    `experiments` is what each experiment declared and how its execution ended; Attempts
+    refer to it by experiment identity.
     """
     scored_by_id = {scored.result.definition.metric.metric_id: scored for scored in metrics}
     return {
         "schema_version": SCHEMA_VERSION,
         "metrics": [_metric_entry(metric, scored_by_id.get(metric.metric_id)) for metric in RELIABILITY_METRICS],
+        "experiments": list(experiments),
         "attempts": [attempt.to_dict() for attempt in attempts],
     }
 

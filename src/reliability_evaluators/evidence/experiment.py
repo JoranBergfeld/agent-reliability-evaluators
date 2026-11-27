@@ -1,4 +1,4 @@
-"""Experimental conditions: what an experiment intends for an Attempt and what was observed."""
+"""What an Attempt records about its experiment: the starting state, the condition, the controls."""
 
 from __future__ import annotations
 
@@ -113,3 +113,11 @@ class LifecycleStep:
 
     def to_dict(self) -> dict[str, Any]:
         return {"point": self.point.value, "succeeded": self.error is None, "error": self.error}
+
+
+class ExperimentStatus(str, Enum):
+    """How the running of an experiment ended. This is not the state of a metric."""
+
+    COMPLETED = "completed"
+    # Attempts that depended on state a customer control did not provide were not made.
+    STOPPED = "stopped"

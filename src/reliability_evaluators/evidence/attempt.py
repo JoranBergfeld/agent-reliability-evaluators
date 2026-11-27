@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
-from .condition import Condition, ConditionRole, LifecycleStep, ObservedCondition, StartingStatePolicy
+from .experiment import Condition, ConditionRole, LifecycleStep, ObservedCondition, StartingStatePolicy
 from .error import EvidenceError
 
 
@@ -15,8 +15,12 @@ class ExecutionStatus(str, Enum):
 
     COMPLETED = "completed"
     FAILED = "failed"
+    # A customer control could not prepare the state or apply the condition. The agent was not invoked.
+    SETUP_FAILED = "setup_failed"
     # The verify control did not show that the intended condition occurred.
     CONDITION_NOT_MET = "condition_not_met"
+    # The Attempt ran, and the clean-up control then failed to restore the state.
+    CLEANUP_FAILED = "cleanup_failed"
 
 
 @dataclass(frozen=True)

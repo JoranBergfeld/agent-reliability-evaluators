@@ -4,13 +4,15 @@ Pure: standard library only, no I/O. The canonical metric definitions depend on 
 """
 
 from .attempt import Attempt, ExecutionStatus, TaskOutcome
-from .condition import (
+from .experiment import (
     Condition,
     ConditionRole,
+    ExperimentStatus,
     LifecyclePoint,
     LifecycleStep,
     ObservedCondition,
     StartingStatePolicy,
+    json_data,
 )
 from .error import EvidenceError
 from .grouping import TaskEvidence, group_by_task, require_unambiguous
@@ -21,6 +23,7 @@ __all__ = [
     "ConditionRole",
     "EvidenceError",
     "ExecutionStatus",
+    "ExperimentStatus",
     "LifecyclePoint",
     "LifecycleStep",
     "ObservedCondition",
@@ -28,5 +31,6 @@ __all__ = [
     "TaskEvidence",
     "TaskOutcome",
     "group_by_task",
+    "json_data",
     "require_unambiguous",
 ]

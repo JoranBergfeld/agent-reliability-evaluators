@@ -148,7 +148,7 @@ def test_the_other_eleven_metrics_appear_as_not_configured():
 def test_there_is_no_combined_score_and_no_built_in_threshold():
     scorecard = sweep({"close": FOUR_IN_FIVE})
 
-    assert set(scorecard) == {"schema_version", "metrics", "attempts"}
+    assert set(scorecard) == {"schema_version", "metrics", "experiments", "attempts"}
     assert set(metric(scorecard)) == {
         "metric_id",
         "name",
