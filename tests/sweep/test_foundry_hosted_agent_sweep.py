@@ -20,9 +20,10 @@ from reliability_evaluators.agent_target.foundry_hosted import (
     native_tool_calls,
 )
 from reliability_evaluators.evidence import OutcomeCorrection, TaskOutcome
-from reliability_evaluators.scorecard import to_json
+from reliability_evaluators.scorecard import render_report, to_json
 from reliability_evaluators.sweep import ActionEvidenceDeclaration, ExecutionLimits, recalculate, run_sweep
 from tests.fake_foundry_hosted import FakeHostedAgent, FakeTodoHostedAgent, completed_response, fake_foundry_project
+from tests.report_reader import assert_faithful_rendering
 from tests.todo_experiment import ALL_TOOLS_WORK, TodoSetup, update_fails_on
 
 AGENT = {"agent": "todo-hosted", "version": "1"}
@@ -56,10 +57,6 @@ def hosted_agent(project, setup, agent_name="todo-hosted"):
 def metric(scorecard, metric_id="outcome_consistency"):
     (entry,) = [entry for entry in scorecard["metrics"] if entry["metric_id"] == metric_id]
     return entry
-
-
-def attempts_of(scorecard, experiment_id):
-    return [attempt for attempt in scorecard["attempts"] if attempt["experiment_id"] == experiment_id]
 
 
 def flaky_update_sweep(project, setup, metrics=("outcome_consistency",), **declared):
@@ -178,7 +175,12 @@ def test_the_tool_calls_of_the_response_can_be_declared_as_the_action_evidence(p
         action_evidence=ActionEvidenceDeclaration(
             evidence_source=NATIVE_TOOL_CALLS,
             record=native_tool_calls,
-            action_types={"read_todo": "read", "create_todo": "create", "delete_todo": "delete", "update_todo": "update"},
+            action_types={
+                "read_todo": "read",
+                "create_todo": "create",
+                "delete_todo": "delete",
+                "update_todo": "update",
+            },
         ),
     )
 
@@ -311,7 +313,9 @@ def response_that_did_not_succeed(status, **reported):
     ("response", "reason"),
     [
         (
-            response_that_did_not_succeed("failed", error={"code": "server_error", "message": "The model did not answer."}),
+            response_that_did_not_succeed(
+                "failed", error={"code": "server_error", "message": "The model did not answer."}
+            ),
             "the response caresp_synthetic2 of the hosted agent ended with status 'failed': "
             '{"code": "server_error", "message": "The model did not answer."}',
         ),
@@ -523,3 +527,12 @@ def test_what_the_platform_returned_is_kept_when_the_scorecard_is_recalculated(p
         attempt["invocation"] for attempt in earlier["attempts"]
     ]
     assert recalculated["attempts"][1]["invocation"]["response_id"] == "caresp_synthetic2"
+
+
+def test_the_report_shows_what_the_platform_returned_for_each_attempt(project, setup):
+    scorecard = flaky_update_sweep(project, setup)
+
+    report = assert_faithful_rendering(render_report(scorecard), scorecard)
+
+    assert report.value("/attempts/0/invocation/response_id") == "caresp_synthetic1"
+    assert report.value("/attempts/4/invocation/tool_calls/4/name") == "update_todo"

@@ -122,7 +122,8 @@ def fake_foundry_project(agents: dict[str, FakeHostedAgent]) -> Iterator[FakeFou
             length = int(self.headers.get("Content-Length", "0"))
             content = self.rfile.read(length) if length else b""
             if self.headers.get("Authorization") != f"Bearer {token}":
-                return self.answer(401, {"error": {"code": "Unauthorized", "message": "Access token is missing or invalid."}})
+                unauthorized = {"code": "Unauthorized", "message": "Access token is missing or invalid."}
+                return self.answer(401, {"error": unauthorized})
             if not url.path.startswith(PROJECT_PATH + "/agents/") or parse_qs(url.query) != {"api-version": ["v1"]}:
                 return self.answer(404, {"error": {"code": "not_found", "message": "unknown route"}})
             name, _, rest = url.path.removeprefix(PROJECT_PATH + "/agents/").partition("/")
@@ -155,7 +156,8 @@ def completed_response(
 ) -> dict:
     """A response as a Responses-protocol hosted agent returns it: its tool calls in order, then its message.
 
-    `calls` are (tool name, arguments, the text the tool returned).
+    `calls` are (tool name, arguments, the text the tool returned). Like the live responses,
+    it has no `error` key.
     """
     output: list[dict] = []
     for position, (tool, arguments, returned) in enumerate(calls, start=1):
@@ -176,7 +178,6 @@ def completed_response(
         "created_at": 1795780000 + number,
         "completed_at": 1795780020 + number,
         "model": "",
-        "error": None,
         "output": output,
     }
     if usage is not None:

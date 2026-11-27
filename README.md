@@ -29,7 +29,7 @@ The Evaluator sweep can also run controlled experiments, with your own controls 
 
 Several metrics can be selected in one sweep. Evaluators share Attempts only where that is valid, and the scorecard shows which Attempts each one used: see [`docs/sweep/several-evaluators.md`](docs/sweep/several-evaluators.md).
 
-The other two metrics have no Evaluator yet. Every scorecard lists all twelve, and a metric that was not selected appears as not configured. No Foundry agent target and no Foundry-managed scoring exists yet; the agent target is an interface that you implement.
+The other two metrics have no Evaluator yet. Every scorecard lists all twelve, and a metric that was not selected appears as not configured. The sweep can make its Attempts against a Foundry hosted agent that serves the Responses protocol, from your own code or CI: see [`docs/foundry_hosted_agent/readme.md`](docs/foundry_hosted_agent/readme.md). For any other agent, the agent target is an interface that you implement. No Foundry-managed scoring exists yet.
 
 A task outcome can be supplied or corrected after the run. Recalculating from the earlier scorecard, which you supply, gives a new scorecard that uses the corrected outcome and marks the earlier result as superseded: see [`docs/sweep/late-and-corrected-outcomes.md`](docs/sweep/late-and-corrected-outcomes.md).
 
@@ -39,7 +39,7 @@ The sweep returns the machine-readable scorecard. Given a directory, it also wri
 
 There is no published package. Copy the directory [`src/reliability_evaluators/`](src/reliability_evaluators/) into your project and record the commit or tag you copied it from.
 
-- It needs Python 3.10 or later and nothing outside the standard library.
+- It needs Python 3.10 or later and nothing outside the standard library. The Foundry hosted agent target also needs a token for your Foundry project, by default from the Azure CLI.
 - Nothing else in this repository is needed at run time. `pyproject.toml`, `uv.lock` and `tests/` are development tooling.
 
 ```python
@@ -77,11 +77,11 @@ The copyable source has one directory per module of the specification.
 | Evaluators | `src/reliability_evaluators/evaluators/` | The canonical metric definitions, one file per metric, the metric result contract (`result.py`), the catalogue of the twelve metrics (`catalogue.py`), the registry of Evaluators that exist (`registry.py`), the confidence/outcome pairs the predictability metrics share (`confidence_pairs.py`) and the capped ratio of accuracies the robustness metrics share (`_robustness.py`). |
 | Evidence model | `src/reliability_evaluators/evidence/` | The Attempt record with its task outcome, ordered action evidence (`actions.py`), resource measurements, confidence evidence (`confidence.py`) and what it records about its experiment (`experiment.py`), its validation, and the grouping of Attempts by Task. Task outcomes supplied or corrected after the run (`corrections.py`), and the strict reading of evidence that a customer supplies again (`reading.py`). |
 | Evaluator sweep | `src/reliability_evaluators/sweep/` | What a customer declares, execution limits included (`declaration.py`), the public entry point `run_sweep` (`runner.py`), the customer controls invoked around each Attempt of an experiment (`lifecycle.py`), the limits and the cancellation at work (`execution.py`), the confidence-only request that follows an Attempt (`confidence.py`) the rule for which Evaluators share Attempts (`reuse.py`), and the public entry point `recalculate` for an earlier scorecard with late or corrected task outcomes (`recalculation.py`). |
-| Agent target | `src/reliability_evaluators/agent_target/` | The interface the sweep invokes an agent through, for an Attempt and for the confidence follow-up, with the target's declaration of whether that follow-up is isolated. |
+| Agent target | `src/reliability_evaluators/agent_target/` | The interface the sweep invokes an agent through, for an Attempt and for the confidence follow-up, with the target's declaration of whether that follow-up is isolated (`interface.py`), and the target for a Foundry hosted agent invoked from customer code (`foundry_hosted.py`). |
 | Scorecard | `src/reliability_evaluators/scorecard/` | Assembly of the machine-readable scorecard (JSON, `assemble.py`), the assessment of customer acceptance criteria (`acceptance.py`), the human-readable report rendered from the scorecard (self-contained HTML, `report.py`), and their delivery with the evidence to a directory the caller chooses, with the reporting failure (`delivery.py`). |
 | Foundry-managed scoring | not built yet | |
 
-`evaluators/` and `evidence/` are pure: standard library only, no I/O, no network and no Foundry dependency. The Foundry-managed evaluators are to be derived from them, so they may import only what the Foundry code-evaluator sandbox provides.
+`evaluators/` and `evidence/` are pure: standard library only, no I/O, no network and no Foundry dependency. Only `agent_target/foundry_hosted.py` talks to Foundry, over plain REST with the standard library. The Foundry-managed evaluators are to be derived from them, so they may import only what the Foundry code-evaluator sandbox provides.
 
 Each Evaluator has its documentation, with a worked example and graphics, in `docs/<metric identity>/readme.md`.
 
@@ -95,12 +95,12 @@ Development tooling is managed with [uv](https://docs.astral.sh/uv/). Customers 
 | Default test run | `uv run pytest` |
 | Opt-in live Foundry checks | `uv run pytest -m live` |
 
-The default test run excludes tests marked `live`. Live checks create billable Azure resources: they stand up the disposable fixture in [`live_fixture/`](live_fixture/README.md) (a to-do service, a Foundry prompt agent and a Foundry hosted agent) and tear it down again. The only live check so far verifies that fixture itself.
+The default test run excludes tests marked `live`. Live checks create billable Azure resources: they stand up the disposable fixture in [`live_fixture/`](live_fixture/README.md) (a to-do service, a Foundry prompt agent and a Foundry hosted agent) and tear it down again. One live check verifies that fixture itself (`tests/fixture/test_live_fixture.py`). Another runs a sweep against the fixture's hosted agent through the Foundry hosted agent target and compares outcome consistency with an independent calculation (`tests/live/test_foundry_hosted_agent_live.py`).
 
 Tests are written at three seams only:
 
 - **Evaluator seam** (`tests/evaluators/`): an Evaluator's public interface, called with grouped Attempt evidence.
-- **Evaluator sweep seam** (`tests/sweep/`): `run_sweep` with the fake agent targets and the fake customer controls in `tests/fakes.py`, asserting on the machine-readable scorecard only. `recalculate` is driven with the scorecard of such a sweep, read back from its JSON, and asserted on the new scorecard or on the failure it raises. The human-readable report is tested only as a rendering of that scorecard: `tests/report_reader.py` reads a report back and compares it with the scorecard value by value. Delivery and reporting failure are asserted on what the caller finds in the directory it chose and on the failure it is given.
+- **Evaluator sweep seam** (`tests/sweep/`): `run_sweep` with the fake agent targets and the fake customer controls in `tests/fakes.py`, asserting on the machine-readable scorecard only. The Foundry hosted agent target is driven the same way, against a fake Foundry project on the local machine (`tests/fake_foundry_hosted.py`) whose hosted agent works on the fixture's to-do service. `recalculate` is driven with the scorecard of such a sweep, read back from its JSON, and asserted on the new scorecard or on the failure it raises. The human-readable report is tested only as a rendering of that scorecard: `tests/report_reader.py` reads a report back and compares it with the scorecard value by value. Delivery and reporting failure are asserted on what the caller finds in the directory it chose and on the failure it is given.
 - **Live Foundry verification**: opt-in, marked `live`. The fixture these checks run on is test infrastructure, so it is also checked without Azure in `tests/fixture/`: its to-do service and its task-success rule run on the local machine, through the interface the live checks use.
 
 Expected values are calculated by hand, never by the code under test.
