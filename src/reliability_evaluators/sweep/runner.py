@@ -702,7 +702,7 @@ def _invoke_agent(
         # What the agent target recorded of the invocation stays on the Attempt, however it ended.
         recorded = error.invocation if isinstance(error, InvocationFailed) else None
         if isinstance(error, TimeoutError):
-            return not_completed(ExecutionStatus.TIMED_OUT, why)
+            return not_completed(ExecutionStatus.TIMED_OUT, why, recorded)
         # The sweep cannot interrupt an invocation. It measures, so that the limit holds
         # whether or not the agent target stopped at it.
         if limit is not None and clock() - started > limit:
