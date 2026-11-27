@@ -8,15 +8,25 @@ scorecard or on the reported failure. Expected values are calculated by hand.
 
 import json
 
+import pytest
+
 from reliability_evaluators.evidence import (
     ActionEvent,
+    EvidenceError,
     OperationalConstraint,
     OutcomeCorrection,
     TaskOutcome,
     ViolationAssessment,
 )
 from reliability_evaluators.scorecard import to_json
-from reliability_evaluators.sweep import NO_TASK_OUTCOME_YET, ActionEvidenceDeclaration, Task, recalculate, run_sweep
+from reliability_evaluators.sweep import (
+    NO_TASK_OUTCOME_YET,
+    ActionEvidenceDeclaration,
+    RecalculationFailed,
+    Task,
+    recalculate,
+    run_sweep,
+)
 from tests.fakes import FakeActingAgentTarget, FakeAgentTarget
 
 SOURCE = "final state of the fake service"
@@ -369,3 +379,70 @@ def test_a_recalculated_scorecard_can_be_corrected_again_and_keeps_every_earlier
             "superseded_task_outcome": {"success": True, "source": REVIEW},
         }
     ]
+
+
+def test_a_correction_for_an_attempt_that_is_not_in_the_supplied_evidence_fails_the_recalculation():
+    earlier = sweep({"close": HALF})
+
+    with pytest.raises(RecalculationFailed, match="recalculation failed: .*no Attempt 'close/attempt-9'"):
+        recalculate(
+            earlier_scorecard=earlier,
+            outcome_corrections=[corrected("close/attempt-3", success=True), corrected("close/attempt-9", success=True)],
+        )
+
+
+def test_two_corrections_for_the_same_attempt_are_ambiguous_and_fail_the_recalculation():
+    earlier = sweep({"close": HALF})
+
+    with pytest.raises(RecalculationFailed, match="more than one task outcome is supplied for 'close/attempt-3'"):
+        recalculate(
+            earlier_scorecard=earlier,
+            outcome_corrections=[corrected("close/attempt-3", success=True), corrected("close/attempt-3", success=False)],
+        )
+
+
+def test_a_correction_that_matches_more_than_one_attempt_in_the_supplied_evidence_fails_the_recalculation():
+    # No metric is scored, so that the match itself is refused and not only an Evaluator's own check.
+    earlier = sweep({"close": HALF}, metrics=[])
+    earlier["attempts"].append(dict(attempt(earlier, "close/attempt-3")))
+
+    with pytest.raises(RecalculationFailed, match="more than one Attempt has the identity 'close/attempt-3'"):
+        recalculate(earlier_scorecard=earlier, outcome_corrections=[corrected("close/attempt-3", success=True)])
+
+
+def test_a_task_outcome_for_an_attempt_whose_execution_did_not_complete_fails_the_recalculation():
+    # An execution failure is not a task failure, and no later label makes it a scored Attempt.
+    earlier = sweep({"close": ["success", "error", "success"]})
+
+    with pytest.raises(RecalculationFailed, match="'close/attempt-2' did not complete"):
+        recalculate(earlier_scorecard=earlier, outcome_corrections=[corrected("close/attempt-2", success=False)])
+
+
+@pytest.mark.parametrize(
+    ("correction", "problem"),
+    [
+        (lambda: corrected("close/attempt-3", success=True, provenance=""), "provenance"),
+        (lambda: corrected("close/attempt-3", success=True, provenance=None), "provenance"),
+        (lambda: corrected("", success=True), "attempt_id"),
+        (
+            lambda: OutcomeCorrection(attempt_id="close/attempt-3", task_outcome=True, provenance=PROVENANCE),
+            "TaskOutcome with its source",
+        ),
+        (lambda: corrected("close/attempt-3", success=True, source=""), "source"),
+        (lambda: corrected("close/attempt-3", success=0.5), "binary"),
+    ],
+)
+def test_a_correction_without_its_provenance_or_without_a_sourced_binary_outcome_is_rejected(correction, problem):
+    with pytest.raises(EvidenceError, match=problem):
+        correction()
+
+
+@pytest.mark.parametrize(
+    "corrections",
+    [[], [{"attempt_id": "close/attempt-3", "task_outcome": {"success": True, "source": REVIEW}}], None],
+)
+def test_a_recalculation_without_a_correction_it_can_read_fails(corrections):
+    earlier = sweep({"close": HALF})
+
+    with pytest.raises(RecalculationFailed, match="OutcomeCorrection"):
+        recalculate(earlier_scorecard=earlier, outcome_corrections=corrections)

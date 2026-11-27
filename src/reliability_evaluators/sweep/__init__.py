@@ -8,13 +8,14 @@ from .declaration import (
     TaskSuccessRule,
     ViolationAssessor,
 )
-from .recalculation import recalculate
+from .recalculation import RecalculationFailed, recalculate
 from .runner import run_sweep
 
 __all__ = [
     "NO_TASK_OUTCOME_YET",
     "ActionEvidenceDeclaration",
     "ActionRecorder",
+    "RecalculationFailed",
     "Task",
     "TaskSuccessRule",
     "ViolationAssessor",

@@ -13,6 +13,10 @@ from .declaration import ActionEvidenceDeclaration
 SUPERSEDED = "superseded"
 
 
+class RecalculationFailed(Exception):
+    """The recalculation did not produce a scorecard. The earlier result stands as it was."""
+
+
 def recalculate(
     *,
     earlier_scorecard: Mapping[str, Any],
@@ -20,8 +24,24 @@ def recalculate(
     action_evidence: ActionEvidenceDeclaration | None = None,
 ) -> dict[str, Any]:
     """Score the evidence of an earlier scorecard again, with the corrected task outcomes."""
+    try:
+        return _recalculate(earlier_scorecard, outcome_corrections, action_evidence)
+    except Exception as error:
+        raise RecalculationFailed(f"recalculation failed: {error}") from error
+
+
+def _recalculate(
+    earlier_scorecard: Mapping[str, Any],
+    outcome_corrections: Sequence[OutcomeCorrection],
+    action_evidence: ActionEvidenceDeclaration | None,
+) -> dict[str, Any]:
     earlier_attempts = [read_attempt(recorded) for recorded in earlier_scorecard["attempts"]]
     attempts = apply_outcome_corrections(earlier_attempts, outcome_corrections)
+    if not outcome_corrections:
+        raise ValueError(
+            "no task outcome was supplied or corrected, so there is nothing to recalculate: "
+            "a recalculation needs at least one OutcomeCorrection"
+        )
     evidence = group_by_task(attempts)
     declared = {"action_types": None if action_evidence is None else action_evidence.mapping}
     scored = []
