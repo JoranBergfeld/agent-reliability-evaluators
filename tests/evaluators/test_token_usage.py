@@ -110,12 +110,14 @@ def test_when_no_usage_is_known_the_total_is_unavailable_and_not_zero():
     ]
     # The Evaluator is calculated by code, which uses no model. That zero is known, and it does not
     # make a total of the usage that is missing.
-    assert usage["scoring"] == {
-        "basis": "no_model_use",
-        "total_tokens": 0,
-        "reason": "the Evaluator is calculated by code in the customer's process, which uses no model",
-        "scoring_path": "customer_process",
-    }
+    assert usage["scoring"] == [
+        {
+            "basis": "no_model_use",
+            "total_tokens": 0,
+            "reason": "the Evaluator is calculated by code in the customer's process, which uses no model",
+            "scoring_path": "customer_process",
+        }
+    ]
 
 
 @pytest.mark.parametrize(

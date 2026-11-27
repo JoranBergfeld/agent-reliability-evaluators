@@ -26,7 +26,7 @@ A *use* is one thing that could have used a model. There are four kinds.
 | --- | --- |
 | The invocation of the agent for an Attempt | `invocation.token_usage.total_tokens`, as the agent target recorded it for the Attempt |
 | The confidence request that followed an Attempt | `confidence_invocation.token_usage.total_tokens`, as the agent target recorded it for that request |
-| The scoring of an Evaluator | Zero when it is scored in your process. What Foundry reported for its managed run when it is scored there |
+| The scoring of an Evaluator | Zero when it is scored in your process. What Foundry reported for each of its managed runs when it is scored there |
 | Preparation that you did with a model | What you declare as `PreparationUsage` |
 
 ### Attempts
@@ -68,14 +68,14 @@ The two Foundry agent targets do not support an isolated follow-up in this versi
 
 The canonical metric definitions are code. An Evaluator that is scored in your process uses no model, so the usage of its scoring is zero, and that zero is known. It is reported with the basis `no_model_use`.
 
-An Evaluator that is scored by [Foundry-managed scoring](../managed_scoring/readme.md) has a managed run of its own. What Foundry reports for that run is kept as it was reported, with the identifiers of the eval, the run and the output item, and is read in this order:
+An Evaluator that is scored by [Foundry-managed scoring](../managed_scoring/readme.md) has managed runs of its own: two for a result, and one more each time Foundry did not grade a row and was asked again ([ADR 0006](../adr/0006-managed-results-come-back-as-encoded-parts.md)). Each run is a use of its own. What Foundry reports for a run is kept as it was reported, with the identifiers of the eval and the run, and is read in this order:
 
-1. The usage on the result of the Evaluator's criterion in the output item, when it states a whole-number `total_tokens`. The per-model rows of the run are then not added: they are another view of the same run.
+1. The usage on the results of the Evaluator's criterion, when the result of every row of the run states a whole-number `total_tokens`. The rows are graded one by one, so the count of the run is the sum over its rows. The per-model rows of the run are then not added: they are another view of the same run.
 2. Otherwise, the per-model usage rows of the run. Rows that repeat the same counts under another name are counted once. A saved run reported the same counts under the name of a model and under the name of a category, and summing its four rows doubled the true total ([#24](https://github.com/JoranBergfeld/agent-reliability-evaluators/issues/24)).
-3. Rows with different counts are listed as reported and are not summed. Another saved run reported two model rows and a category row equal to their sum. Whether rows overlap is not documented, so no total is made of rows that differ, and the count is missing.
-4. A run that reports no usage on the result and no row is missing, with that reason. It is not zero. A run of a code evaluator was observed, in the earlier prototypes, to report an empty list of rows and no usage on its results. That is the absence of a report, not a report of zero.
+3. Rows with different counts are listed as reported and are not summed. Another saved run reported two model rows and a category row equal to their sum. Whether rows overlap is not documented, so no count is made of rows that differ, and the count of that run is missing.
+4. A run that reports no usage on the result of every row and no per-model row is missing, with that reason. It is not zero. A run of a code evaluator was observed, in the earlier prototypes, to report an empty list of rows and no usage on its results. That is the absence of a report, not a report of zero.
 
-A zero that Foundry reports is counted as zero. A managed run that gave no result, or that was never made, has no known scoring usage either. This adds no model-based judge: the derived evaluators are code.
+A zero that Foundry reports is counted as zero. A run that failed is a use like any other, with whatever it reported. When no managed run is known for an Evaluator, its scoring is one use, and it is missing. This adds no model-based judge: the derived evaluators are code.
 
 ### Generated variations
 
@@ -173,9 +173,9 @@ Known: 790 + 120 + 812 = 1722 tokens. Two uses are missing a count, so 1722 is a
      "overlapping": true, "additive": false, "overlaps_with": ["brier_based_score"],
      "attempt_ids": ["close/attempt-1", "close/attempt-2", "close/attempt-3"],
      "preparation_ids": [],
-     "scoring": {"basis": "no_model_use", "total_tokens": 0,
-                 "reason": "the Evaluator is calculated by code in the customer's process, which uses no model",
-                 "scoring_path": "customer_process"}},
+     "scoring": [{"basis": "no_model_use", "total_tokens": 0,
+                  "reason": "the Evaluator is calculated by code in the customer's process, which uses no model",
+                  "scoring_path": "customer_process"}]},
     {"metric_id": "brier_based_score", "...": "the same Attempts, so the same total, labelled the same way"}
   ],
   "shared_preparation": [],
@@ -211,7 +211,7 @@ usage = evaluator_token_usage(tasks)
 
 usage["total"]     # {"coverage": ..., "total_tokens": ..., "uses_reported": ..., "uses_missing": ..., "missing": [...]}
 usage["attempts"]  # one entry per Attempt, as in a scorecard
-usage["scoring"]   # zero, known: the Evaluator is code in your process
+usage["scoring"]   # one use of zero, known: the Evaluator is code in your process
 ```
 
 The two calls are independent. The usage is read from the Attempts and not from the metric result, and the metric result holds no usage.
@@ -240,7 +240,7 @@ echo "##vso[task.uploadsummary]$PWD/artifacts/reliability/summary.md"
 Neither makes an Attempt or calls an agent.
 
 - A [recalculation](../sweep/late-and-corrected-outcomes.md) carries the token usage of the earlier scorecard over. It is what the sweep used, and the recalculation scores by code. The usage has to be what the supplied evidence gives, like the rest of the execution record, and what you declared for preparation is kept as it was reported.
-- A [customer-process rescore](../managed_scoring/readme.md#a-customer-process-rescore) adds `customer_process_rescore` to the usage of the Evaluator it rescored: a scoring of its own, by code in your process, that used no tokens. What the managed run used stays as it was reported, and so do the totals. A rescore does not stand in for a count that Foundry did not report.
+- A [customer-process rescore](../managed_scoring/readme.md#a-customer-process-rescore) adds `customer_process_rescore` to the usage of the Evaluator it rescored: a scoring of its own, by code in your process, that used no tokens. What the managed runs used stays as it was reported, and so do the totals. A rescore does not stand in for a count that Foundry did not report.
 
 ## Assumptions
 
@@ -258,7 +258,7 @@ Which paths expose token counts has not been verified live here. That is [#52](h
 - Returned Responses carried usage. Invocations that the platform answered with an error carried none: three of eleven prompt-agent Attempts in a saved campaign.
 - Whether a failed, cancelled or interrupted call reports the tokens it used is not established. Such an Attempt is reported with whatever was recorded, and otherwise as missing.
 - A hosted agent that serves the Invocations protocol is not supported, and its usage is unverified.
-- Scoring usage is not guaranteed per Evaluator. A managed run of a code evaluator reported none.
+- Scoring usage is not guaranteed per Evaluator. A managed run of a code evaluator reported none in the earlier prototypes. What the runs of a derived evaluator report was not looked at.
 - How per-model usage rows alias each other is not documented. The rule here counts exact repeats once and refuses to sum rows that differ.
 - The usage of a confidence follow-up has not been observed on either Foundry agent type: neither target sends one in this version.
 

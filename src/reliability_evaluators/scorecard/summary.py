@@ -88,7 +88,8 @@ def _usage(usage: Mapping[str, Any]) -> list[str]:
                     _text(_of(entry, "total", "total_tokens")),
                     _text(_of(entry, "total", "coverage")),
                     _overlapping(entry),
-                    _use(entry.get("scoring")),
+                    # One count for scoring by code, and one for every managed run in Foundry.
+                    ", ".join(map(_use, _records(entry.get("scoring")))) or _NO_VALUE,
                 ]
                 for entry in evaluators
             ],
@@ -153,7 +154,12 @@ def _missing(entry: Mapping[str, Any]) -> str:
     """One use whose count is missing, named as the scorecard names it, with the reason."""
     named = [
         f"{of} {_code(entry[key])}"
-        for key, of in (("attempt_id", "Attempt"), ("preparation_id", "preparation"), ("metric_id", "Evaluator"))
+        for key, of in (
+            ("attempt_id", "Attempt"),
+            ("preparation_id", "preparation"),
+            ("metric_id", "Evaluator"),
+            ("run_id", "in managed run"),
+        )
         if key in entry
     ]
     return f"- {_text(entry.get('use'))} of {' '.join(named)}: {_text(entry.get('reason'))}"

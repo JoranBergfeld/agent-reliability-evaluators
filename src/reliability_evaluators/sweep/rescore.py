@@ -56,7 +56,7 @@ def rescore_in_customer_process(
 
     `metrics` names the metrics to rescore, each by its metric identity or as the
     ConfiguredEvaluator the sweep was given. Each has to be a metric that the earlier
-    scorecard attributes to Foundry-managed scoring, with a value or with a failure. No
+    scorecard attributes to Foundry-managed scoring, with a result or with a failure. No
     other metric is rescored.
 
     The result is a new scorecard that is the earlier one with one addition per rescored
@@ -64,11 +64,12 @@ def rescore_in_customer_process(
     own, calculated by the same Evaluator from the Attempts the managed evaluator was given,
     and attributed to the customer-process scoring path. Everything else is as it was. The
     entry of the metric still holds what Foundry-managed scoring gave: the unverified value
-    with its limitation, or the failure with its execution error. A scorecard that was
+    with its limitation, the unavailable measurement with its reason, or the failure with its
+    execution error. A scorecard that was
     partial stays partial and still lists the managed result as missing, and the acceptance
     assessment of the managed result is not changed. The token usage of the Evaluator
     gains the rescore as a scoring of its own, which is code in this process and used no
-    tokens. What the managed run used stays as it was reported, and so do the totals.
+    tokens. What the managed runs used stays as it was reported, and so do the totals.
 
     Where the earlier scorecard records the digest of the evidence that was submitted to
     Foundry, the supplied evidence has to give that digest. A rescore of other evidence is
@@ -131,7 +132,7 @@ def _rescore(
         entry[RESCORE] = rescore_entry(scored, _same_evidence(entry, evidence), criteria.get(metric_id))
         with _validating_the_supplied_evidence():
             # The rescore is a scoring of its own. It is code in this process, so it used no tokens,
-            # and what the managed run used stays as it was reported.
+            # and what the managed runs used stays as it was reported.
             _usage_of_the_evaluator(rescored, metric_id)[RESCORE] = code_scoring_use()
     return rescored
 

@@ -78,7 +78,7 @@ def evaluator_token_usage(tasks: Iterable[TaskEvidence]) -> dict[str, Any]:
         "meaning": MEANING,
         "unit": UNIT,
         "total": _total(_uses_of(attempts)),
-        "scoring": code_scoring_use(),
+        "scoring": [code_scoring_use()],
         "attempts": attempts,
     }
 
@@ -173,8 +173,9 @@ class EvaluatorUse:
     metric_id: str
     # Identities of the Attempts the Evaluator was given, whatever became of each.
     attempt_ids: tuple[str, ...]
-    # The use that scoring the Evaluator was, as `code_scoring_use` or `managed_scoring_use` gives it.
-    scoring: Mapping[str, Any]
+    # The uses that scoring the Evaluator was, as `code_scoring_use` or `managed_scoring_uses` gives them:
+    # one for scoring by code in the customer's process, and one for every managed run in Foundry.
+    scoring: Sequence[Mapping[str, Any]]
 
 
 def sweep_token_usage(
@@ -186,7 +187,7 @@ def sweep_token_usage(
 
     The sweep total counts each use once, whichever Evaluators used it. The total of an
     Evaluator is the usage of every Attempt it was given, of the shared preparation of what
-    those Attempts were made under, and of its own scoring. Where another Evaluator was
+    those Attempts were made under, and of its own scoring, which in Foundry is several runs. Where another Evaluator was
     given any of the same Attempts or preparation, both totals include it: such a total is
     labelled overlapping and not additive.
 
@@ -221,7 +222,7 @@ def sweep_token_usage(
     every_use = [
         *_uses_of(used.values()),
         *map(_preparation_use, preparations.values()),
-        *map(_scoring_of, evaluators),
+        *(use for evaluator in evaluators for use in _scoring_of(evaluator)),
     ]
     return {
         "meaning": MEANING,
@@ -266,7 +267,7 @@ def _evaluator_usage(
     uses = [
         *_uses_of(used[attempt_id] for attempt_id in evaluator.attempt_ids),
         *(_preparation_use(preparations[preparation_id]) for preparation_id in preparation_ids),
-        _scoring_of(evaluator),
+        *_scoring_of(evaluator),
     ]
     return {
         "metric_id": evaluator.metric_id,
@@ -277,7 +278,7 @@ def _evaluator_usage(
         "overlaps_with": overlaps_with,
         "attempt_ids": list(evaluator.attempt_ids),
         "preparation_ids": list(preparation_ids),
-        "scoring": dict(evaluator.scoring),
+        "scoring": [dict(use) for use in evaluator.scoring],
     }
 
 
@@ -285,8 +286,19 @@ def _preparation_use(preparation: Mapping[str, Any]) -> tuple[dict[str, Any], Ma
     return {"use": "shared_preparation", "preparation_id": preparation["preparation_id"]}, preparation
 
 
-def _scoring_of(evaluator: EvaluatorUse) -> tuple[dict[str, Any], Mapping[str, Any]]:
-    return {"use": "scoring", "metric_id": evaluator.metric_id}, evaluator.scoring
+def _scoring_of(evaluator: EvaluatorUse) -> list[tuple[dict[str, Any], Mapping[str, Any]]]:
+    """The uses that scoring an Evaluator was, each named by its metric and, for a managed run, by its run."""
+    return [
+        (
+            {
+                "use": "scoring",
+                "metric_id": evaluator.metric_id,
+                **({"run_id": use["run_id"]} if "run_id" in use else {}),
+            },
+            use,
+        )
+        for use in evaluator.scoring
+    ]
 
 
 def code_scoring_use() -> dict[str, Any]:
@@ -294,56 +306,72 @@ def code_scoring_use() -> dict[str, Any]:
     return dict(CODE_IN_THE_CUSTOMER_PROCESS)
 
 
-ON_THE_RESULT = "the usage Foundry reported on the result of this Evaluator in its managed run"
+ON_THE_RESULTS = "the usage Foundry reported on the result of this Evaluator for every row of the managed run"
 PER_MODEL_USAGE = (
-    "the per-model usage Foundry reported for the managed run of this Evaluator. Rows that repeat the same "
-    "counts under another name are counted once"
+    "the per-model usage Foundry reported for the managed run. Rows that repeat the same counts under another "
+    "name are counted once"
 )
 NO_MANAGED_RUN = "no managed run is known for this Evaluator, so no usage was reported for its scoring"
 NO_MANAGED_USAGE = (
-    "Foundry reported no usage for the managed run of this Evaluator: none on its result and no per-model "
-    "usage row. That is not a report of zero"
+    "Foundry reported no usage for the managed run: not on the result of every row, and no per-model usage "
+    "row. That is not a report of zero"
 )
 UNREADABLE_ROWS = (
-    "the per-model usage Foundry reported for the managed run of this Evaluator is not a list of rows that "
-    "each have a total_tokens that is a whole number"
+    "the per-model usage Foundry reported for the managed run is not a list of rows that each have a "
+    "total_tokens that is a whole number"
 )
 ROWS_THAT_DIFFER = (
-    "Foundry reported per-model usage rows with different counts for the managed run of this Evaluator. "
-    "Whether such rows overlap is not documented, so they are listed as reported and are not summed"
+    "Foundry reported per-model usage rows with different counts for the managed run. Whether such rows "
+    "overlap is not documented, so they are listed as reported and are not summed"
 )
 
 
-def managed_scoring_use(reported: Any, provenance: Mapping[str, Any] | None) -> dict[str, Any]:
-    """The use that scoring an Evaluator in its managed run was, from what Foundry reported of that run.
+def managed_scoring_uses(reported: Any, provenance: Mapping[str, Any] | None) -> list[dict[str, Any]]:
+    """The uses that scoring an Evaluator in Foundry was: one for every managed run that was made for it.
 
-    `reported` is what managed scoring kept of the run's usage: the usage on the result of
-    the Evaluator, and the per-model rows of the run. None: no run is known. `provenance`
-    identifies the run. Each Evaluator has a managed run of its own, so what a run reports
-    is the scoring of that Evaluator alone.
+    `reported` is what managed scoring kept of the usage of each run: the usage on the
+    result of the Evaluator in each output item, and the per-model rows of the run.
+    `provenance` identifies the eval. The managed runs of an Evaluator are its own, so what
+    a run reports is scoring of that Evaluator alone. Without a known run there is one use,
+    and it is missing.
 
-    The usage on the result is counted when it states a total, and the rows are then not
-    added to it: they are another view of the same run. Without it, rows that repeat the
-    same counts under another name are one use. Rows with different counts are not summed,
-    because how they overlap is not documented: the count is then missing. A run that
-    reports nothing is missing too, and is never zero. A zero is counted when it is reported.
+    For a run, the usage on the results is counted when the result of every row states a
+    total: the rows are graded one by one, so their counts add up. The per-model rows are
+    then not added to it: they are another view of the same run. Otherwise, per-model rows
+    that repeat the same counts under another name are one use. Rows with different counts
+    are not summed, because how they overlap is not documented: the count is then missing.
+    A run that reports nothing is missing too, and is never zero. A zero is counted when it
+    is reported.
     """
-    provenance = provenance or {}
-    identifiers = {
+    scoring = {
         "scoring_path": ScoringPath.FOUNDRY_MANAGED.value,
-        "source": None,
-        **{name: provenance.get(name) for name in ("eval_id", "run_id", "output_item_id")},
-        "reported": reported,
+        "eval_id": (provenance or {}).get("eval_id"),
     }
-    if reported is None:
-        return _missing(NO_MANAGED_RUN, **identifiers)
-    on_result, rows = (
-        (reported.get("result_sample_usage"), reported.get("per_model_usage"))
+    if not isinstance(reported, list) or not reported:
+        return [_missing(NO_MANAGED_RUN, **scoring, run_id=None, source=None, reported=None)]
+    return [_managed_run_use(of_run, scoring) for of_run in reported]
+
+
+def _managed_run_use(reported: Any, scoring: Mapping[str, Any]) -> dict[str, Any]:
+    """The use that one managed run was, from what Foundry reported of it."""
+    on_results, rows = (
+        (reported.get("results_sample_usage"), reported.get("per_model_usage"))
         if isinstance(reported, Mapping)
         else (None, reported)
     )
-    if isinstance(on_result, Mapping) and _is_count(on_result.get("total_tokens")):
-        return _reported(on_result["total_tokens"], **{**identifiers, "source": ON_THE_RESULT})
+    identifiers = {
+        **scoring,
+        "run_id": reported.get("run_id") if isinstance(reported, Mapping) else None,
+        "source": None,
+        "reported": reported,
+    }
+    if (
+        isinstance(on_results, list)
+        and on_results
+        and all(isinstance(usage, Mapping) and _is_count(usage.get("total_tokens")) for usage in on_results)
+    ):
+        counted = sum(usage["total_tokens"] for usage in on_results)
+        return _reported(counted, **{**identifiers, "source": ON_THE_RESULTS})
     if rows is None or rows == []:
         return _missing(NO_MANAGED_USAGE, **identifiers)
     if not isinstance(rows, list) or not all(

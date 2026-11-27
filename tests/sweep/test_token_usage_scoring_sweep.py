@@ -3,6 +3,10 @@
 The sweep is driven through its public entry point with a fake agent target and a fake
 Foundry project. Every assertion is on the machine-readable scorecard. The counts are those
 of a saved managed run (decision ticket #24), and expected totals are added by hand.
+
+Foundry-managed scoring makes two runs for a metric: one of two rows, for the plain value
+and the size of the encoded result, and one with a row for each part of the encoded result.
+Each run is a use of its own.
 """
 
 import json
@@ -15,13 +19,18 @@ from reliability_evaluators.scorecard import to_json
 from reliability_evaluators.sweep import ConfiguredEvaluator, Task, rescore_in_customer_process, run_sweep
 from tests.fake_foundry import FakeFoundryProject
 from tests.fakes import FakeAgentTarget
+from tests.managed_artifact import altered_evidence
 
 SOURCE = "final state of the fake service"
 OUTCOME = "outcome_consistency"
 MANAGED = ConfiguredEvaluator(metric_id=OUTCOME, scoring_path="foundry_managed")
 
 # What Foundry reported on the result of a criterion that used a model, in a saved run.
-ON_THE_RESULT = {"prompt_tokens": 1862, "completion_tokens": 114, "cached_tokens": 0, "total_tokens": 1976}
+ON_A_RESULT = {"prompt_tokens": 1862, "completion_tokens": 114, "cached_tokens": 0, "total_tokens": 1976}
+NO_USAGE = (
+    "Foundry reported no usage for the managed run: not on the result of every row, and no per-model usage "
+    "row. That is not a report of zero"
+)
 
 
 def row(model_name, total_tokens, prompt_tokens, completion_tokens):
@@ -61,121 +70,162 @@ def sweep(foundry, metrics=(MANAGED,)):
 
 
 def usage_of(scorecard):
+    """The sweep total, the total of the one Evaluator, and what each of its scoring uses was."""
     (evaluator,) = scorecard["token_usage"]["evaluators"]
-    return scorecard["token_usage"]["sweep"], evaluator
+    scoring = [(use.get("run_id"), use["basis"], use["total_tokens"]) for use in evaluator["scoring"]]
+    return scorecard["token_usage"]["sweep"], evaluator["total"], scoring
+
+
+def known(total):
+    return total["coverage"], total["total_tokens"]
 
 
 def test_scoring_by_code_in_the_customer_process_is_zero_because_zero_is_known():
     # 790 + 812 = 1602 tokens for the Attempts, and none for the scoring.
-    total, evaluator = usage_of(sweep(None, metrics=(OUTCOME,)))
+    scorecard = sweep(None, metrics=(OUTCOME,))
 
-    assert evaluator["scoring"]["basis"] == "no_model_use"
-    assert evaluator["scoring"]["total_tokens"] == 0
-    assert (evaluator["total"]["coverage"], evaluator["total"]["total_tokens"]) == ("complete", 1602)
-    assert (total["coverage"], total["total_tokens"]) == ("complete", 1602)
+    sweep_total, evaluator_total, scoring = usage_of(scorecard)
+    assert scoring == [(None, "no_model_use", 0)]
+    assert scorecard["token_usage"]["evaluators"][0]["scoring"] == [
+        {
+            "basis": "no_model_use",
+            "total_tokens": 0,
+            "reason": "the Evaluator is calculated by code in the customer's process, which uses no model",
+            "scoring_path": "customer_process",
+        }
+    ]
+    assert known(evaluator_total) == ("complete", 1602)
+    assert known(sweep_total) == ("complete", 1602)
 
 
 def test_managed_scoring_that_reports_no_usage_is_missing_and_not_zero():
-    # A run of a code evaluator was observed to report an empty list of per-model usage and no usage
-    # on its result. That is not a report of zero: 1602 is what is known, and it is a partial sum.
+    # A run of a code evaluator was seen to report an empty list of per-model usage and no usage on
+    # its results. That is not a report of zero: 1602 is what is known, and it is a partial sum.
     scorecard = sweep(FakeFoundryProject())
 
-    total, evaluator = usage_of(scorecard)
-    assert evaluator["scoring"] == {
+    sweep_total, evaluator_total, scoring = usage_of(scorecard)
+    assert scoring == [("evalrun_1", "missing", None), ("evalrun_2", "missing", None)]
+    assert scorecard["token_usage"]["evaluators"][0]["scoring"][0] == {
         "basis": "missing",
         "total_tokens": None,
-        "reason": (
-            "Foundry reported no usage for the managed run of this Evaluator: none on its result and no "
-            "per-model usage row. That is not a report of zero"
-        ),
+        "reason": NO_USAGE,
         "scoring_path": "foundry_managed",
-        "source": None,
         "eval_id": "eval_1",
         "run_id": "evalrun_1",
-        "output_item_id": "1",
-        "reported": {"result_sample_usage": None, "per_model_usage": []},
+        "source": None,
+        # The first run has two rows: one for the plain value and one for the size of the encoded result.
+        "reported": {"run_id": "evalrun_1", "results_sample_usage": [None, None], "per_model_usage": []},
     }
-    assert (evaluator["total"]["coverage"], evaluator["total"]["total_tokens"]) == ("partial", 1602)
-    assert (total["coverage"], total["total_tokens"]) == ("partial", 1602)
-    assert total["missing"] == [{"use": "scoring", "metric_id": OUTCOME, "reason": evaluator["scoring"]["reason"]}]
+    assert known(evaluator_total) == ("partial", 1602)
+    assert known(sweep_total) == ("partial", 1602)
+    assert sweep_total["missing"] == [
+        {"use": "scoring", "metric_id": OUTCOME, "run_id": "evalrun_1", "reason": NO_USAGE},
+        {"use": "scoring", "metric_id": OUTCOME, "run_id": "evalrun_2", "reason": NO_USAGE},
+    ]
     # The metric is as Foundry returned it, whatever was reported of what scoring it used.
     assert scorecard["metrics"][0]["value"] == 1
 
 
-def test_scoring_usage_that_foundry_reports_on_the_result_is_counted_once():
-    # The result reports 1976 tokens, and the run repeats them in two per-model usage rows. They are
-    # one use, not 3 * 1976: the Evaluator used 790 + 812 + 1976 = 3578 tokens.
-    foundry = FakeFoundryProject(result_usage=ON_THE_RESULT, per_model_usage=[MODEL_ROW, CATEGORY_ROW])
+def test_scoring_usage_that_foundry_reports_on_the_results_of_a_run_is_counted_once():
+    # The first run has two rows, and the result of each reports 1976 tokens: 3952 for the run. The run
+    # repeats that total in two per-model usage rows, which are another view of it and are not added.
+    # The second run reports nothing. Known: 790 + 812 + 3952 = 5554 tokens, a partial sum.
+    first_run = [row("gpt-4.1-mini-2025-04-14", 3952, 3724, 228), row("azure_ai_evaluation", 3952, 3724, 228)]
+    foundry = FakeFoundryProject(
+        result_usage=lambda item: ON_A_RESULT if item["result_part"] in ("value", "size") else None,
+        per_model_usage=lambda run: first_run if run == 1 else [],
+    )
 
-    total, evaluator = usage_of(sweep(foundry))
+    scorecard = sweep(foundry)
 
-    scoring = evaluator["scoring"]
-    assert (scoring["basis"], scoring["total_tokens"]) == ("reported", 1976)
-    assert scoring["source"] == "the usage Foundry reported on the result of this Evaluator in its managed run"
-    assert scoring["reported"] == {"result_sample_usage": ON_THE_RESULT, "per_model_usage": [MODEL_ROW, CATEGORY_ROW]}
-    assert (evaluator["total"]["coverage"], evaluator["total"]["total_tokens"]) == ("complete", 3578)
-    assert (total["coverage"], total["total_tokens"]) == ("complete", 3578)
+    sweep_total, evaluator_total, scoring = usage_of(scorecard)
+    assert scoring == [("evalrun_1", "reported", 3952), ("evalrun_2", "missing", None)]
+    of_first_run = scorecard["token_usage"]["evaluators"][0]["scoring"][0]
+    assert of_first_run["source"] == (
+        "the usage Foundry reported on the result of this Evaluator for every row of the managed run"
+    )
+    assert of_first_run["reported"] == {
+        "run_id": "evalrun_1",
+        "results_sample_usage": [ON_A_RESULT, ON_A_RESULT],
+        "per_model_usage": first_run,
+    }
+    assert known(evaluator_total) == ("partial", 5554)
+    assert known(sweep_total) == ("partial", 5554)
 
 
 def test_per_model_usage_rows_that_repeat_the_same_counts_are_not_summed_twice():
-    # Summing both rows would give 3952. The counts are the same under two names, so they are one use.
+    # Each of the two runs reports 1976 tokens under the name of a model and again under the name of a
+    # category. That is one use of 1976 per run: 790 + 812 + 1976 + 1976 = 5554 tokens.
+    # Summing every row would give 4 * 1976 = 7904 for the scoring alone.
     foundry = FakeFoundryProject(per_model_usage=[MODEL_ROW, CATEGORY_ROW])
 
-    total, evaluator = usage_of(sweep(foundry))
+    scorecard = sweep(foundry)
 
-    scoring = evaluator["scoring"]
-    assert (scoring["basis"], scoring["total_tokens"]) == ("reported", 1976)
-    assert scoring["source"] == (
-        "the per-model usage Foundry reported for the managed run of this Evaluator. Rows that repeat the "
-        "same counts under another name are counted once"
+    sweep_total, evaluator_total, scoring = usage_of(scorecard)
+    assert scoring == [("evalrun_1", "reported", 1976), ("evalrun_2", "reported", 1976)]
+    assert scorecard["token_usage"]["evaluators"][0]["scoring"][0]["source"] == (
+        "the per-model usage Foundry reported for the managed run. Rows that repeat the same counts under "
+        "another name are counted once"
     )
-    assert total["total_tokens"] == 790 + 812 + 1976
+    assert known(evaluator_total) == ("complete", 5554)
+    assert known(sweep_total) == ("complete", 5554)
 
 
 def test_per_model_usage_rows_with_different_counts_are_listed_and_not_summed():
     # A saved run reported two model rows and a category row equal to their sum. Whether rows overlap
-    # is not documented, so no total is made of rows that differ: summing these would double it.
-    rows = [
+    # is not documented, so no count is made of rows that differ: summing these would double it.
+    # The first run reports 1976 once. Known: 790 + 812 + 1976 = 3578 tokens, a partial sum.
+    differing = [
         row("gpt-4.1-mini-2025-04-14", 1200, 1100, 100),
         row("gpt-4.1-2025-04-14", 776, 762, 14),
         row("azure_ai_evaluation", 1976, 1862, 114),
     ]
+    foundry = FakeFoundryProject(per_model_usage=lambda run: [MODEL_ROW, CATEGORY_ROW] if run == 1 else differing)
 
-    total, evaluator = usage_of(sweep(FakeFoundryProject(per_model_usage=rows)))
+    scorecard = sweep(foundry)
 
-    scoring = evaluator["scoring"]
-    assert (scoring["basis"], scoring["total_tokens"]) == ("missing", None)
-    assert scoring["reason"] == (
-        "Foundry reported per-model usage rows with different counts for the managed run of this Evaluator. "
-        "Whether such rows overlap is not documented, so they are listed as reported and are not summed"
+    sweep_total, evaluator_total, scoring = usage_of(scorecard)
+    assert scoring == [("evalrun_1", "reported", 1976), ("evalrun_2", "missing", None)]
+    of_second_run = scorecard["token_usage"]["evaluators"][0]["scoring"][1]
+    assert of_second_run["reason"] == (
+        "Foundry reported per-model usage rows with different counts for the managed run. Whether such rows "
+        "overlap is not documented, so they are listed as reported and are not summed"
     )
-    assert scoring["reported"]["per_model_usage"] == rows
-    assert (total["coverage"], total["total_tokens"]) == ("partial", 1602)
+    assert of_second_run["reported"]["per_model_usage"] == differing
+    assert known(evaluator_total) == ("partial", 3578)
+    assert known(sweep_total) == ("partial", 3578)
 
 
 def test_a_zero_that_foundry_reports_for_scoring_is_a_known_zero():
     zero = {"prompt_tokens": 0, "completion_tokens": 0, "cached_tokens": 0, "total_tokens": 0}
 
-    total, evaluator = usage_of(sweep(FakeFoundryProject(result_usage=zero)))
+    sweep_total, evaluator_total, scoring = usage_of(sweep(FakeFoundryProject(result_usage=zero)))
 
-    assert (evaluator["scoring"]["basis"], evaluator["scoring"]["total_tokens"]) == ("reported", 0)
-    assert (total["coverage"], total["total_tokens"]) == ("complete", 1602)
+    assert scoring == [("evalrun_1", "reported", 0), ("evalrun_2", "reported", 0)]
+    assert known(evaluator_total) == ("complete", 1602)
+    assert known(sweep_total) == ("complete", 1602)
 
 
 def one_outcome_flipped(item):
-    """The evidence as a project that altered it would hand it to the evaluator, which then raises."""
-    return {field: text.replace("true", "false", 1) for field, text in item.items()}
+    """What a project that altered the submitted evidence would hand the evaluator, which then raises."""
+    return altered_evidence(item, '"success":true', '"success":false')
 
 
 def test_a_managed_run_that_gives_no_result_has_no_known_scoring_usage_either():
     scorecard = sweep(FakeFoundryProject(alter_item=one_outcome_flipped))
 
-    total, evaluator = usage_of(scorecard)
+    sweep_total, evaluator_total, scoring = usage_of(scorecard)
     assert scorecard["metrics"][0]["state"] is None
-    assert (evaluator["scoring"]["basis"], evaluator["scoring"]["total_tokens"]) == ("missing", None)
-    assert (evaluator["scoring"]["eval_id"], evaluator["scoring"]["run_id"]) == ("eval_1", "evalrun_1")
+    # The first run failed, so no second one was made.
+    assert scoring == [("evalrun_1", "missing", None)]
+    assert scorecard["token_usage"]["evaluators"][0]["scoring"][0]["reported"] == {
+        "run_id": "evalrun_1",
+        "results_sample_usage": None,
+        "per_model_usage": [],
+    }
     # What the Attempts used is known, whatever became of the scoring.
-    assert (total["coverage"], total["total_tokens"]) == ("partial", 1602)
+    assert known(evaluator_total) == ("partial", 1602)
+    assert known(sweep_total) == ("partial", 1602)
 
 
 def test_managed_scoring_that_stops_before_it_made_a_run_reports_no_usage():
@@ -194,13 +244,25 @@ def test_managed_scoring_that_stops_before_it_made_a_run_reports_no_usage():
         tasks=[task], agent_target=target, metrics=[MANAGED], managed_scoring=Stops(project=FakeFoundryProject())
     )
 
-    total, evaluator = usage_of(scorecard)
-    assert evaluator["scoring"]["reason"] == (
-        "no managed run is known for this Evaluator, so no usage was reported for its scoring"
-    )
-    assert (evaluator["scoring"]["run_id"], evaluator["scoring"]["reported"]) == (None, None)
+    sweep_total, _, scoring = usage_of(scorecard)
+    assert scoring == [(None, "missing", None)]
+    (use,) = scorecard["token_usage"]["evaluators"][0]["scoring"]
+    assert use["reason"] == "no managed run is known for this Evaluator, so no usage was reported for its scoring"
+    assert use["reported"] is None
     # Nothing is known of the Attempts or of the scoring: there is no total, and it is not zero.
-    assert (total["coverage"], total["total_tokens"]) == ("unavailable", None)
+    assert known(sweep_total) == ("unavailable", None)
+
+
+@pytest.mark.parametrize("unusable", [[{"model_name": "gpt-4.1-mini"}], [row("gpt-4.1-mini", "1976", 1862, 114)], "none"])
+def test_per_model_usage_without_whole_number_totals_is_not_counted(unusable):
+    scorecard = sweep(FakeFoundryProject(per_model_usage=unusable))
+
+    _, _, scoring = usage_of(scorecard)
+    assert scoring == [("evalrun_1", "missing", None), ("evalrun_2", "missing", None)]
+    assert scorecard["token_usage"]["evaluators"][0]["scoring"][0]["reason"] == (
+        "the per-model usage Foundry reported for the managed run is not a list of rows that each have a "
+        "total_tokens that is a whole number"
+    )
 
 
 def test_a_customer_process_rescore_is_a_scoring_of_its_own_that_used_no_tokens():
@@ -216,20 +278,9 @@ def test_a_customer_process_rescore_is_a_scoring_of_its_own_that_used_no_tokens(
         "reason": "the Evaluator is calculated by code in the customer's process, which uses no model",
         "scoring_path": "customer_process",
     }
-    # What the managed run used is still not known, and the rescore does not stand in for it:
+    # What the managed runs used is still not known, and the rescore does not stand in for it:
     # 790 + 812 = 1602 tokens is still a partial sum, for the Evaluator and for the sweep.
     assert {key: value for key, value in after.items() if key != "customer_process_rescore"} == before
-    assert after["scoring"]["basis"] == "missing"
-    assert (after["total"]["coverage"], after["total"]["total_tokens"]) == ("partial", 1602)
+    assert [use["basis"] for use in after["scoring"]] == ["missing", "missing"]
+    assert known(after["total"]) == ("partial", 1602)
     assert rescored["token_usage"]["sweep"] == earlier["token_usage"]["sweep"]
-
-
-@pytest.mark.parametrize("unusable", [[{"model_name": "gpt-4.1-mini"}], [row("gpt-4.1-mini", "1976", 1862, 114)], "none"])
-def test_per_model_usage_without_whole_number_totals_is_not_counted(unusable):
-    _, evaluator = usage_of(sweep(FakeFoundryProject(per_model_usage=unusable)))
-
-    assert (evaluator["scoring"]["basis"], evaluator["scoring"]["total_tokens"]) == ("missing", None)
-    assert evaluator["scoring"]["reason"] == (
-        "the per-model usage Foundry reported for the managed run of this Evaluator is not a list of rows "
-        "that each have a total_tokens that is a whole number"
-    )

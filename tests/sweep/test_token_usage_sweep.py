@@ -175,12 +175,14 @@ def test_attempts_that_two_evaluators_share_are_counted_once_in_the_sweep_and_th
     assert (outcome["overlaps_with"], resource["overlaps_with"]) == (["resource_consistency"], [OUTCOME])
     assert [entry["used_by"] for entry in usage["attempts"]] == [[OUTCOME, "resource_consistency"]] * 2
     # Scoring by code in this process uses no model: that zero is known.
-    assert outcome["scoring"] == {
-        "basis": "no_model_use",
-        "total_tokens": 0,
-        "reason": "the Evaluator is calculated by code in the customer's process, which uses no model",
-        "scoring_path": "customer_process",
-    }
+    assert outcome["scoring"] == [
+        {
+            "basis": "no_model_use",
+            "total_tokens": 0,
+            "reason": "the Evaluator is calculated by code in the customer's process, which uses no model",
+            "scoring_path": "customer_process",
+        }
+    ]
 
 
 def test_separate_attempts_made_for_an_evaluator_are_its_own_and_every_attempt_is_in_the_sweep_total():
