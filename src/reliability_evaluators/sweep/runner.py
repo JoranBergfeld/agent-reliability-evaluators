@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, replace
 from functools import partial
 from time import perf_counter
@@ -22,7 +23,7 @@ from ..evidence import (
     ViolationAssessment,
     group_by_task,
 )
-from ..scorecard import AcceptanceCriterion, ScoredMetric, build_scorecard, criteria_by_metric
+from ..scorecard import AcceptanceCriterion, ArtifactLocation, ScoredMetric, build_scorecard, criteria_by_metric
 from .confidence import ATTEMPT_NOT_COMPLETED, elicit_confidence
 from .declaration import ActionEvidenceDeclaration, ConfiguredEvaluator, Experiment, Task
 from .lifecycle import ConfidenceFollowUp, planned_attempt_ids, run_experiments
@@ -43,6 +44,7 @@ def run_sweep(
     action_evidence: ActionEvidenceDeclaration | None = None,
     acceptance_criteria: Sequence[AcceptanceCriterion] = (),
     clock: Callable[[], float] = perf_counter,
+    artifact_dir: str | os.PathLike[str] | None = None,
 ) -> dict[str, Any]:
     """Make the declared Attempts, score the selected metrics, and return the scorecard.
 
@@ -85,6 +87,52 @@ def run_sweep(
     rule that does not return a sourced, binary TaskOutcome stops the sweep. So does a
     violation assessor that does not return sourced violation assessments of the operational
     constraints its Task declares, and an action recording that is not a sequence of ActionEvent.
+
+    With `artifact_dir`, the attempt-level evidence, the scorecard and the human-readable
+    report rendered from it are also written to that directory. The caller chooses it in the
+    run or artifact context of the platform it runs on. The sweep then either delivers all
+    three or raises ReportingFailure: whatever stops it, a rejected declaration included, is
+    raised as that, and the evidence collected until then is kept at the location.
+    """
+    location = None if artifact_dir is None else ArtifactLocation(artifact_dir)
+    attempts: list[Attempt] = []
+    try:
+        scorecard = _sweep(
+            attempts,
+            tasks=tasks,
+            experiments=experiments,
+            agent_target=agent_target,
+            metrics=metrics,
+            action_evidence=action_evidence,
+            acceptance_criteria=acceptance_criteria,
+            clock=clock,
+        )
+    except Exception as error:
+        if location is None:
+            raise
+        raise location.failed(
+            "the Evaluator sweep stopped before it produced a scorecard",
+            error,
+            evidence=[attempt.to_dict() for attempt in attempts],
+        ) from error
+    if location is not None:
+        location.deliver(scorecard)
+    return scorecard
+
+
+def _sweep(
+    attempts: list[Attempt],
+    *,
+    tasks: Sequence[Task],
+    experiments: Sequence[Experiment],
+    agent_target: AgentTarget,
+    metrics: Sequence[str | ConfiguredEvaluator],
+    action_evidence: ActionEvidenceDeclaration | None,
+    acceptance_criteria: Sequence[AcceptanceCriterion],
+    clock: Callable[[], float],
+) -> dict[str, Any]:
+    """Make the Attempts and score them. Each Attempt is added to `attempts` as it is made,
+    so that `run_sweep` still has the evidence if this stops.
     """
     selected = [_select(metric, action_evidence) for metric in metrics]
     _require_one_evaluator_per_metric(selected)
@@ -98,6 +146,7 @@ def run_sweep(
     made: list[list[Attempt]] = []
     experiment_records: list[dict[str, Any]] = []
     for shared, plan in zip(sharing, planned):
+        first = len(attempts)
         ask_confidence = "confidence" in shared.requirements
         invoke_agent = partial(
             _invoke_agent,
@@ -106,20 +155,23 @@ def run_sweep(
             ask_confidence=ask_confidence,
             clock=clock,
         )
-        attempts = []
         for task, attempt_id in plan.attempts_at_tasks:
             # Outside an experiment nothing comes between an Attempt and its confidence follow-up.
             attempt, confidence_follow_up = invoke_agent(task, attempt_id)
             attempts.append(confidence_follow_up(attempt))
-        experiment_attempts, records = run_experiments(
-            plan.experiments, lambda task, number, attempt_id: invoke_agent(task, attempt_id), ask_confidence
+        experiment_records.extend(
+            run_experiments(
+                plan.experiments,
+                lambda task, number, attempt_id: invoke_agent(task, attempt_id),
+                ask_confidence,
+                attempts,
+            )
         )
-        made.append(attempts + experiment_attempts)
-        experiment_records.extend(records)
+        made.append(attempts[first:])
     scored = []
-    for shared, attempts in zip(sharing, made):
+    for shared, attempts_of_set in zip(sharing, made):
         for evaluator in shared.members:
-            used = [attempt for attempt in attempts if evaluator.uses(attempt)]
+            used = [attempt for attempt in attempts_of_set if evaluator.uses(attempt)]
             scored.append(
                 ScoredMetric(
                     result=evaluator.evaluate(group_by_task(used)),
@@ -129,10 +181,7 @@ def run_sweep(
                 )
             )
     return build_scorecard(
-        metrics=scored,
-        attempts=[attempt for attempts in made for attempt in attempts],
-        experiments=experiment_records,
-        acceptance_criteria=acceptance_criteria,
+        metrics=scored, attempts=attempts, experiments=experiment_records, acceptance_criteria=acceptance_criteria
     )
 
 

@@ -8,6 +8,7 @@ from typing import Callable
 from ..evidence import ConditionRole
 from . import (
     brier_based_score,
+    conditional_harm_severity,
     constraint_compliance,
     distributional_trajectory_consistency,
     outcome_consistency,
@@ -52,5 +53,6 @@ EVALUATORS: dict[str, Evaluator] = {
         Evaluator(resource_consistency.DEFINITION, resource_consistency.evaluate),
         Evaluator(brier_based_score.DEFINITION, brier_based_score.evaluate, needs_confidence=True),
         Evaluator(constraint_compliance.DEFINITION, constraint_compliance.evaluate),
+        Evaluator(conditional_harm_severity.DEFINITION, conditional_harm_severity.evaluate),
     )
 }
