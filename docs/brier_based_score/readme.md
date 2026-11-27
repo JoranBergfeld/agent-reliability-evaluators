@@ -150,7 +150,7 @@ scorecard = run_sweep(
 print(to_json(scorecard))
 ```
 
-`my_agent` and `my_test_service` stand for your own code. The Foundry hosted agent target cannot be used for this yet; see [What is not verified](#what-is-not-verified).
+`my_agent` and `my_test_service` stand for your own code. The Foundry prompt agent target and the Foundry hosted agent target cannot be used for this yet; see [What is not verified](#what-is-not-verified).
 
 ## How the confidence rating is collected
 
@@ -310,7 +310,7 @@ One point is this implementation's reading of the confirmed decision that a rati
 
 ## What is not verified
 
-The agent target is an interface. Whether a Foundry prompt agent or hosted agent can answer a follow-up in which the agent cannot act has not been tried against a live Foundry project. Until that is verified, a Foundry target has no basis for declaring `IsolatedFollowUp(supported=True)`, and without that declaration the three predictability metrics are unavailable by decision. The [Foundry hosted agent target](../foundry_hosted_agent/readme.md) therefore declares the follow-up unsupported. No Foundry prompt-agent target exists yet.
+The agent target is an interface. Whether a Foundry prompt agent or hosted agent can answer a follow-up in which the agent cannot act has not been tried against a live Foundry project. Until that is verified, a Foundry target has no basis for declaring `IsolatedFollowUp(supported=True)`, and without that declaration the three predictability metrics are unavailable by decision. The [Foundry prompt agent target](../foundry_prompt_agent/readme.md) and the [Foundry hosted agent target](../foundry_hosted_agent/readme.md) therefore declare the follow-up unsupported.
 
 ## Numbers
 
