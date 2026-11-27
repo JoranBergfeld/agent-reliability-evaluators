@@ -187,9 +187,9 @@ def sweep_token_usage(
 
     The sweep total counts each use once, whichever Evaluators used it. The total of an
     Evaluator is the usage of every Attempt it was given, of the shared preparation of what
-    those Attempts were made under, and of its own scoring, which in Foundry is several runs. Where another Evaluator was
-    given any of the same Attempts or preparation, both totals include it: such a total is
-    labelled overlapping and not additive.
+    those Attempts were made under, and of its own scoring, which in Foundry is several
+    runs. Where another Evaluator was given any of the same Attempts or preparation, both
+    totals include it: such a total is labelled overlapping and not additive.
 
     `preparation_usage` is what the customer reports for preparing the variation of
     experiments. It is listed apart from the Attempts. An Evaluator used a preparation when
