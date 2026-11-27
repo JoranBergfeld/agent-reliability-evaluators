@@ -2,7 +2,7 @@
 
 Where the scorecard, the human-readable report and the attempt-level evidence go when a metric is scored by [Foundry-managed scoring](../managed_scoring/readme.md), what Foundry holds of such a run, and what can be left in Foundry that leads back to the scorecard.
 
-The short answer: an Evaluator sweep runs in your own process whichever scoring path a metric uses. With Foundry-managed scoring only the calculation of that metric runs in Foundry. So the three files are produced in your process and delivered to the directory you choose on both scoring paths, and that directory is the only place they are. Nothing delivers them into Foundry. A reference to them can be left on the Foundry evaluation, by you.
+The short answer: an Evaluator sweep runs in your own process whichever scoring path a metric uses. With Foundry-managed scoring only the calculation of that metric runs in Foundry. So the [delivered files](readme.md) are produced in your process and written to the directory you choose on both scoring paths, and that directory is the only place they are. Nothing delivers them into Foundry. A reference to them can be left on the Foundry evaluation, by you.
 
 Everything under [Observed live](#observed-live) was observed on 2026-11-27. It is what happened, not what the platform documents.
 
@@ -10,11 +10,11 @@ Everything under [Observed live](#observed-live) was observed on 2026-11-27. It 
 
 | | Customer-process scoring | Foundry-managed scoring |
 | --- | --- | --- |
-| `scorecard.json`, `report.html`, `evidence.json` | The directory you give as `artifact_dir` | The same directory |
-| In your Foundry project, from scoring | Nothing | For each managed metric: one evaluation, one run and the evaluator version that ran |
-| What that run holds | | The evidence it was sent, the number it returned, and Foundry's own threshold and label |
-| From the scorecard to the run | | `metrics[].managed_scoring`: `eval_id`, `run_id`, `output_item_id` and `evidence_sha256` |
-| From the run to the scorecard | | Nothing by itself. You can leave a reference: see [below](#leaving-a-reference-in-foundry) |
+| `scorecard.json`, `report.html`, `summary.md`, `evidence.json` | The directory you give as `artifact_dir` | The same directory |
+| In your Foundry project, from scoring | Nothing | For each managed metric: one evaluation, its runs and the evaluator version that ran. There are two runs, and more when a part of the result is asked for again |
+| What those runs hold | | The evidence they were sent, in every row. The numbers they returned: the plain value with Foundry's own threshold and label, and the [encoded result](../managed_scoring/readme.md#how-a-result-comes-back) in parts |
+| From the scorecard to the runs | | `metrics[].managed_scoring`: `eval_id`, `run_id` and `output_item_id` for the plain value, `encoded_result.run_ids` for the rest, and `evidence_sha256` |
+| From the runs to the scorecard | | Nothing by itself. You can leave a reference: see [below](#leaving-a-reference-in-foundry) |
 
 An agent target that invokes an agent in Foundry is a separate matter. What the platform keeps of those invocations is not covered here.
 
@@ -28,14 +28,15 @@ The offering keeps no store. It writes to `artifact_dir` and nowhere else on the
 
 ## What Foundry holds of a managed run
 
-- **Only the evidence the metric is calculated from.** For outcome consistency that is, for each Attempt, its identity, its Task, its execution status and its task outcome with its source. The responses of the agent, the tool calls, the resource measurements, the confidence evidence and what an Attempt records about its experiment are in `evidence.json` and are not sent. The Foundry run is therefore not a copy of the attempt-level evidence.
-- **The evidence stays on the run, also when the run fails.** The run answers a read with the item it was made with. A run that failed has no output item, and still answers with that item. Its digest is the `evidence_sha256` in the scorecard.
-- **The output item is not a reliable copy of large evidence.** An output item repeated a submitted item of 900,000 characters whole, and one of 1,000,000 characters as its first 1,000 characters, with nothing that says so. The evaluator was given the whole item both times, and the run itself answered with the whole item. The offering never reads evidence back from Foundry.
-- **The number and Foundry's diagnostics.** The output item holds the score, and the threshold and label that Foundry adds. The scorecard records them as platform diagnostics.
+- **Only the evidence the metric is calculated from.** For outcome consistency that is, for each Attempt, its identity, its Task, its execution status and its task outcome with its source. The responses of the agent, the tool calls, the resource measurements, the confidence evidence and what an Attempt records about its experiment are in `evidence.json` and are not sent. A Foundry run is therefore not a copy of the attempt-level evidence.
+- **Not readable as it stands.** The evidence is [submitted](../managed_scoring/readme.md#the-evidence-that-is-submitted) as one string: its SHA-256 digest, a colon, and its JSON, deflated and written in base64. To read it, decode the base64 text and inflate it as raw deflate. The digest is the `evidence_sha256` in the scorecard.
+- **The evidence stays on the run, also when the run fails.** A run answers a read with the rows it was made with, each with the evidence. A run that failed has no output item, and still answers with those rows.
+- **The output item is not a reliable copy of large evidence.** An output item repeated a submitted field of 900,000 characters whole, and one of 1,000,000 characters as its first 1,000 characters, with nothing that says so. The evaluator was given the whole field both times, and the run itself answered with the whole field. The offering never reads evidence back from Foundry.
+- **The numbers and Foundry's diagnostics.** The output item of the `value` row holds the plain value as its score, with the threshold and label that Foundry adds. The scorecard records them as platform diagnostics. The other rows hold the size of the encoded result and its parts as large whole numbers, each with a threshold and a label that mean nothing.
 
 ## Leaving a reference in Foundry
 
-A reference to the scorecard can be left on the evaluation of a managed run, in its metadata, after the scorecard was delivered. The offering makes one evaluation with one run for each managed metric of a sweep, so the evaluation stands for that run. The offering does not leave a reference by itself, because it does not know where your platform publishes the directory.
+A reference to the scorecard can be left on the evaluation of a managed metric, in its metadata, after the scorecard was delivered. The offering makes one evaluation for each managed metric of a sweep, and every run for that metric under it, so the evaluation stands for those runs. The offering does not leave a reference by itself, because it does not know where your platform publishes the directory.
 
 ```python
 import hashlib
@@ -64,7 +65,7 @@ The names of the two metadata keys are yours to choose. `eval_id` is `null` when
 
 ## Partial and failed managed runs
 
-A managed run that gives no value still ends in a delivery: the scorecard is `partial`, in `scorecard.json` and at the top of `report.html`, with the missing result and its execution error, and `evidence.json` holds every Attempt. See [when managed scoring gives no value](../managed_scoring/readme.md#when-managed-scoring-gives-no-value).
+A managed run that gives no result still ends in a delivery: the scorecard is `partial`, in `scorecard.json` and at the top of `report.html`, with the missing result and its execution error, and `evidence.json` holds every Attempt. See [when managed scoring gives no result](../managed_scoring/readme.md#when-managed-scoring-gives-no-result).
 
 A delivery that fails after a managed run is a [reporting failure](readme.md#reporting-failure) like any other. The `ReportingFailure` carries the scorecard, so the result that Foundry returned and the identifiers of its run are not lost with the delivery. The run stays in your project.
 
@@ -72,13 +73,14 @@ A Foundry project that cannot be used stops the sweep before any Attempt is made
 
 ## Evidence limits
 
-- **A limit that shows at evaluation time is an unavailable measurement.** A metric whose evidence is missing is reported as `unavailable`, with its reason and its evidence counts, in `scorecard.json` and in `report.html`, and never as a number. In the live check the hosted agent target gives no confidence rating, so the Brier-based score was unavailable with the reason `no valid confidence/outcome pair` and a count of the five Attempts that have no rating, each with why.
-- **Not on the managed path yet.** A managed evaluator cannot return an unavailable measurement. Its run fails, and the scorecard is partial with a missing result that it does not call unavailable: see [when managed scoring gives no value](../managed_scoring/readme.md#when-managed-scoring-gives-no-value).
+- **A limit that shows at evaluation time is an unavailable measurement.** A metric whose evidence is missing or too little is reported as `unavailable`, with its reason and its evidence counts, in `scorecard.json` and in `report.html`, and never as a number. In the live check the hosted agent target gives no confidence rating, so the Brier-based score was unavailable with the reason `no valid confidence/outcome pair` and a count of the five Attempts that have no rating, each with why.
+- **On the managed path as well.** Foundry-managed scoring returns an unavailable measurement as one, with its reason and counts, and the scorecard is not partial because of it: see [how a result comes back](../managed_scoring/readme.md#how-a-result-comes-back). In the live check, outcome consistency with one Attempt at each Task came back from Foundry as unavailable and was delivered as that in both formats.
+- **A limit of the transport is not a limit of the evidence.** A managed run that would be larger than one run accepts is not submitted, and a managed run that fails gives nothing. Such a metric has no result and the scorecard is partial. It is not called unavailable, because nothing was measured.
 - **Nothing is watched afterwards.** A run or an evaluation that you delete in Foundry is gone, and so is an artifact that your CI platform expires. The scorecard is not revised, and its `managed_scoring` identifiers then lead nowhere.
 
 ## Observed live
 
-Observed on 2026-11-27 in Sweden Central, in one disposable fixture ([`live_fixture/`](../../live_fixture/README.md)) with a Foundry project, a model deployment and a hosted agent, from a workstation with Azure CLI 2.93.0, signed in as a user. Each item was seen once unless it says otherwise. A local directory stood in for the artifact directory of a CI job. Synthetic data only.
+Observed on 2026-11-27 in Sweden Central, in three disposable fixtures ([`live_fixture/`](../../live_fixture/README.md)), each with a Foundry project, a model deployment and a hosted agent, from a workstation with Azure CLI 2.93.0, signed in as a user. A local directory stood in for the artifact directory of a CI job. Synthetic data only.
 
 Interfaces used, as they worked on that date, relative to the project endpoint:
 
@@ -98,22 +100,31 @@ Interfaces used, as they worked on that date, relative to the project endpoint:
 
 ### The live check
 
-[`tests/live/test_scorecard_delivery_live.py`](../../tests/live/test_scorecard_delivery_live.py) passed twice against that fixture, with the derived evaluator of this commit: first in two parts, and then in one run of 8 minutes 11 seconds. The fixture was provisioned and torn down by hand, not by the check. What it showed both times:
+[`tests/live/test_scorecard_delivery_live.py`](../../tests/live/test_scorecard_delivery_live.py) passed against each of the three fixtures, one after the other, because the source it checks changed while this was verified:
 
-- **A customer-code run delivered the three files.** Five Attempts by the live hosted agent, scored in this process. `scorecard.json`, `report.html` and `evidence.json` were in the directory and nothing was written to the working directory. The report rendered the delivered scorecard value by value. `evidence.json` held the five Attempts with the response identifier the platform gave each. Outcome consistency was `0.5555555555555556`, which is what the delivered evidence gives when calculated in the check: 2 of 2 successes gives 1, 2 of 3 gives one ninth, and the mean is five ninths.
+| Fixture | The source that was checked | Result |
+| --- | --- | --- |
+| First | Managed scoring that made one run for a metric, and a delivery of three files | The seven checks it then had passed twice, the second time in 8 minutes 11 seconds |
+| Second | Managed scoring that makes two runs for a metric and returns the result in parts | All eight checks passed, in 18 minutes 32 seconds |
+| Third | The same, and a delivery that also writes `summary.md` | All eight checks passed, in 13 minutes 46 seconds |
+
+Other work was merged into this source after the third run. The live check was not repeated for it. The default test run was. Each fixture was provisioned and torn down by hand, not by the check. What the check showed on the third fixture, and on the others as far as their source had it:
+
+- **A customer-code run delivered its files.** Five Attempts by the live hosted agent, scored in this process. `evidence.json`, `report.html`, `scorecard.json` and `summary.md` were in the directory and nothing was written to the working directory. The report rendered the delivered scorecard value by value. `evidence.json` held the five Attempts with the response identifier the platform gave each. Outcome consistency was `0.5555555555555556` on all three fixtures, which is what the delivered evidence gives when calculated in the check: 2 of 2 successes gives 1, 2 of 3 gives one ninth, and the mean is five ninths.
 - **An evidence limit was an unavailable measurement in both formats.** The Brier-based score in that run: see [Evidence limits](#evidence-limits).
-- **A Foundry-managed run delivered the same three files.** Five more Attempts by the hosted agent, with outcome consistency scored in Foundry. The scorecard was `complete`, with the value attributed to `foundry_managed` as `unverified`, in both formats. Foundry returned `0.5555555555555556`, which is also what the delivered evidence gives. That is one comparison, not a fidelity rule.
-- **The scorecard led to the run, and the run held what it was sent.** Read with the identifiers in the scorecard, the run was `completed`, the item it was made with had the digest in the scorecard, and its output item had the score in the scorecard. Of each Attempt, Foundry held the identity, the Task, the execution status and the task outcome, and nothing else: the response identifiers and the resource measurements were in `evidence.json` only.
-- **Reading the run took the customer's token.** Without a token, and with a token of the same identity for another resource (Azure Resource Manager), the read was answered with HTTP 401.
+- **A Foundry-managed run delivered the same files.** Five more Attempts by the hosted agent, with outcome consistency scored in Foundry. The scorecard was `complete`, with the value attributed to `foundry_managed` as `unverified`, in both formats. Foundry returned `0.5555555555555556` on all three fixtures, which is also what the delivered evidence gives. That is one value compared three times, not a fidelity rule.
+- **The scorecard led to the runs, and the runs held what they were sent.** Read with the identifiers in the scorecard, the first run was `completed` with two rows, `value` and `size`, and the output item of the `value` row had the score in the scorecard. The run named in `encoded_result.run_ids` was `completed` with 49 rows, one for each part of an encoded result of 289 bytes. Every row of both runs held the same evidence, under the digest in the scorecard. Inflated, it held of each Attempt the identity, the Task, the execution status and the task outcome, and nothing else: the response identifiers and the resource measurements were in `evidence.json` only.
+- **Reading a run took the customer's token.** Without a token, and with a token of the same identity for another resource (Azure Resource Manager), the read was answered with HTTP 401.
 - **A reference was left on the evaluation and read back.** The request under [Leaving a reference in Foundry](#leaving-a-reference-in-foundry), with a synthetic location and the SHA-256 of the delivered `scorecard.json`. The evaluation returned both. The metadata of the run held only Foundry's own `trigger_type`, before and after.
 - **A run made with metadata kept it after it failed.** A run of a test-only evaluator that raises, made by the check with `metadata` in the request, ended as `failed` and still returned the metadata. Foundry had added a key of its own, `trigger_type`.
-- **A failed managed run delivered a scorecard marked partial.** Eight synthetic Attempts and a test-only evaluator that raises, as in the [live check of failed runs](../managed_scoring/readme.md#failed-and-partial-runs-observed-on-2026-11-27). `scorecard.json` and `report.html` were partial with the missing result named, `evidence.json` held all eight Attempts, and the metric scored in this process kept its result. In Foundry the run was `failed` with no output item, and still answered with the evidence it was sent, under the digest in the scorecard. A reference was left on its evaluation and read back.
-- **A managed run that did not end in time delivered a scorecard marked partial.** With a time limit of 0 seconds the sweep asked for the cancellation of the run while it was `queued`. The scorecard was partial with that as the execution error, and was delivered. The run was `canceled` when read afterwards, with no result.
-- **A delivery that failed after a live managed run was an explicit reporting failure.** The check put a directory where `scorecard.json` goes. The sweep raised `ReportingFailure`, kept `evidence.json`, wrote `reporting-failure.json` and left no scorecard and no report. The failure carried the scorecard with the value that Foundry returned, which was the hand-calculated 0.68 to within 1e-12, and the run it names was still in the project as `completed`.
+- **A failed managed run delivered a scorecard marked partial.** Eight synthetic Attempts and a test-only evaluator that raises, as in the [live check of failed runs](../managed_scoring/readme.md#failed-and-partial-runs-observed-on-2026-11-27). `scorecard.json` and `report.html` were partial with the missing result named, `evidence.json` held all eight Attempts, and the metric scored in this process kept its result. In Foundry the run was `failed` with no output item, and still answered with the rows it was made with and the evidence in them, under the digest in the scorecard. A reference was left on its evaluation and read back.
+- **An unavailable measurement that Foundry returned was delivered as one.** On the second and third fixtures. Two synthetic Attempts, one at each Task. The scorecard was `complete` with nothing missing. Outcome consistency was `unavailable`, attributed to `foundry_managed`, with the reason `no Task has at least two Attempts with a task outcome` and the two Tasks counted as excluded, in `scorecard.json` and in `report.html`.
+- **A managed run that did not end in time delivered a scorecard marked partial.** With a time limit of 0 seconds the sweep asked for the cancellation of the first run while it was `queued`. The scorecard was partial with that as the execution error, and was delivered. The run was `canceled` when read afterwards, with no result.
+- **A delivery that failed after a live managed run was an explicit reporting failure.** The check put a directory where `scorecard.json` goes. The sweep raised `ReportingFailure`, kept `evidence.json`, wrote `reporting-failure.json` and left no scorecard, no report and no summary. The failure carried the scorecard with the value that Foundry returned, which was the hand-calculated 0.68 to within 1e-12, and the run it names was still in the project as `completed`.
 
 ### Probes
 
-Made by hand in the same project, with test-only evaluators registered for the purpose. Not part of the live check.
+Made by hand in the project of the first fixture, with test-only evaluators registered for the purpose. Not part of the live check. Each item was seen once unless it says otherwise. They are about the project and not about the source of the offering, so they were not repeated on the other fixtures.
 
 - **Metadata was accepted on an evaluation and on a run when they were made**, and returned when they were read, also after the run had ended. Foundry also accepted and returned `properties` on both, and added properties of its own to them.
 - **Changing the metadata of an evaluation merged it.** The keys it already had stayed, and the new key was added.
