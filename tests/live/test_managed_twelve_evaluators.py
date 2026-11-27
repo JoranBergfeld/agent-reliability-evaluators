@@ -100,8 +100,9 @@ def test_a_sweep_scores_the_twelve_evaluators_in_the_live_project(scoring):
     assert {entry["metric_id"]: entry["value"] for entry in scorecard["metrics"]} == pytest.approx(
         WORKED_VALUES, abs=1e-12
     )
+    # Each value came back as the same number on both channels, so each is authoritative for this path.
     assert {(entry["scoring_path"], entry["fidelity"]) for entry in scorecard["metrics"]} == {
-        ("foundry_managed", "unverified")
+        ("foundry_managed", "authoritative")
     }
     # Each Evaluator was scored in an evaluation of its own, with the evaluator derived from its definition.
     assert len({entry["managed_scoring"]["eval_id"] for entry in scorecard["metrics"]}) == 12

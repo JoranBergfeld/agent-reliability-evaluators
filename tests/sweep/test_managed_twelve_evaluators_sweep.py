@@ -46,7 +46,9 @@ def test_each_evaluator_is_scored_in_foundry_on_its_own(metric_id):
     assert scorecard["status"] == "complete"
     assert entry["state"] == "available"
     assert entry["value"] == pytest.approx(WORKED_VALUES[metric_id], abs=1e-12)
-    assert (entry["scoring_path"], entry["fidelity"]) == ("foundry_managed", "unverified")
+    # The value came back as the same number on both channels, so it is authoritative for this path.
+    assert (entry["scoring_path"], entry["fidelity"]) == ("foundry_managed", "authoritative")
+    assert entry["managed_scoring"]["fidelity_check"]["outcome"] == "passed"
     # One evaluator was registered and run, and no other metric was scored.
     assert list(foundry.evaluators) == [f"reliability-{metric_id.replace('_', '-')}"]
     assert [other["state"] for other in scorecard["metrics"] if other is not entry] == ["not_configured"] * 11
@@ -60,7 +62,7 @@ def test_the_twelve_evaluators_are_scored_in_foundry_together_in_one_sweep():
         WORKED_VALUES, abs=1e-12
     )
     assert {(entry["scoring_path"], entry["fidelity"]) for entry in scorecard["metrics"]} == {
-        ("foundry_managed", "unverified")
+        ("foundry_managed", "authoritative")
     }
     # Every Attempt was made once. The twelve were scored from the same fourteen Attempts.
     assert len(scorecard["attempts"]) == 14

@@ -63,9 +63,9 @@ def rescore_in_customer_process(
     metric: `customer_process_rescore`, in the entry of that metric. It is a result of its
     own, calculated by the same Evaluator from the Attempts the managed evaluator was given,
     and attributed to the customer-process scoring path. Everything else is as it was. The
-    entry of the metric still holds what Foundry-managed scoring gave: the unverified value
-    with its limitation, the unavailable measurement with its reason, or the failure with its
-    execution error. A scorecard that was
+    entry of the metric still holds what Foundry-managed scoring gave: the value with its
+    fidelity, and with its limitation when it is an unverified result, the unavailable
+    measurement with its reason, or the failure with its execution error. A scorecard that was
     partial stays partial and still lists the managed result as missing, and the acceptance
     assessment of the managed result is not changed. The token usage of the Evaluator
     gains the rescore as a scoring of its own, which is code in this process and used no

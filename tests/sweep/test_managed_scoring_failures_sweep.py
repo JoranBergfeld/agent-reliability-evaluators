@@ -201,7 +201,7 @@ def test_a_managed_result_is_kept_when_the_managed_run_of_another_metric_fails()
     assert resource_consistency["state"] == "available"
     assert resource_consistency["value"] == pytest.approx(RESOURCE_CONSISTENCY, abs=1e-12)
     assert resource_consistency["scoring_path"] == "foundry_managed"
-    assert resource_consistency["fidelity"] == "unverified"
+    assert resource_consistency["fidelity"] == "authoritative"
     outcome_consistency = metric(scorecard)
     assert outcome_consistency["state"] is None
     assert outcome_consistency["managed_scoring"]["error"].startswith(RUN_FAILED)

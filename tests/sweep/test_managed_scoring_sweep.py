@@ -92,13 +92,7 @@ def test_the_value_is_the_one_foundry_returned_and_not_one_calculated_in_this_pr
     assert outcome_consistency["scoring_path"] == "foundry_managed"
 
 
-def test_a_value_recovered_from_foundry_is_an_unverified_result_shown_with_its_limitation():
-    outcome_consistency = metric(sweep(TWO_TASKS, FakeFoundryProject()))
-
-    assert outcome_consistency["fidelity"] == "unverified"
-    limitation = outcome_consistency["limitation"]
-    assert "has not been established" in limitation
-    assert "cannot be met or not met by an acceptance criterion" in limitation
+# Whether the value is authoritative or an unverified result: tests/sweep/test_managed_fidelity_sweep.py.
 
 
 def test_the_counts_and_details_of_a_value_are_the_ones_the_evaluator_returned_from_foundry():
@@ -120,20 +114,6 @@ def test_the_counts_and_details_of_a_value_are_the_ones_the_evaluator_returned_f
         "attempt_ids": [f"close/attempt-{number}" for number in range(1, 6)]
         + [f"archive/attempt-{number}" for number in range(1, 4)]
     }
-    assert "the ones the Evaluator returned from Foundry" in outcome_consistency["limitation"]
-
-
-def test_an_unverified_result_cannot_be_met_or_not_met():
-    # 0.68 is at least 0.5, and the criterion is still not assessed.
-    criterion = AcceptanceCriterion(metric_id="outcome_consistency", condition={"value": {"at_least": 0.5}})
-
-    outcome_consistency = metric(sweep(TWO_TASKS, FakeFoundryProject(), acceptance_criteria=[criterion]))
-
-    assert outcome_consistency["acceptance"]["status"] == "not_assessed"
-    assert outcome_consistency["acceptance"]["reason"] == (
-        "the value is an unverified result: its fidelity to the evaluator-computed value has not been established"
-    )
-    assert outcome_consistency["acceptance"]["checks"] == []
 
 
 def test_the_scorecard_names_the_attempts_the_managed_evaluator_was_given():
@@ -177,6 +157,7 @@ def test_the_scorecard_says_which_evaluator_and_which_run_the_value_came_from():
         "output_item_id",
         "encoded_result",
         "platform_diagnostics",
+        "fidelity_check",
         "evidence_sha256",
     }
 
@@ -207,8 +188,10 @@ def test_a_whole_number_that_foundry_returns_as_an_integer_is_the_metric_value()
     assert type(outcome_consistency["value"]) is float
 
 
-def test_the_report_shows_the_unverified_result_with_its_limitation():
-    scorecard = sweep(TWO_TASKS, FakeFoundryProject())
+def test_the_report_shows_an_unverified_result_with_its_limitation():
+    # The Evaluator computed 0.68. Foundry returns 0.75 as the score, so the value is an unverified result.
+    foundry = FakeFoundryProject(alter_score=lambda score, item: 0.75 if item["result_part"] == "value" else score)
+    scorecard = sweep(TWO_TASKS, foundry)
     position = [entry["metric_id"] for entry in scorecard["metrics"]].index("outcome_consistency")
 
     report = assert_faithful_rendering(render_report(scorecard), scorecard)
@@ -216,6 +199,7 @@ def test_the_report_shows_the_unverified_result_with_its_limitation():
     assert report.value(f"/metrics/{position}/fidelity") == "unverified"
     assert report.value(f"/metrics/{position}/scoring_path") == "foundry_managed"
     assert report.value(f"/metrics/{position}/limitation") == metric(scorecard)["limitation"]
+    assert report.value(f"/metrics/{position}/managed_scoring/fidelity_check/outcome") == "failed"
     assert report.value(f"/metrics/{position}/managed_scoring/platform_diagnostics/label") == "pass"
 
 
@@ -320,14 +304,6 @@ def test_the_marker_for_a_metric_without_a_value_never_surfaces_as_a_metric_valu
     assert -1 not in numbers_in(outcome_consistency)
     # Foundry labelled the marker against its threshold. That says nothing about the metric, and is not shown.
     assert "platform_diagnostics" not in outcome_consistency["managed_scoring"]
-
-
-def test_an_unavailable_measurement_from_foundry_is_reported_as_unverified_with_its_limitation():
-    outcome_consistency = metric(sweep(ONE_ATTEMPT_EACH, FakeFoundryProject()))
-
-    assert outcome_consistency["fidelity"] == "unverified"
-    assert "it has no value" in outcome_consistency["limitation"]
-    assert "an unavailable measurement" in outcome_consistency["limitation"]
 
 
 def test_an_unavailable_measurement_from_foundry_cannot_be_met_or_not_met():

@@ -8,7 +8,8 @@ one that fails takes no other metric's result with it.
 A code evaluator returns one number for each submitted row, so a result is asked for in
 parts, one row a part. A first run returns the plain metric value and the size of the encoded
 result. A second run returns the encoded result, which carries the state of the metric, its
-reason, its counts and its details, and the value as the Evaluator computed it.
+reason, its counts and its details, and the value as the Evaluator computed it. The two are
+compared when the result is recovered: see `fidelity`.
 """
 
 from __future__ import annotations
@@ -18,10 +19,11 @@ import time
 from dataclasses import dataclass, field, replace
 from typing import Any, Callable, Iterable, Mapping, Protocol, Sequence
 
-from ..evaluators import MetricResult, MetricState
+from ..evaluators import Fidelity, MetricResult, MetricState
 from ..evidence import TaskEvidence
 from . import grader
 from .artifact import DerivationError, ManagedArtifact, derive_artifact
+from .fidelity import NOT_CHECKED, FidelityCheck, check_value, no_value_on_either_channel
 from .foundry import FoundryRequestError
 
 # Registering an evaluator is a preview feature of the project API and has to be opted into.
@@ -40,18 +42,6 @@ OUTPUT_ITEM_PAGE = 100
 # every other row was graded. A part of a result is therefore asked for up to this many times.
 PART_ATTEMPTS = 3
 
-UNVERIFIED_LIMITATION = (
-    "Foundry returned this value. That it equals the value the Evaluator computed there has not been "
-    "established, so it is an unverified result: it cannot be met or not met by an acceptance criterion. "
-    "The evidence counts, the details and the Attempts the value rests on are the ones the Evaluator "
-    "returned from Foundry with it, as an encoded result."
-)
-NO_VALUE_LIMITATION = (
-    "Foundry returned this result, and it has no value: the Evaluator found the metric to be {state} for "
-    "the evidence, and returned that state, its reason and its evidence counts as an encoded result. "
-    "No fidelity rule yet establishes that what is received from Foundry is what the Evaluator computed "
-    "there, so the result is reported as unverified."
-)
 PLATFORM_DIAGNOSTICS_MEANING = (
     "Foundry adds a threshold and a pass or fail label to every result. They are platform defaults, "
     "not the customer's acceptance criterion and not an assessment by the Evaluator."
@@ -104,17 +94,25 @@ class RegisteredEvaluator:
 
 @dataclass(frozen=True, kw_only=True)
 class ManagedResult:
-    """One metric as Foundry returned it, with why it is unverified and where it came from."""
+    """One metric as Foundry returned it, with the fidelity check it was recovered with and where it came from."""
 
     # The result as it is reported. Its value is the number Foundry returned as the score.
     result: MetricResult
-    limitation: str
     provenance: dict[str, Any]
-    # The value the Evaluator computed, as the encoded result carried it, or None when the
-    # metric has no value. Nothing compares it with the returned score: no fidelity rule exists yet.
-    computed_value: float | None = None
+    # The comparison of that number with the encoded result. None for a result that was not checked.
+    fidelity_check: FidelityCheck | None = None
     # What Foundry reported of the token usage of each managed run that was made for the metric.
     reported_usage: list[dict[str, Any]] = field(default_factory=list)
+
+    @property
+    def fidelity(self) -> Fidelity:
+        # Only a check that passed makes a result authoritative. One that was not checked is unverified.
+        return Fidelity.UNVERIFIED if self.fidelity_check is None else self.fidelity_check.fidelity
+
+    @property
+    def limitation(self) -> str | None:
+        """Why the result is unverified, or None for one that is authoritative."""
+        return NOT_CHECKED if self.fidelity_check is None else self.fidelity_check.limitation
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -555,8 +553,7 @@ def _recover(run: _ManagedRun, encoded: Sequence[_Answer]) -> ManagedResult:
                 f"{where} has {score!r} as the value of {metric_id!r}, where the encoded result says the metric "
                 f"is {computed.state.value} and has no value. The two do not agree, so nothing is reported"
             )
-        limitation = NO_VALUE_LIMITATION.format(state=_STATES_WITHOUT_A_VALUE[computed.state])
-        return ManagedResult(result=computed, limitation=limitation, provenance=provenance)
+        return _checked(computed, provenance, no_value_on_either_channel())
     try:
         # The result contract checks the range of the value: Foundry does not enforce the one it is given.
         result = replace(computed, value=float(score))
@@ -570,12 +567,10 @@ def _recover(run: _ManagedRun, encoded: Sequence[_Answer]) -> ManagedResult:
         "label": returned.get("label"),
         "passed": returned.get("passed"),
     }
-    return ManagedResult(
-        result=result, limitation=UNVERIFIED_LIMITATION, provenance=provenance, computed_value=computed.value
-    )
+    # The reported value stays the number Foundry returned. The check says whether it is the encoded one.
+    return _checked(result, provenance, check_value(score, computed.value))
 
 
-_STATES_WITHOUT_A_VALUE = {
-    MetricState.UNAVAILABLE: "an unavailable measurement",
-    MetricState.NOT_APPLICABLE: "not applicable",
-}
+def _checked(result: MetricResult, provenance: dict[str, Any], check: FidelityCheck) -> ManagedResult:
+    """A recovered result with the fidelity check it was recovered with, which its provenance records."""
+    return ManagedResult(result=result, provenance={**provenance, "fidelity_check": check.to_dict()}, fidelity_check=check)
