@@ -6,7 +6,9 @@ Only **outcome consistency** can be scored this way in this version. Every other
 
 A value that comes back from Foundry is reported as an **unverified result**. It cannot be met or not met by an acceptance criterion. Read [what the scorecard shows](#what-the-scorecard-shows) before you choose this scoring path for a release gate.
 
-When Foundry gives no value for a metric, the sweep still returns a scorecard. It is partial, names the missing result with its execution error, and keeps the evidence and every other metric: see [when managed scoring gives no value](#when-managed-scoring-gives-no-value). You can then ask for the same evidence to be scored in your own process: see [a customer-process rescore](#a-customer-process-rescore). That never happens by itself.
+A metric that is an **unavailable measurement** for the evidence comes back from Foundry as one, with its reason and its evidence counts: see [how a result comes back](#how-a-result-comes-back). The managed evaluator does not raise for it, and no run fails.
+
+When Foundry gives no result for a metric, the sweep still returns a scorecard. It is partial, names the missing result with its execution error, and keeps the evidence and every other metric: see [when managed scoring gives no result](#when-managed-scoring-gives-no-result). You can then ask for the same evidence to be scored in your own process: see [a customer-process rescore](#a-customer-process-rescore). That never happens by itself.
 
 | | |
 | --- | --- |
@@ -37,12 +39,12 @@ What the sweep does for a metric on this path:
 
 1. Before any Attempt is made, it registers the derived evaluator in your project. A project it cannot use therefore costs no Attempts.
 2. It makes the Attempts as it always does.
-3. It submits the grouped evidence of the metric to a Foundry evaluation run of its own and waits for the run to end.
-4. It reports the value Foundry returned, or that Foundry returned none.
+3. It submits the grouped evidence of the metric to two Foundry evaluation runs of its own, one after the other, and waits for each to end. The first returns the plain value and the size of the result. The second returns the result itself, in parts.
+4. It reports the result Foundry returned, or that Foundry returned none.
 
-**Each metric has a run of its own.** An evaluator that raises fails its whole run, and takes the results of every other evaluator in that run with it (observed, see below). So no two metrics share a run: a metric whose run fails costs no other metric its result. The runs of a sweep are all started before the first is waited for.
+**Each metric has runs of its own.** An evaluator that raises fails its whole run, and takes the results of every other evaluator in that run with it (observed, see below). So no two metrics share a run: a metric whose run fails costs no other metric its result. The first runs of a sweep are all started before the first of them is waited for, and so are the second runs.
 
-`FoundryManagedScoring` waits up to `run_timeout_seconds` (900 by default) for each run, counted from when that run was made, and asks for the run's status every `poll_interval_seconds` (10 by default). A run that has not ended in time is cancelled and its metric has no result.
+`FoundryManagedScoring` waits up to `run_timeout_seconds` (900 by default) for each run, counted from when that run was made, and asks for the run's status every `poll_interval_seconds` (10 by default). A run that has not ended in time is cancelled and its metric has no result. The second run takes about two seconds for every six bytes of the result (observed): raise `run_timeout_seconds` for a sweep of several hundred Attempts.
 
 To register from a separate CI step, without a sweep:
 
@@ -67,14 +69,14 @@ Foundry does not accept API keys for evaluations (documented by Microsoft, not t
 
 There is one definition of outcome consistency: [`evaluators/outcome_consistency.py`](../../src/reliability_evaluators/evaluators/outcome_consistency.py). No second formula exists for Foundry.
 
-A Foundry code evaluator is one Python source that defines `grade(sample, item)` and returns a number. It cannot import the offering. `derive_artifact("outcome_consistency")` therefore builds that one source from the files your own process executes:
+A Foundry code evaluator is one Python source that defines `grade(sample, item)`, which returns a number. It cannot import the offering. `derive_artifact("outcome_consistency")` therefore builds that one source from the files your own process executes:
 
-1. It starts from the canonical definition and from [`managed_scoring/grader.py`](../../src/reliability_evaluators/managed_scoring/grader.py), which reads the transported evidence with the Evidence model's own reader.
+1. It starts from the canonical definition and from [`managed_scoring/grader.py`](../../src/reliability_evaluators/managed_scoring/grader.py), which reads the transported evidence with the Evidence model's own reader and encodes the result.
 2. It follows their imports of other modules of the offering, and reads the source of each.
 3. It joins those sources in import order. Every statement is kept as written. Only the imports between the joined modules, the module docstrings and `__all__` are left out, because one source does not need them.
-4. It appends `grade`, which calls the canonical `evaluate` on the decoded evidence and returns the value.
+4. It appends `grade`, which calls the canonical `evaluate` on the decoded evidence and returns the part of the result that the submitted item asks for.
 
-The artifact is derived when it is needed and is never stored in the repository, so there is no generated file that could fall behind. The Evaluator-seam vectors of outcome consistency run against both the canonical definition and the derived artifact in [`tests/evaluators/test_outcome_consistency_managed_artifact.py`](../../tests/evaluators/test_outcome_consistency_managed_artifact.py). A change that made the two scoring paths give different values fails there.
+The artifact is derived when it is needed and is never stored in the repository, so there is no generated file that could fall behind. The Evaluator-seam vectors of outcome consistency run against both the canonical definition and the derived artifact in [`tests/evaluators/test_outcome_consistency_managed_artifact.py`](../../tests/evaluators/test_outcome_consistency_managed_artifact.py). A change that made the two scoring paths give different values, or a different state, reason or counts for an unavailable measurement, fails there.
 
 The derivation refuses, with a `DerivationError`, anything that would only fail later in Foundry:
 
@@ -83,7 +85,7 @@ The derivation refuses, with a `DerivationError`, anything that would only fail 
 | An import of a module that the sandbox was not observed to accept | The sandbox has a fixed package list |
 | A call named `compile`, `eval`, `exec`, `globals` or `__import__`, as a function or a method | The sandbox refuses such a source before running it. `re.compile` is refused too |
 | Syntax newer than Python 3.12 | The sandbox ran Python 3.12 when observed |
-| A source of 256 KB or more | The documented code-size limit. The artifact is about 71 KB |
+| A source of 256 KB or more | The documented code-size limit. The artifact is about 80 KB |
 | Two joined modules that define the same top-level name, an import under another name, an import of a module as an object, or an import inside a function | One joined source cannot keep them apart |
 
 The canonical definitions and the Evidence model therefore have to stay inside those rules.
@@ -103,7 +105,7 @@ Registration is **idempotent**. Foundry itself is not: registering the same code
 
 The evaluation run then names that version explicitly. An evaluator of the same name with other code, whether older, newer or registered by someone else, is never run in its place. When you move your pin of the offering to a commit that changes the derived code, the next sweep registers a new version. Older versions stay in your project until you delete them.
 
-The declared range of the score is the scale of the canonical definition. The desirable direction is declared as `neutral`, because the canonical definition does not say that higher is better.
+The declared range of the score is the scale of the canonical definition. Only the plain value is in that range. The other numbers the evaluator returns are parts of an encoding, and Foundry does not enforce the range (observed). The desirable direction is declared as `neutral`, because the canonical definition does not say that higher is better.
 
 ## The evidence that is submitted
 
@@ -111,14 +113,57 @@ For each Attempt the evaluator is given: its identity, its Task, its execution s
 
 Each Attempt is written exactly as the Attempt record writes itself in the scorecard, with the evidence that is not sent left empty, and is read back with the Evidence model's strict reader (`read_attempts`). That reader accepts an Attempt only when it is exactly what this version records.
 
-The evidence travels as one string in one field, `outcome_consistency_evidence`: a SHA-256 digest, a colon, and the evidence as JSON.
+The evidence travels as one string in one field, `outcome_consistency_evidence`: the SHA-256 digest of the evidence as JSON, a colon, and that JSON, deflated and written in base64.
 
 - **A string, not structured data.** Structured numbers were altered on the way into a managed evaluator, and strings were not, in the earlier probes (decision ticket #12).
 - **A digest.** The evaluator recomputes the digest before it reads anything. Evidence that changed on the way is rejected inside Foundry. It can never produce a value calculated from other evidence.
+- **Deflated.** Every submitted row carries the evidence, because Foundry grades each row on its own, and a result takes many rows. The JSON is deflated with `zlib` (raw deflate, level 9), which the sandbox provides. In your project the stored evidence is therefore not readable as it stands: inflate the base64 text to read it.
 
 The evaluator validates what it receives with the same code as your own process: the Evidence model rejects a task outcome that is not binary, an Attempt without an identity and two Attempts with the same identity, and the result contract rejects a value outside the scale. A field this version does not know is rejected, not ignored.
 
-Evidence larger than 1,900,000 characters is not submitted, and the metric has no result. That is the size one run accepted in the earlier probes; a larger one was rejected. Nothing is split or truncated. Batching is not designed.
+A run larger than 1,900,000 characters is not submitted, and the metric has no result. That is the size one run accepted when observed; larger ones were rejected, and the limit is on all the rows of a run together. The run for the parts of the result has one row for each part, each with the evidence, so the limit is reached sooner than the evidence alone would reach it: see [what it costs](#what-it-costs). Nothing is split or truncated. Batching is not designed.
+
+## How a result comes back
+
+A Foundry code evaluator can return one number for each submitted row and nothing else. Every other way of returning something was tried and failed the run: see [what was tried](#returning-a-result-that-is-not-a-plain-value-observed-on-2026-11-27). So a result comes back as numbers, one row a number.
+
+Every submitted row carries the evidence and one more field, `result_part`, which says which part of the result that row asks for. The evaluator calculates the result on every row and returns the part that was asked for.
+
+| `result_part` | What the evaluator returns |
+| --- | --- |
+| `value` | The metric value, as a plain number. For a metric that has no value: one below the minimum of its scale, which is `-1` for outcome consistency |
+| `size` | The number of bytes of the encoded result |
+| `1`, `2`, ... | Six bytes of the encoded result each, as a whole number. A part past the end is `0` |
+
+The sweep makes two runs for a metric, under one evaluation:
+
+1. The first run has two rows: `value` and `size`.
+2. The second run has one row for each part, as many as the size says.
+
+**The encoded result** is the result as the result contract writes it for the scorecard, without the metric definition: the metric identity, the state, the value, the reason, the counts with their reasons and identities, the details and the Attempts the value rests on. It is written as JSON, deflated, and put behind twelve bytes of digest.
+
+- **Six bytes to a number.** A number of six bytes is a whole number below 2^48. A double holds it exactly, and fifteen significant digits write it exactly, so it does not depend on how the platform prints a double. Every such number that was returned came back unchanged (observed).
+- **A digest.** The first twelve bytes are the start of the SHA-256 of the digest of the submitted evidence, a colon, and the deflated result. The sweep recomputes it from the evidence it submitted. A part that changed on the way back, a part of another result, or a result calculated from other evidence does not pass, and then nothing is reported.
+- **Exact numbers.** Every number in the encoded result is written in the notation that reads back to the same double. The value the evaluator computed is among them, so it arrives exactly as it was computed, whatever becomes of the plain value.
+- **A strict reader.** The sweep accepts the result only when it is exactly what this version writes: the fields it knows, a state an Evaluator can return, a value on the scale of the metric or none, a count that matches the identities it names.
+
+**The marker for no value never surfaces.** For a metric without a value the `value` row still has to return a number. It returns one below the scale. The sweep takes the state of the metric from the encoded result and never from that number. When the state says there is no value, the sweep checks that the number is the marker and reports no value; when the two disagree, nothing is reported. The numbers of the `size` row and of the parts are never reported as values either.
+
+**The evaluator still raises for evidence that is not the evidence that was submitted,** as the canonical definition does in your own process for evidence it rejects. That is not an unavailable measurement: nothing was measured. Every row then fails, the run fails, and the metric has [no result](#when-managed-scoring-gives-no-result).
+
+### What it costs
+
+Foundry grades the rows of a run one after another, at about two seconds a row (observed), and every row carries the evidence. So a result costs time and submitted characters in proportion to its size:
+
+| Sweep | Size of the encoded result | Rows of the second run | What was seen or follows |
+| --- | --- | --- | --- |
+| 2 Attempts, unavailable measurement | about 260 bytes | about 45 | See [observed live](#returning-a-result-that-is-not-a-plain-value-observed-on-2026-11-27) |
+| 8 Attempts in 2 Tasks | about 250 bytes | about 45 | See [observed live](#returning-a-result-that-is-not-a-plain-value-observed-on-2026-11-27) |
+| 50 Attempts in 10 Tasks | 365 bytes | 61 | About 2 minutes at two seconds a row. Not run live |
+| 500 Attempts in 100 Tasks | 1,677 bytes | 280 | About 10 minutes at two seconds a row, and 1.4 million characters. Not run live |
+| 750 Attempts in 150 Tasks | | 420 | Refused: the run would submit 3.0 million characters |
+
+The sizes of the last three rows were measured with the derived evaluator on this machine, with Attempt identities of the form `task-7/attempt-3`. Identities that have less in common deflate less. The limit of 1,900,000 characters is therefore reached somewhere between 500 and 750 such Attempts for outcome consistency, where the evidence alone would fit many more. A metric that reports more details has a larger result and reaches the limit sooner.
 
 ## What the scorecard shows
 
@@ -126,34 +171,67 @@ The metric's entry has the same fields as a customer-process entry, and these di
 
 | Field | Content |
 | --- | --- |
-| `value` | The number Foundry returned. It is never calculated in your own process |
+| `state`, `reason` | What the evaluator returned in the encoded result: `available`, or `unavailable` with its reason |
+| `value` | The number Foundry returned in the `value` row, or `null` for a metric without a value. It is never calculated in your own process |
+| `counts`, `details`, `evidence.attempt_ids` | What the evaluator returned in the encoded result. They are the same as on the other path |
 | `scoring_path` | `foundry_managed` |
 | `fidelity` | `unverified` |
-| `limitation` | Why the value is unverified and what is not reported, in words |
-| `counts`, `details`, `evidence.attempt_ids` | Empty. Foundry returns one number and nothing else the evaluator computed |
+| `limitation` | Why the result is unverified, in words |
 | `attempts_used` | The Attempts the evaluator was given, as on the other path |
 | `managed_scoring.evaluator` | The registered name, the version that ran and the SHA-256 of its code |
-| `managed_scoring.eval_id`, `run_id`, `output_item_id` | Where the value came from in your project |
-| `managed_scoring.evidence_sha256` | The digest the evidence was submitted with: the SHA-256 of the evidence as it was sent |
-| `managed_scoring.platform_diagnostics` | The threshold, label and pass flag Foundry attached |
-| `acceptance` | `not_assessed` when you declared a criterion, with the reason that the value is an unverified result |
+| `managed_scoring.eval_id`, `run_id`, `output_item_id` | Where the plain value came from in your project: the evaluation, its first run and the output item of the `value` row |
+| `managed_scoring.encoded_result` | Where the rest came from: the `run_id` of the second run, and the `bytes` and `parts` of the encoded result |
+| `managed_scoring.evidence_sha256` | The digest the evidence was submitted with: the SHA-256 of the evidence as JSON |
+| `managed_scoring.platform_diagnostics` | The threshold, label and pass flag Foundry attached to the value. Absent for a metric without a value |
+| `acceptance` | `not_assessed` when you declared a criterion, with the reason that the value is an unverified result, or that the metric is an unavailable measurement |
 
-**Unverified result.** Whether the number Foundry returns always equals the number the evaluator computed there has not been established. Until a fidelity rule exists, every value from this path is an unverified result and is shown with its limitation. An unverified result is kept as a diagnostic. It cannot pass or fail your acceptance criterion.
+**An unavailable measurement.** When the evaluator finds that the metric cannot be calculated from the evidence, the entry says so exactly as it does on the other path: `state` is `unavailable`, `value` is `null`, and `reason`, `counts`, `details` and `evidence` are what the evaluator returned. The scorecard is not partial because of it. An unavailable measurement whose Attempts were [cut short](../sweep/execution-limits.md#metrics-in-a-partial-scorecard) is an execution failure, as on the other path.
 
-**Platform diagnostics.** Foundry attaches a threshold of 0.5 and a pass or fail label to every result, whatever the metric. They are recorded under `platform_diagnostics` and nowhere else. They are not your acceptance criterion and not an assessment by the Evaluator. Foundry also did not enforce the declared score range in the earlier probes, which is why the value is checked against the scale when it is recovered.
+```json
+{
+  "metric_id": "outcome_consistency",
+  "state": "unavailable",
+  "value": null,
+  "reason": "no Task has at least two Attempts with a task outcome",
+  "counts": {
+    "tasks": {"total": 2, "valid": 0, "missing": [], "excluded": [{"reason": "fewer than two Attempts with a task outcome", "count": 2, "ids": ["close", "archive"]}]},
+    "attempts": {"total": 2, "valid": 0, "missing": [], "excluded": [{"reason": "its Task has fewer than two Attempts with a task outcome", "count": 2, "ids": ["close/attempt-1", "archive/attempt-1"]}]}
+  },
+  "execution_failure": null,
+  "scoring_path": "foundry_managed",
+  "fidelity": "unverified",
+  "limitation": "Foundry returned this result, and it has no value: the Evaluator found the metric to be an unavailable measurement for the evidence, ...",
+  "managed_scoring": {
+    "evaluator": {"name": "reliability-outcome-consistency", "version": "1", "code_sha256": "6f2b..."},
+    "eval_id": "eval_1",
+    "run_id": "evalrun_1",
+    "output_item_id": "1",
+    "encoded_result": {"run_id": "evalrun_2", "bytes": 261, "parts": 44},
+    "evidence_sha256": "dd62..."
+  }
+}
+```
+
+**Unverified result.** Whether the number Foundry returns in the `value` row always equals the number the evaluator computed there has not been established. Until a fidelity rule exists, every value from this path is an unverified result and is shown with its limitation. An unverified result is kept as a diagnostic. It cannot pass or fail your acceptance criterion.
+
+The encoded result carries the value as the evaluator computed it, exactly. Nothing compares the two yet. `ManagedResult.computed_value` holds it for the fidelity rule to use, and the scorecard does not show it.
+
+**Platform diagnostics.** Foundry attaches a threshold of 0.5 and a pass or fail label to every number an evaluator returns, whatever it stands for. For the value of a metric they are recorded under `platform_diagnostics` and nowhere else. They are not your acceptance criterion and not an assessment by the Evaluator. For the marker of a metric without a value, and for the size and the parts of the encoded result, they mean nothing and are not recorded. Foundry also did not enforce the declared score range when observed, which is why the value is checked against the scale when it is recovered.
+
+In your Foundry project, the runs of this path therefore show many rows of large whole numbers with pass and fail labels. Only the `value` row of the first run is the metric, and for a metric without a value that row shows the marker.
 
 The run's link to the Foundry portal is not recorded, because it embeds your subscription identifier. Find the run by its eval and run identifiers.
 
 The human-readable report shows all of this, because it renders every field of the scorecard.
 
-## When managed scoring gives no value
+## When managed scoring gives no result
 
 A project that cannot be used stops the sweep before any Attempt is made, with `ManagedScoringFailure` or a `ValueError`. Nothing was collected, so there is nothing to keep.
 
 After the Attempts, the sweep does not stop. It returns a scorecard that is **partial**:
 
 - The metric has no result. Its `state`, `value` and `fidelity` are `null`. It is not reported as an unavailable measurement, as a value of zero or as a task failure: nothing was measured, and no task outcome is changed.
-- `execution_failure.reason` says that Foundry-managed scoring gave no result, followed by the execution error. `managed_scoring.error` holds the execution error on its own, next to how far the run got: the evaluator, the evaluation, the run and the digest of the submitted evidence, each `null` if it was not reached.
+- `execution_failure.reason` says that Foundry-managed scoring gave no result, followed by the execution error. `managed_scoring.error` holds the execution error on its own, next to how far the scoring got: the evaluator, the evaluation, the run that was made last and the digest of the submitted evidence, each `null` if it was not reached.
 - `missing` lists the result with the kind `metric_result` and the same reason.
 - Every Attempt is in the scorecard as it was collected.
 - Every other metric keeps its own result, whether it was scored in your own process or in another managed run.
@@ -173,7 +251,7 @@ After the Attempts, the sweep does not stop. It returns a scorecard that is **pa
   "scoring_path": "foundry_managed",
   "fidelity": null,
   "managed_scoring": {
-    "evaluator": {"name": "reliability-outcome-consistency", "version": "1", "code_sha256": "809f..."},
+    "evaluator": {"name": "reliability-outcome-consistency", "version": "1", "code_sha256": "6f2b..."},
     "eval_id": "eval_1",
     "run_id": "evalrun_1",
     "output_item_id": null,
@@ -191,16 +269,19 @@ With `artifact_dir`, the partial scorecard, its report and the evidence are deli
 | --- | --- |
 | The project cannot be reached or refuses your identity when the evaluator is registered | The sweep stops before any Attempt is made |
 | The metric has no Foundry-managed evaluator, or `managed_scoring` was not given | `ValueError` before any Attempt is made |
-| The metric is an unavailable measurement for the evidence, for example no Task has two Attempts | No result. The evaluator raises, and Foundry then fails its run |
-| The evidence was altered on the way | No result, for the same reason |
-| The evidence is larger than one run accepts | No result. Nothing was submitted |
+| The metric is an unavailable measurement for the evidence, for example no Task has two Attempts | **A result**, not a failure: `state` is `unavailable`, with its reason and counts. See [what the scorecard shows](#what-the-scorecard-shows) |
+| The evidence was altered on the way | No result. The evaluator raises on every row, and Foundry then fails the run |
+| A run would be larger than one run accepts: the evidence is too large, or the result has too many parts | No result. That run was not submitted |
+| A part of the encoded result did not come back as the evaluator returned it, or the size did not | No result. The digest does not match, or a part is not a number of six bytes. Nothing of what came back is reported |
+| The plain value and the encoded result disagree on whether the metric has a value | No result |
+| A run returned fewer output items than rows were submitted, or not one for each row | No result |
 | The project refuses or does not answer a request after the Attempts were made | No result, with the request and its answer |
 | The run ended as failed or canceled, or did not end in time | No result, with the run's error |
-| A completed run whose item carries an error, whose result is in the status `error`, that has no result for the metric, or whose score is not a number | No result |
+| A completed run with an item that carries an error, whose result is in the status `error`, that has no result for the metric, or whose score is not a number | No result. One such row is enough: a result is not put together from some of its parts |
 | A score outside the scale of the metric | No result. The score is not reported |
 | Managed scoring stops on an error of its own | No result for every metric on this path, with that error |
 
-Returning an unavailable measurement with its reason and counts through a managed result is not possible in this version. A managed evaluator can only return a number, and one that raises fails its run. Such a metric therefore has no result, and the scorecard does not call it unavailable, because nothing came back that says so. This also holds when the sweep's Attempts were cut short by an execution limit or a cancellation and too little was collected.
+A sweep whose Attempts were cut short by an execution limit or a cancellation, with too little collected to calculate from, has no managed failure either. The evaluator returns an unavailable measurement, and the scorecard reports the metric as it does on the other path: without a result, [because its Attempts were cut short](../sweep/execution-limits.md#metrics-in-a-partial-scorecard).
 
 ## A customer-process rescore
 
@@ -291,13 +372,16 @@ Rescore with the commit or tag of the offering that made the scorecard. Another 
 
 ## What stays in your project
 
-Each sweep creates one evaluation and one run in your project for every metric on this path, and evaluator versions as described above. The offering does not delete them. Your project governs access to them, their retention and their deletion.
+Each sweep creates one evaluation and two runs in your project for every metric on this path, and evaluator versions as described above. Every row of every run holds the submitted evidence. The offering does not delete them. Your project governs access to them, their retention and their deletion.
 
 ## Assumptions
 
-This comes from the specification and is not a confirmed decision. It is implemented as written.
+The first comes from the specification and is not a confirmed decision. It is implemented as written. The others are choices made here, where the specification left the question open.
 
-1. **The managed artifact is a Foundry code evaluator, not an endpoint evaluator** (specification assumption 17). An endpoint evaluator would need the offering to host an endpoint that receives your data. A code evaluator limits the canonical definitions to the code-evaluator sandbox.
+1. **The managed artifact is a Foundry code evaluator, not an endpoint evaluator** (specification assumption 17). An endpoint evaluator would need the offering to host an endpoint that receives your data. A code evaluator limits the canonical definitions to the code-evaluator sandbox. The `skipped` output with a reason that Microsoft documents belongs to endpoint evaluators and is not used.
+2. **A result without a value that comes back from Foundry is reported as `unverified`, with a limitation.** `fidelity` says whether a value is known to equal what the evaluator computed, and an unavailable measurement has no value. It is reported as `unverified` all the same, because no fidelity rule yet says that anything received from Foundry is what the evaluator computed. It is still an unavailable measurement and not an unverified result: its `state` says so, and an acceptance criterion on it is not assessed for that reason.
+3. **The plain value stays the reported value.** The encoded result carries the value too, exactly. The scorecard reports the number of the `value` row, as before, and keeps it unverified. Whether the two are compared, and what follows from the comparison, is the fidelity rule's decision and is not made here.
+4. **Every row of the same run is graded by the same build of the sandbox.** The parts of a result are put together from rows that are graded separately. If two rows deflated the same result differently, the digest would not match and the metric would have no result. The one live comparison of the sandbox's deflate with this machine's gave the same bytes.
 
 ## Observed live
 

@@ -22,12 +22,15 @@ from live_fixture.hosted_agent import todo_tools
 from live_fixture.project_only import connect_project, provision_project
 from reliability_evaluators.agent_target import AgentResponse
 from reliability_evaluators.evidence import TaskOutcome
+from reliability_evaluators.evaluators import outcome_consistency
+from reliability_evaluators.evidence import Attempt, ExecutionStatus, group_by_task
 from reliability_evaluators.managed_scoring import (
     FoundryManagedScoring,
     FoundryProject,
     azure_cli_token,
     derive_artifact,
 )
+from reliability_evaluators.managed_scoring.grader import decode_result, result_parts
 from reliability_evaluators.sweep import ConfiguredEvaluator, Task, run_sweep
 
 pytestmark = pytest.mark.live
@@ -124,7 +127,7 @@ def test_a_sweep_scores_outcome_consistency_in_the_live_project(live, scoring, m
 
     (entry,) = [entry for entry in scorecard["metrics"] if entry["metric_id"] == "outcome_consistency"]
     print(json.dumps({"seconds": round(time.monotonic() - started), "outcome_consistency": {
-        key: entry[key] for key in ("state", "value", "scoring_path", "fidelity", "managed_scoring")}}))
+        key: entry[key] for key in ("state", "value", "scoring_path", "fidelity", "counts", "managed_scoring")}}))
     assert [attempt["task_outcome"]["success"] for attempt in scorecard["attempts"]] == [True] * 4 + [False] * 4
     assert entry["state"] == "available"
     assert entry["value"] == pytest.approx(0.68, abs=1e-12)
@@ -137,6 +140,21 @@ def test_a_sweep_scores_outcome_consistency_in_the_live_project(live, scoring, m
     diagnostics = entry["managed_scoring"]["platform_diagnostics"]
     assert (diagnostics["threshold"], diagnostics["label"], diagnostics["passed"]) == (0.5, "pass", True)
     assert entry["acceptance"] is None
+    # The counts, the per-Task details and the Attempts the value rests on came back with it, as an encoded result.
+    assert entry["counts"] == {
+        "tasks": {"total": 2, "valid": 2, "missing": [], "excluded": []},
+        "attempts": {"total": 8, "valid": 8, "missing": [], "excluded": []},
+    }
+    assert entry["details"] == {
+        "per_task": [
+            {"task_id": "close", "attempts": 5, "successes": 4, "value": 0.36},
+            {"task_id": "archive", "attempts": 3, "successes": 0, "value": 1.0},
+        ]
+    }
+    assert entry["evidence"]["attempt_ids"] == [attempt["attempt_id"] for attempt in scorecard["attempts"]]
+    encoded = entry["managed_scoring"]["encoded_result"]
+    assert encoded["run_id"] != entry["managed_scoring"]["run_id"]
+    assert encoded["parts"] == -(-encoded["bytes"] // 6)
 
 
 def test_registration_is_idempotent_and_made_as_the_signed_in_identity(live, scoring):
@@ -151,13 +169,148 @@ def test_registration_is_idempotent_and_made_as_the_signed_in_identity(live, sco
     assert held[0]["created_by"] == signed_in_name(live)
 
 
-def test_an_unavailable_measurement_gives_no_managed_result_and_a_partial_scorecard(live, scoring, monkeypatch):
+def test_an_unavailable_measurement_comes_back_from_the_live_project_with_its_reason_and_counts(
+    live, scoring, monkeypatch
+):
     # One Attempt at each Task: no Task has two, so outcome consistency is an unavailable measurement.
+    started = time.monotonic()
+
     scorecard = sweep_on_the_fixture({"close": ["success"], "archive": ["failure"]}, scoring, monkeypatch)
 
     (entry,) = [entry for entry in scorecard["metrics"] if entry["metric_id"] == "outcome_consistency"]
-    print(json.dumps({"managed_scoring_failure": entry["managed_scoring"]["error"]}))
-    # Nothing came back that says the measurement is unavailable, so the scorecard does not say it either.
-    assert (entry["state"], entry["value"]) == (None, None)
-    assert "ended as failed" in entry["managed_scoring"]["error"]
-    assert scorecard["status"] == "partial"
+    print(json.dumps({"seconds": round(time.monotonic() - started), "unavailable_measurement": {
+        key: entry[key] for key in ("state", "value", "reason", "counts", "scoring_path", "fidelity", "managed_scoring")}}))
+    # The evaluator did not raise and no run failed: the scorecard is complete and says what the evaluator found.
+    assert scorecard["status"] == "complete"
+    assert (entry["state"], entry["value"]) == ("unavailable", None)
+    assert entry["reason"] == "no Task has at least two Attempts with a task outcome"
+    assert entry["counts"] == {
+        "tasks": {
+            "total": 2,
+            "valid": 0,
+            "missing": [],
+            "excluded": [
+                {"reason": "fewer than two Attempts with a task outcome", "count": 2, "ids": ["close", "archive"]}
+            ],
+        },
+        "attempts": {
+            "total": 2,
+            "valid": 0,
+            "missing": [],
+            "excluded": [
+                {
+                    "reason": "its Task has fewer than two Attempts with a task outcome",
+                    "count": 2,
+                    "ids": ["close/attempt-1", "archive/attempt-1"],
+                }
+            ],
+        },
+    }
+    assert entry["execution_failure"] is None
+    assert (entry["scoring_path"], entry["fidelity"]) == ("foundry_managed", "unverified")
+    assert "it has no value" in entry["limitation"]
+    # The number Foundry was handed in place of a value, and its label for it, are not in the scorecard.
+    assert "platform_diagnostics" not in entry["managed_scoring"]
+    assert "error" not in entry["managed_scoring"]
+
+
+def synthetic_evidence(outcomes_by_task):
+    return group_by_task(
+        Attempt(
+            attempt_id=f"{task_id}/attempt-{number}",
+            task_id=task_id,
+            execution_status=ExecutionStatus.COMPLETED,
+            task_outcome=TaskOutcome(success=success, source="synthetic live check"),
+        )
+        for task_id, outcomes in outcomes_by_task.items()
+        for number, success in enumerate(outcomes, start=1)
+    )
+
+
+def run_rows(live, eval_id, rows):
+    """Submit rows to one run of the eval, wait for it, and return the run and its output items by row."""
+    run = live.project_request(
+        "POST",
+        f"/openai/v1/evals/{eval_id}/runs",
+        {"name": "mixed results", "data_source": {"type": "jsonl", "source": {"type": "file_content", "content": [{"item": row} for row in rows]}}},
+    )
+    path = f"/openai/v1/evals/{eval_id}/runs/{run['id']}"
+    deadline = time.monotonic() + 1200
+    while run["status"] not in ("completed", "failed", "canceled") and time.monotonic() < deadline:
+        time.sleep(10)
+        run = live.project_request("GET", path)
+    items, after = [], ""
+    while True:
+        page = live.project_request("GET", f"{path}/output_items?limit=100{after}")
+        items += page["data"]
+        if not page["has_more"]:
+            break
+        after = f"&after={page['last_id']}"
+    return run, {item["datasource_item_id"]: item for item in items}
+
+
+def test_a_run_that_mixes_an_available_and_an_unavailable_result_returns_every_item(live, scoring):
+    # Two sets of evidence in the same runs. "scored": p = 4/5, (0.6)^2 = 0.36. "unscored": one Attempt, no value.
+    artifact = derive_artifact("outcome_consistency")
+    version = scoring.register(["outcome_consistency"])["outcome_consistency"].version
+    evidence = {
+        "scored": artifact.item(synthetic_evidence({"task": [True, True, True, True, False]})),
+        "unscored": artifact.item(synthetic_evidence({"task": [True]})),
+    }
+    eval_id = live.project_request("POST", "/openai/v1/evals", {
+        "name": "Reliability Evaluators live check: mixed results",
+        "data_source_config": {
+            "type": "custom",
+            "item_schema": {"type": "object", "properties": {field: {"type": "string"} for field in (artifact.evidence_field, "result_part")}},
+            "include_sample_schema": True,
+        },
+        "testing_criteria": [{
+            "type": "azure_ai_evaluator", "name": "outcome_consistency", "evaluator_name": artifact.evaluator_name,
+            "evaluator_version": version, "initialization_parameters": {},
+        }],
+    })["id"]
+    started = time.monotonic()
+
+    def scores(rows):
+        """Ask for parts of the two results in one run. Every row has to come back completed, with a number."""
+        run, items = run_rows(live, eval_id, [{**evidence[name], "result_part": part} for name, part in rows])
+        assert run["status"] == "completed", run.get("error")
+        assert sorted(items) == list(range(len(rows)))
+        results = [items[row]["results"][0] for row in range(len(rows))]
+        assert [result["status"] for result in results] == ["completed"] * len(rows)
+        return run, dict(zip(rows, (result["score"] for result in results)))
+
+    first, plain = scores([(name, part) for name in evidence for part in ("value", "size")])
+    asked_for = [
+        (name, str(number)) for name in evidence for number in range(1, result_parts(plain[(name, "size")]) + 1)
+    ]
+    second, parts = scores(asked_for)
+
+    results = {
+        name: decode_result(
+            outcome_consistency.DEFINITION,
+            evidence[name][artifact.evidence_field],
+            plain[(name, "size")],
+            [parts[row] for row in asked_for if row[0] == name],
+        )
+        for name in evidence
+    }
+    print(json.dumps({"seconds": round(time.monotonic() - started), "mixed_runs": {
+        "first": {"rows": len(plain), "result_counts": first["result_counts"], "scores": {"/".join(row): score for row, score in plain.items()}},
+        "second": {"rows": len(parts), "result_counts": second["result_counts"]},
+        "results": {name: {"state": result.state.value, "value": result.value, "reason": result.reason} for name, result in results.items()},
+    }}))
+    # The available result has its value in both forms, and the unavailable one a marker below the scale and its reason.
+    assert plain[("scored", "value")] == pytest.approx(0.36, abs=1e-12)
+    assert (results["scored"].state.value, results["scored"].value) == ("available", plain[("scored", "value")])
+    assert plain[("unscored", "value")] == -1
+    assert (results["unscored"].state.value, results["unscored"].value) == ("unavailable", None)
+    assert results["unscored"].reason == "no Task has at least two Attempts with a task outcome"
+    assert results["unscored"].counts["attempts"].to_dict() == {
+        "total": 1,
+        "valid": 0,
+        "missing": [],
+        "excluded": [
+            {"reason": "its Task has fewer than two Attempts with a task outcome", "count": 1, "ids": ["task/attempt-1"]}
+        ],
+    }
