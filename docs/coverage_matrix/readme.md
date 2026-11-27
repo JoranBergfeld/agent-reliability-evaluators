@@ -133,3 +133,51 @@ No synthetic evidence is put into a run. If, after its one run, a cell of these 
 - Each run is a process of its own and writes its record when it ends, so a failure in a later run costs no earlier one.
 - The record of a run ([`evidence/`](evidence/)) holds, for every Attempt, what the reference was given, and for every metric the expected result, the result on each path and the status of the two cells. It holds no token, key or subscription identifier.
 - One fixture, in one resource group named `rg-are-55-<8 hex>` in the subscription named `Sandbox`. It is deleted afterwards and its absence confirmed with a separate query.
+
+## The matrix
+
+<!-- matrix: rendered from evidence/, do not edit -->
+
+| Evaluator | Prompt agent, customer code | Hosted agent, customer code | Prompt agent, cloud evaluation | Hosted agent, cloud evaluation |
+| --- | --- | --- | --- | --- |
+| Outcome consistency | [worked · worked](evidence/prompt-customer.json) | unverified: not run | unverified: not run | unverified: not run |
+| Distributional trajectory consistency | [worked · worked](evidence/prompt-customer.json) | unverified: not run | unverified: not run | unverified: not run |
+| Sequential trajectory consistency | [worked · worked](evidence/prompt-customer.json) | unverified: not run | unverified: not run | unverified: not run |
+| Resource consistency | [worked · worked](evidence/prompt-customer.json) | unverified: not run | unverified: not run | unverified: not run |
+| Fault robustness | [unsupported · unsupported](evidence/prompt-customer.json) | unverified: not run | unverified: not run | unverified: not run |
+| Environment robustness | [worked · worked](evidence/prompt-customer.json) | unverified: not run | unverified: not run | unverified: not run |
+| Prompt robustness | [worked · worked](evidence/prompt-customer.json) | unverified: not run | unverified: not run | unverified: not run |
+| Calibration | [worked · worked](evidence/prompt-customer.json) | unverified: not run | unverified: not run | unverified: not run |
+| Strict confidence discrimination | [worked · worked](evidence/prompt-customer.json) | unverified: not run | unverified: not run | unverified: not run |
+| Brier-based score | [worked · worked](evidence/prompt-customer.json) | unverified: not run | unverified: not run | unverified: not run |
+| Constraint compliance | [worked · worked](evidence/prompt-customer.json) | unverified: not run | unverified: not run | unverified: not run |
+| Conditional harm severity | [worked · worked](evidence/prompt-customer.json) | unverified: not run | unverified: not run | unverified: not run |
+
+| Run | worked | unsupported | unverified | failed |
+| --- | --- | --- | --- | --- |
+| Prompt agent, customer code | 22 | 2 | 0 | 0 |
+| Hosted agent, customer code | 0 | 0 | 24 | 0 |
+| Prompt agent, cloud evaluation | 0 | 0 | 24 | 0 |
+| Hosted agent, cloud evaluation | 0 | 0 | 24 | 0 |
+| **All 96 cells** | **22** | **2** | **72** | **0** |
+
+### Prompt agent, customer code
+
+Agent `todo-prompt-notes` through `FoundryPromptAgentTarget`. Made from 2026-11-27T21:26:49+00:00 to 2026-11-27T21:45:49+00:00 (UTC), with the source at commit `7fa8d73`. 19 Attempts: the invocation returned for 17 and raised for 2. Of those that returned, 16 succeeded and 1 failed the strict rule, and 1 changed `unrelated`. 17 confidence requests were answered. The sweep took 1139 seconds, scoring in Foundry included, and its scorecard was `partial`. Record: [`evidence/prompt-customer.json`](evidence/prompt-customer.json).
+
+| Evaluator | Expected | Foundry-managed | Customer-process | Why, where a cell did not work |
+| --- | --- | --- | --- | --- |
+| Outcome consistency | `0.84` (21/25) | **worked**: `0.84` | **worked**: `0.84` |  |
+| Distributional trajectory consistency | `0.9983471222529758` | **worked**: `0.9983471222529758` | **worked**: `0.9983471222529758` |  |
+| Sequential trajectory consistency | `0.9833333333333334` | **worked**: `0.9833333333333333` | **worked**: `0.9833333333333333` |  |
+| Resource consistency | `0.9595498274596603` | **worked**: `0.9595498274596603` | **worked**: `0.9595498274596603` |  |
+| Fault robustness | No value | **unsupported**: unavailable | **unsupported**: unavailable | a tool that answers with an HTTP error fails the whole invocation of a prompt agent. As expected: no valid Attempt under the fault variation |
+| Environment robustness | `1.0` | **worked**: `1.0` | **worked**: `1.0` |  |
+| Prompt robustness | `1.0` | **worked**: `1.0` | **worked**: `1.0` |  |
+| Calibration | `1.0` | **worked**: `1.0` | **worked**: `1.0` |  |
+| Strict confidence discrimination | `1.0` | **worked**: `1.0` | **worked**: `1.0` |  |
+| Brier-based score | `1.0` | **worked**: `1.0` | **worked**: `1.0` |  |
+| Constraint compliance | `0.9090909090909091` (10/11) | **worked**: `0.9090909090909091` | **worked**: `0.9090909090909091` |  |
+| Conditional harm severity | `0.0` | **worked**: `0.0` | **worked**: `0.0` |  |
+
+<!-- matrix: end -->
