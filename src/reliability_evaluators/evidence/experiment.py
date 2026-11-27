@@ -7,7 +7,7 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Mapping
 
-from .error import EvidenceError
+from .errors import EvidenceError
 
 
 class StartingStatePolicy(str, Enum):
