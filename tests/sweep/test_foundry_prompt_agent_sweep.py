@@ -78,6 +78,7 @@ def without_a_response(invocation, http_status, error):
     """What is recorded of an invocation the fake project answered without a response object."""
     return {
         "agent_target": "foundry_prompt_agent",
+        "entry_point": "customer_code",
         "protocol": "responses",
         "api_version": "v1",
         "composed_input": None,
@@ -173,6 +174,7 @@ def test_each_attempt_keeps_the_response_identifiers_the_usage_and_the_ordered_t
 
     assert scorecard["attempts"][0]["invocation"] == {
         "agent_target": "foundry_prompt_agent",
+        "entry_point": "customer_code",
         "protocol": "responses",
         "api_version": "v1",
         "composed_input": None,
@@ -370,6 +372,7 @@ def test_a_response_that_was_delivered_but_did_not_complete_is_an_execution_fail
         "task_outcome": None,
         "invocation": {
             "agent_target": "foundry_prompt_agent",
+            "entry_point": "customer_code",
             "protocol": "responses",
             "api_version": "v1",
             "composed_input": None,
@@ -492,6 +495,7 @@ def test_each_attempt_keeps_what_the_platform_returned_for_its_follow_up(todo_se
     }
     assert first["confidence_invocation"] == {
         "agent_target": "foundry_prompt_agent",
+        "entry_point": "customer_code",
         "protocol": "responses",
         "api_version": "v1",
         # The question as the agent was sent it: the success rule, and nothing about the outcome.

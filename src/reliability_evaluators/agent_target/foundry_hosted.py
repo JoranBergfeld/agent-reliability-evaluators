@@ -16,7 +16,7 @@ from time import perf_counter
 from typing import Any, Callable
 
 from ..evidence import ActionEvent, ResourceMeasurement, ResourceType
-from .interface import AgentResponse, AttemptRequest, InvocationFailed, IsolatedFollowUp
+from .interface import CUSTOMER_CODE, AgentResponse, AttemptRequest, InvocationFailed, IsolatedFollowUp
 
 API_VERSION = "v1"
 # What a token for a Foundry project is asked for.
@@ -270,6 +270,7 @@ def _invocation(answer: _Answer, response: dict[str, Any], composed_input: str |
     usage = response.get("usage")
     return {
         "agent_target": AGENT_TARGET,
+        "entry_point": CUSTOMER_CODE,
         "protocol": RESPONSES_PROTOCOL,
         "api_version": API_VERSION,
         "composed_input": composed_input,
