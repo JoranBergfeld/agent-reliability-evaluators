@@ -445,9 +445,10 @@ def test_two_measurements_of_one_resource_type_in_an_attempt_are_rejected_rather
         attempts("task", [[elapsed(1.0), elapsed(3.0)]])
 
 
-def test_an_attempt_carrying_something_that_is_not_a_resource_measurement_is_rejected():
+@pytest.mark.parametrize("carried", [[{"resource_type": "elapsed_time", "value": 1.0}], [1.0], None, elapsed(1.0)])
+def test_an_attempt_carrying_something_that_is_not_a_resource_measurement_is_rejected(carried):
     with pytest.raises(EvidenceError, match="ResourceMeasurement"):
-        attempts("task", [[{"resource_type": "elapsed_time", "value": 1.0}]])
+        attempts("task", [carried])
 
 
 def test_a_measurement_too_large_to_calculate_with_is_rejected():

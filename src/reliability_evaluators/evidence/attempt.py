@@ -146,7 +146,12 @@ class Attempt:
             raise EvidenceError(
                 f"a task outcome is a TaskOutcome with its source. Got {self.task_outcome!r}"
             )
-        measurements = tuple(self.resource_measurements)
+        try:
+            measurements = tuple(self.resource_measurements)
+        except TypeError:
+            raise EvidenceError(
+                f"resource measurements are a sequence of ResourceMeasurement. Got {self.resource_measurements!r}"
+            ) from None
         measured: set[ResourceType] = set()
         for measurement in measurements:
             if not isinstance(measurement, ResourceMeasurement):
