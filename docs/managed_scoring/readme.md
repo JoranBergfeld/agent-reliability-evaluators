@@ -168,7 +168,7 @@ The sizes of the last three rows were measured with the derived evaluator on thi
 
 Before this version a managed sweep made one run with one row and took 43 to 52 seconds. Returning the state, the reason and the counts is what the added minutes buy.
 
-**A row that Foundry does not grade is asked for again.** Twice, Foundry returned a row of a completed run as an error where the evaluator had not raised on that row (observed). A result takes many rows, so the sweep asks again for the parts that did not come back, in a further run with only those rows, up to three times in all. The evaluator returns the same part for the same evidence, and the digest is checked whichever run a part came from. A part that does not come back in three runs leaves the metric without a result. `managed_scoring.encoded_result.run_ids` names every run that returned a part.
+**A row that Foundry does not grade is asked for again.** Foundry returned rows of a completed run as errors where the evaluator had not raised on them (observed: single rows of several runs, and once 148 of the 843 rows of a probe). A result takes many rows, so the sweep asks again for the parts that did not come back, in a further run with only those rows, up to three times in all. The evaluator returns the same part for the same evidence, and the digest is checked whichever run a part came from. A part that does not come back in three runs leaves the metric without a result. `managed_scoring.encoded_result.run_ids` names every run that returned a part.
 
 ## What the scorecard shows
 
@@ -270,7 +270,7 @@ The rule does not depend on the plain channel always preserving a value. It is a
 
 The result is an unverified result:
 
-- `value` is the number Foundry returned in the `value` row, as before. It is kept as a diagnostic.
+- `value` is the number Foundry returned in the `value` row. It is kept as a diagnostic.
 - `fidelity` is `unverified`, and `limitation` names both numbers.
 - `managed_scoring.fidelity_check` holds both: `plain_value` and `encoded_value`, with the outcome `failed`.
 - `counts`, `details` and `evidence` are the ones in the encoded result. They belong to the value the encoded result holds, not to the reported one.
@@ -306,7 +306,7 @@ A plain value that is not on the scale of the metric is not reported at all, and
 An unavailable measurement has no value to compare. Its state, its reason and its counts travel on the encoded channel only. What the plain channel carries is the marker for a metric without a value.
 
 - The marker came back, and the encoded result says the metric has no value: the two channels agree that there is none. The result is `authoritative`, and `fidelity_check` records the outcome `passed` with both values `null`.
-- Anything else came back as the plain value: the two channels disagree on whether there is a value. There is [no result](#when-managed-scoring-gives-no-result), as before.
+- Anything else came back as the plain value: the two channels disagree on whether there is a value. There is [no result](#when-managed-scoring-gives-no-result).
 
 `authoritative` here means that the absence of a value was confirmed on both channels, and that the reason and the counts are what the encoded result holds under its digest. No second channel carries the reason or the counts. An acceptance criterion on the metric is not assessed in either case, because the metric is an unavailable measurement.
 
@@ -470,7 +470,7 @@ The first comes from the specification and is not a confirmed decision. It is im
 2. **A managed result is authoritative when its two channels agree, and for no other reason.** The specification asks for a fidelity check and does not say what it compares. The check compares the plain value with the value in the encoded result, exactly. It uses nothing that was calculated in your own process, because a customer-process calculation may not stand in for a managed one. What that agreement establishes, and what it does not, is in [the fidelity check](#the-fidelity-check). See [ADR 0007](../adr/0007-a-managed-result-is-authoritative-when-its-two-channels-agree.md).
 3. **The plain value stays the reported value, also when the check fails.** The encoded result carries the value too. When the two differ, the scorecard reports the number of the `value` row as an unverified result and shows the encoded one beside it, in `managed_scoring.fidelity_check`. It does not report the encoded value as the value, although the encoded channel is the one behind a digest: the plain number is what your Foundry project shows for the metric, and which of the two the evaluator computed is not established.
 4. **A result without a value is authoritative when both channels agree that there is none.** `fidelity` says whether a value is known to equal what the evaluator computed, and an unavailable measurement has no value. What can be checked is checked: that the plain channel returned the marker for no value where the encoded result says there is none. Its reason and its counts travel in the encoded result only, under its digest, as the counts of a value do. It is an unavailable measurement and never an unverified result: its `state` says so, and an acceptance criterion on it is not assessed for that reason.
-5. **A plain value that is not on the scale of the metric leaves the metric without a result.** It could be reported as an unverified result like any other value that differs. It is not, because it is not a value of the metric: the result contract does not hold it. This was so before the fidelity check and is kept.
+5. **A plain value that is not on the scale of the metric leaves the metric without a result.** It could be reported as an unverified result like any other value that differs. It is not, because it is not a value of the metric: the result contract does not hold it.
 6. **The sign of a zero is not compared.** Foundry returned negative zero as `0` when observed. The two are the same number, and the check compares numbers. No metric of this version distinguishes them.
 7. **Every row of the same run is graded by the same build of the sandbox.** The parts of a result are put together from rows that are graded separately. If two rows deflated the same result differently, the digest would not match and the metric would have no result. The one live comparison of the sandbox's deflate with this machine's gave the same bytes.
 
@@ -595,12 +595,76 @@ Observed in Sweden Central in one more disposable Foundry project with no model 
 - **Timing.** The four cases took 582 and 672 seconds against a project that already existed.
 - **Teardown.** The resource group created for this work, `rg-are-48-a35ff320`, was deleted with everything registered in it, and a separate `az group exists` returned `false`. The soft-deleted Foundry account was purged.
 
+### Managed-output fidelity, observed on 2026-11-27
+
+Observed in Sweden Central in one more disposable Foundry project with no model deployment, with Azure CLI 2.93.0, signed in as a user, and with the same interfaces as above: `api-version=v1` with the header `Foundry-Features: Evaluations=V1Preview` to register an evaluator, and the `/openai/v1/evals` routes for evaluations, runs and output items. The answers were read over REST with Python's `json` module, which reads a decimal number as the double nearest to it. Each item was seen twice unless it says otherwise.
+
+**Documented.** Microsoft documents that a code-based evaluator "returns a float score between 0.0 and 1.0", with the metric type `continuous` ([Other custom evaluators (preview)](https://learn.microsoft.com/en-us/azure/foundry/concepts/evaluation-evaluators/other-custom-evaluators), dated 2026-11-11, read on 2026-11-27). It documents nothing about the precision or the notation in which that float is kept or returned. It also documents that when `grade` raises or times out, "the service records that item's result as `0.0` and marks it as an error". That is not what was observed: such a row came back with a `null` score, in the status `error`. Everything below is observation, not documented behaviour.
+
+**The probe.** A test-only code evaluator ([`tests/live/test_managed_fidelity.py`](../../tests/live/test_managed_fidelity.py)) computes a double from text and returns it on the channel that a row asks for. Text reached the sandbox unchanged in the earlier probes, so the text says which double is computed.
+
+| Channel | What the evaluator returns | Compared with |
+| --- | --- | --- |
+| Numeric | The double itself, as the score. This is how the plain value of a metric comes back | What the encoded channel returned for the same text |
+| Encoded | The eight bytes of the double as two whole numbers, of six bytes and of two. This is how the parts of an encoded result come back | The bytes of the double that this machine computes from the same text |
+
+It was asked for 281 computations, which give 271 different doubles, each on both channels: 843 rows. 71 of those doubles take 17 significant digits to write.
+
+- 49 decimals as text. Among them the values of the earlier evidence (`0.83`, `0.8300000000000001`, `0.6799999999999999`, `0.49999999999999994`, `0.49999999999999906`), decimals longer than a double holds, numbers small and large enough to be written with an exponent (from `5e-324` and `0.0000001` to `1e22` and `1.7976931348623157e308`), whole numbers, zero with either sign and negative numbers.
+- 14 neighbours: the doubles directly below and above `0.83`, `0.68`, `0.5`, `1.0`, `0.1`, `0.36` and `0.3333333333333333`.
+- 38 ratios that the evaluator divides itself: every k/n for n of 3, 7, 9, 11 and 13.
+- 4 means that the evaluator adds and divides itself, such as the mean of `0.1`, `0.2` and `0.3`.
+- 120 doubles between 0 and 1, and 15 more each with the double directly above it, chosen with a fixed seed.
+- 26 doubles of any size and sign, chosen with the same seed.
+
+**What came back.**
+
+- **The encoded channel returned every double exactly.** All 562 whole numbers were the bytes of the double that this machine computes from the same text. So the sandbox also computed the same double as this machine in every case, the ratios and the means included.
+- **The numeric channel returned every double as the same number.** All 281 scores were equal to the double the encoded channel carried.
+- **One came back as another double: negative zero, as `0`.** The other 280 were the same double bit for bit. No metric of this version distinguishes the two zeros.
+- **Adjacent values stayed apart.** `0.83` came back as `0.83` and `0.8300000000000001` as `0.8300000000000001`, and so did each of the 14 neighbours and the 15 pairs.
+- **The alteration of structured inputs was not seen in outputs.** Decision ticket #12 saw `0.83` arrive in an evaluator as `0.8300000000000001` and `0.49999999999999994` as `0.49999999999999906` when they were submitted as numbers. Returned as scores, all four came back as themselves. Inputs were not probed again: the evidence is submitted as text.
+- **Whole numbers of up to six bytes came back unchanged as scores.** 28 of them, among them 0, 2^47, 2^48 - 2, 2^48 - 1 and every power of ten up to 10^14. Seen three times.
+
+**The derived evaluator.** The same was asked of the evaluator derived from outcome consistency, with its real encoding, for eight sets of synthetic evidence whose value is a long decimal. The expected values are fractions calculated by hand. Seen once.
+
+| Evidence | By hand | Plain value | Value in the encoded result |
+| --- | --- | --- | --- |
+| 2 successes in 3 Attempts | 1/9 | `0.1111111111111111` | `0.1111111111111111` |
+| 5 in 7 | 9/49 | `0.1836734693877551` | `0.1836734693877551` |
+| 7 in 9 | 25/81 | `0.30864197530864196` | `0.30864197530864196` |
+| 9 in 11 | 49/121 | `0.4049586776859504` | `0.4049586776859504` |
+| 7 in 13 | 1/169 | `0.005917159763313609` | `0.005917159763313609` |
+| Two Tasks: 2 in 3, 5 in 7 | 65/441 | `0.14739229024943312` | `0.14739229024943312` |
+| Three Tasks: 2 in 3, 5 in 7, 4 in 5 | 7219/33075 | `0.2182615268329554` | `0.2182615268329554` |
+| Two Tasks: 4 in 5, 0 in 3 | 0.68 | `0.6799999999999999` | `0.6799999999999999` |
+
+The eight encoded results were 219 to 303 bytes and came back in 345 parts. Each result passed its digest.
+
+**The live checks**, with the fidelity check in place and the derived evaluator unchanged (79,599 bytes, SHA-256 `6f2b6af38023da79ac849f12cd24f088c533837a73fa8c4c88e1e21ccd64acb5`):
+
+- **A sweep reported an authoritative value, and an acceptance criterion was assessed on it.** Fifteen synthetic Attempts in three Tasks. Foundry returned `0.2182615268329554`, the encoded result held the same, `fidelity` was `authoritative`, and the criterion `value at most 0.25` was `met`, assessed by the offering. Seen twice.
+- **The earlier live checks passed with the new expectations**: [`tests/live/test_managed_outcome_consistency.py`](../../tests/live/test_managed_outcome_consistency.py) once, and [`tests/live/test_managed_scoring_failures.py`](../../tests/live/test_managed_scoring_failures.py) twice. The value `0.6799999999999999` was `authoritative`, with the same number on both channels, in five sweeps. The unavailable measurement was `authoritative` too: the plain channel returned the marker, and `fidelity_check` recorded `passed` with no values. A rescore still stood beside the managed value as a result of its own.
+- **No live result failed its check.** A value that differs between the channels was produced with the fake project only.
+
+**Rows that were not graded.** They matter here because a result takes many rows.
+
+- **A sweep asked again for a part, live, and recovered the result.** In one of the sweeps above, one of the 45 rows of the second run came back as an error. The sweep asked for that part in a third run of one row, and the result passed its digest and its fidelity check. `encoded_result.run_ids` named both runs. Seen once. Until now this was exercised against the fake project only.
+- **148 of 843 rows of one probe were not graded.** The probe was run twice, each time as nine runs of up to 100 rows that were started back to back. The first time every row was graded. The second time, while the sweeps of the live checks were running in the same project, six of the nine runs returned 6 to 36 of their rows as errors: result status `error`, `ProviderGradingError`, a `null` score, and the item itself `completed` without an error, as recorded above. The probe evaluator raises on none of these rows. Asked for again, all 148 were graded. Whether the other runs in the project were the cause is not known.
+- **5 of the 345 part rows of the derived evaluator were not graded**, in one of four runs. Asked for again, all five were graded.
+- **Timing.** The 843 rows of the probe took 472 seconds when every row was graded, and 846 seconds with the 148 asked for again. Runs that are started back to back are graded side by side.
+
+**Teardown.** TEARDOWN_PLACEHOLDER
+
 ## Not verified
 
-- **Fidelity of the returned value.** A probe returned 22 doubles and received 21 of them unchanged, and negative zero without its sign. The live check compared one plain value, `0.36`, with the value in its encoded result, twice, and they were equal. That is a small sample and not a fidelity rule. Every managed result stays unverified.
-- **Asking again for a part that was not graded**, against a live project. The row that was not graded did not recur after the sweep learned to ask again. It was exercised against the fake project only.
-- **How often Foundry does not grade a row.** Seen twice, in about thirty runs with more than one row.
-- **A second run of more than 100 rows,** and a result near the size limit of a run. The largest second run of a sweep had 45 rows, the largest of the live check 80, and the largest probe 100.
+- **That the plain channel preserves every double.** It returned 271 different doubles as the same number in one project on one day, and 21 more in the earlier probe. That is a sample, and Microsoft documents nothing about it. The fidelity check is applied to every result and does not rest on it.
+- **A plain value that differs from the encoded one, in a live project.** Every live result passed its check. The mismatch, and the unverified result it leaves, were exercised against the fake project only.
+- **The answers read by anything but Python's `json` module over REST.** Another reader, or the Azure SDK, may read a decimal number differently. The offering reads them this way.
+- **Another region, another day, or a project with a model deployment.** One project in Sweden Central was probed.
+- **Asking again more than once for a part, and giving up after three runs**, against a live project. A sweep asked again once, live, and recovered its result. The rest was exercised against the fake project only.
+- **How often Foundry does not grade a row, and why.** Seen in single rows of a few runs, in no row of a probe of 843 rows, and in 148 rows of the same probe when other runs were in progress in the project. Three runs for a part may not be enough when it happens that often: that was not seen, and not tried.
+- **A second run of more than 100 rows,** and a result near the size limit of a run. The largest second run of a sweep had 54 rows, and the largest run of a live check or a probe 100.
 - **Rows of one run graded by different builds of the sandbox**, which could deflate the same result differently.
 - **A metric that is not applicable.** The encoded result carries any state an Evaluator can return. Outcome consistency returns only `available` and `unavailable`, so no other state was returned through it.
 - **An Evaluator other than outcome consistency in Foundry.** Resource consistency was derived and scored through the same encoding against the fake project, in the tests of failed runs. It was not run in a live project.

@@ -128,7 +128,7 @@ def precision_cases():
 
 # Whole numbers of up to six bytes, as the parts of an encoded result are. Asked for as the score itself.
 WHOLE_NUMBERS = (
-    [0, 1, 255, 256, 2**16, 2**32, 2**47, 2**48 - 1, 2**48 - 2, 123456789012345, 99999999999999, 281474976710655]
+    [0, 1, 255, 256, 2**16, 2**32, 2**47, 2**48 - 1, 2**48 - 2, 123456789012345, 99999999999999]
     + [10**exponent for exponent in range(1, 15)]
     + [7 * 10**exponent for exponent in (5, 9, 13)]
 )
