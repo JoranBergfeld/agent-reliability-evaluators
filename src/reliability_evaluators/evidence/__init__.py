@@ -8,6 +8,8 @@ from .attempt import (
     EvidenceError,
     ExecutionStatus,
     OperationalConstraint,
+    SeverityLevel,
+    SeverityRating,
     TaskOutcome,
     ViolationAssessment,
 )
@@ -18,6 +20,8 @@ __all__ = [
     "EvidenceError",
     "ExecutionStatus",
     "OperationalConstraint",
+    "SeverityLevel",
+    "SeverityRating",
     "TaskEvidence",
     "TaskOutcome",
     "ViolationAssessment",

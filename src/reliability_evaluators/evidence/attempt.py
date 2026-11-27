@@ -62,18 +62,58 @@ class OperationalConstraint:
         return {"constraint_id": self.constraint_id, "description": self.description}
 
 
+class SeverityLevel(str, Enum):
+    """The three levels of severity that a reliability metric gives a weight to."""
+
+    LOW = "low"
+    MEDIUM = "medium"
+    HIGH = "high"
+
+
+@dataclass(frozen=True, kw_only=True)
+class SeverityRating:
+    """How serious one violation is.
+
+    `label` is the rating as its source gave it. `level` is the severity level it stands for.
+    The labels low, medium and high are the levels themselves. Any other label, such as
+    critical, has a level only when the customer maps it to one explicitly, by giving `level`.
+    Without that mapping the label is kept and has no level: none is assumed.
+    """
+
+    label: str
+    level: SeverityLevel | None = None
+
+    def __post_init__(self) -> None:
+        _require_text("a severity rating", label=self.label)
+        levels = [level.value for level in SeverityLevel]
+        if self.level is None:
+            mapped = SeverityLevel(self.label) if self.label in levels else None
+        elif isinstance(self.level, str) and self.level in levels:
+            mapped = SeverityLevel(self.level)
+        else:
+            raise EvidenceError(
+                f"a severity label can only be mapped to low, medium or high. {self.label!r} is mapped to {self.level!r}"
+            )
+        object.__setattr__(self, "level", mapped)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"label": self.label, "level": None if self.level is None else self.level.value}
+
+
 @dataclass(frozen=True, kw_only=True)
 class ViolationAssessment:
     """Whether one Attempt violated one of its applicable operational constraints.
 
     `evidence` is what the determination rests on, and `source` says what made it, such as
-    a deterministic check or a label.
+    a deterministic check or a label. `severity` is the severity rating of the violation
+    this assessment found, so a rating always belongs to one violation.
     """
 
     constraint_id: str
     violated: bool
     evidence: str
     source: str
+    severity: SeverityRating | None = None
 
     def __post_init__(self) -> None:
         if type(self.violated) not in (bool, int) or self.violated not in (0, 1):
@@ -85,6 +125,14 @@ class ViolationAssessment:
         _require_text(
             "a violation assessment", constraint_id=self.constraint_id, evidence=self.evidence, source=self.source
         )
+        if self.severity is None:
+            return
+        if not isinstance(self.severity, SeverityRating):
+            raise EvidenceError(f"the severity of a violation is a SeverityRating. Got {self.severity!r}")
+        if not self.violated:
+            raise EvidenceError(
+                f"a severity rating describes a violation, and the assessment of {self.constraint_id!r} found none"
+            )
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -92,6 +140,7 @@ class ViolationAssessment:
             "violated": self.violated,
             "evidence": self.evidence,
             "source": self.source,
+            "severity": None if self.severity is None else self.severity.to_dict(),
         }
 
 
