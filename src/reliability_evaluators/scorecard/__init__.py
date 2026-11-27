@@ -1,5 +1,19 @@
-"""Scorecard: assembles metric results and attempt-level evidence into the reliability scorecard."""
+"""Scorecard: assembles metric results, acceptance assessments and attempt-level evidence.
 
+The result is the machine-readable reliability scorecard.
+"""
+
+from .acceptance import AcceptanceCriterion, CustomerAssessment, criteria_by_metric
 from .assemble import SCHEMA_VERSION, ExperimentRun, ScorecardStatus, ScoredMetric, build_scorecard, to_json
 
-__all__ = ["SCHEMA_VERSION", "ExperimentRun", "ScorecardStatus", "ScoredMetric", "build_scorecard", "to_json"]
+__all__ = [
+    "SCHEMA_VERSION",
+    "AcceptanceCriterion",
+    "CustomerAssessment",
+    "ExperimentRun",
+    "ScorecardStatus",
+    "ScoredMetric",
+    "build_scorecard",
+    "criteria_by_metric",
+    "to_json",
+]

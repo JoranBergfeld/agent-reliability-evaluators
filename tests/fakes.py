@@ -43,12 +43,16 @@ class FakeAgentTarget:
     The script gives, per Task, what happens on each invocation in order: "success" and
     "failure" leave the service in the right or the wrong state, "error" makes the
     invocation itself fail, and "aborted" makes it end without an answer because the caller
-    closed the connection. `cancelling(behaviour)` sets `cancel_requested` while the
-    invocation is in flight. `taking(seconds, behaviour)` makes an invocation take time on
-    the fake clock; the agent stops at the time limit it is given and raises TimeoutError,
-    unless it was built not to honour time limits.
-    The agent always answers "Done.", so its response says nothing about success; the
-    task-success rule has to read `service_state`.
+    closed the connection. The agent always answers "Done.", so its response says nothing
+    about success; the task-success rule has to read `service_state`.
+
+    "success" or "failure" followed by " and deletes unrelated" also deletes the seeded
+    item the agent was told to leave alone. `unrelated_item` holds what became of it.
+
+    `cancelling(behaviour)` sets `cancel_requested` while the invocation is in flight.
+    `taking(seconds, behaviour)` makes an invocation take time on the fake clock; the agent
+    stops at the time limit it is given and raises TimeoutError, unless it was built not to
+    honour time limits.
     """
 
     def __init__(
@@ -65,10 +69,12 @@ class FakeAgentTarget:
         self._clock = clock or FakeClock()
         self._honours_time_limits = honours_time_limits
         self.service_state: dict[str, str] = {}
+        self.unrelated_item: dict[str, str] = {}
         self.cancel_requested = False
 
     def invoke(self, request: AttemptRequest) -> AgentResponse:
         step = self._remaining[request.task_id].pop(0)
+        behaviour, _, side_effect = step.behaviour.partition(" and ")
         limit = request.timeout_seconds
         if self._honours_time_limits and limit is not None and step.seconds > limit:
             self._clock.advance(limit)
@@ -76,11 +82,12 @@ class FakeAgentTarget:
         self._clock.advance(step.seconds)
         if step.cancels:
             self.cancel_requested = True
-        if step.behaviour == "error":
+        if behaviour == "error":
             raise ConnectionError("the agent endpoint returned 503")
-        if step.behaviour == "aborted":
+        if behaviour == "aborted":
             raise ConnectionAbortedError("the caller closed the connection")
-        self.service_state[request.attempt_id] = "done" if step.behaviour == "success" else "open"
+        self.service_state[request.attempt_id] = "done" if behaviour == "success" else "open"
+        self.unrelated_item[request.attempt_id] = "deleted" if side_effect == "deletes unrelated" else "unchanged"
         return AgentResponse(output="Done.")
 
 

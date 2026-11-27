@@ -9,6 +9,7 @@ from typing import Any, Sequence
 
 from ..evaluators import RELIABILITY_METRICS, Fidelity, MetricResult, MetricState, ReliabilityMetric, ScoringPath
 from ..evidence import Attempt, ExecutionStatus
+from .acceptance import AcceptanceCriterion, assess, criteria_by_metric
 
 SCHEMA_VERSION = 1
 
@@ -79,6 +80,7 @@ def build_scorecard(
     attempts: Sequence[Attempt],
     experiments: Sequence[ExperimentRun],
     max_concurrent_attempts: int,
+    acceptance_criteria: Sequence[AcceptanceCriterion] = (),
 ) -> dict[str, Any]:
     """Assemble the scorecard as JSON-compatible data.
 
@@ -90,8 +92,12 @@ def build_scorecard(
     The scorecard is complete when nothing that was planned is missing. Otherwise it is
     partial, and `missing` names what is missing and why. A metric keeps its result when
     its Evaluator still calculates a value from the evidence that was collected.
+
+    A metric's `acceptance` is the assessment of the customer's criterion for it, or None
+    when the customer declared none.
     """
     scored_by_id = {scored.result.definition.metric.metric_id: scored for scored in metrics}
+    criteria = criteria_by_metric(acceptance_criteria)
     attempts_by_id = {attempt.attempt_id: attempt for attempt in attempts}
     not_completed = [
         experiment for experiment in experiments if experiment.execution_status is not ExecutionStatus.COMPLETED
@@ -115,7 +121,10 @@ def build_scorecard(
             }
         },
         "metrics": [
-            _metric_entry(metric, scored_by_id.get(metric.metric_id), failures.get(metric.metric_id))
+            _with_acceptance(
+                _metric_entry(metric, scored_by_id.get(metric.metric_id), failures.get(metric.metric_id)),
+                criteria.get(metric.metric_id),
+            )
             for metric in RELIABILITY_METRICS
         ],
         "experiments": [experiment.to_dict() for experiment in experiments],
@@ -181,6 +190,10 @@ def _metric_entry(
         # There is no metric result, so the metric is in no metric state.
         entry.update(state=None, reason=None)
     return entry
+
+
+def _with_acceptance(entry: dict[str, Any], criterion: AcceptanceCriterion | None) -> dict[str, Any]:
+    return {**entry, "acceptance": None if criterion is None else assess(criterion, entry)}
 
 
 def to_json(scorecard: dict[str, Any]) -> str:

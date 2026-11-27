@@ -116,6 +116,7 @@ The metric's entry in the scorecard carries:
 | `counts` | Tasks and Attempts: total, valid (the denominator used), missing and excluded with reasons and identities |
 | `details.per_task` | Attempts, successes and Task value of each eligible Task |
 | `evidence.attempt_ids` | the Attempts the value rests on, which are listed under `attempts` in the same scorecard |
+| `acceptance` | the assessment of your acceptance criterion for this metric, or `null` when you declared none: see [acceptance criteria](../acceptance_criteria/readme.md) |
 
 The other eleven metrics appear with the state `not_configured`. The scorecard has no combined score and no threshold.
 

@@ -183,6 +183,8 @@ def test_a_retried_attempt_stays_in_the_evidence_next_to_its_retry():
             "execution_error": "ConnectionError: the agent endpoint returned 503",
             "retry_of": None,
             "task_outcome": None,
+            "operational_constraints": [],
+            "violation_assessments": [],
         },
         {
             "attempt_id": "close/attempt-2/retry-1",
@@ -191,6 +193,8 @@ def test_a_retried_attempt_stays_in_the_evidence_next_to_its_retry():
             "execution_error": None,
             "retry_of": "close/attempt-2",
             "task_outcome": {"success": True, "source": SOURCE},
+            "operational_constraints": [],
+            "violation_assessments": [],
         },
     ]
     outcome_consistency = metric(scorecard)
@@ -359,6 +363,8 @@ def test_an_attempt_that_is_aborted_by_a_cancellation_is_cancelled_and_not_faile
         "execution_error": "ConnectionAbortedError: the caller closed the connection, after the sweep was cancelled",
         "retry_of": None,
         "task_outcome": None,
+        "operational_constraints": [],
+        "violation_assessments": [],
     }
     assert metric(scorecard)["value"] == 1
     (experiment,) = scorecard["experiments"]
