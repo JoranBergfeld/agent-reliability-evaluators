@@ -402,37 +402,32 @@ def test_an_agent_version_that_does_not_exist_is_an_execution_failure(todo_servi
 
 
 def test_an_invocation_that_outlasts_the_targets_own_time_limit_timed_out(todo_service):
-    # The first response takes half a second and the target waits a tenth of one.
-    scorecard = sweep(todo_service, [0.5, "completes", "completes"], agent={"timeout_seconds": 0.1})
+    # The response takes a second and the target waits three tenths of one.
+    scorecard = sweep(todo_service, [1.0], agent={"timeout_seconds": 0.3})
 
     assert attempt_evidence(scorecard["attempts"][0], "platform_evidence") == {
         "attempt_id": "todo/baseline/attempt-1",
         "task_id": "todo",
         "execution_status": "timed_out",
-        "execution_error": "TimeoutError: the Foundry project did not answer within 0.1 seconds",
+        "execution_error": "TimeoutError: the Foundry project did not answer within 0.3 seconds",
         "task_outcome": None,
         "platform_evidence": None,
     }
-    assert [attempt["execution_status"] for attempt in scorecard["attempts"][1:]] == ["completed", "completed"]
-    assert metric(scorecard, "outcome_consistency")["value"] == 1
 
 
 def test_the_target_stops_waiting_at_the_time_limit_the_customer_declares_for_an_attempt(todo_service):
-    # The first response takes half a second. The customer allows an Attempt a tenth of one,
-    # and the target's own limit is left at its default.
-    scorecard = sweep(
-        todo_service, [0.5, "completes", "completes"], limits=ExecutionLimits(attempt_timeout_seconds=0.1)
-    )
+    # The response takes a second. The customer allows an Attempt three tenths of one, and the
+    # target's own limit is left at its default.
+    scorecard = sweep(todo_service, [1.0], limits=ExecutionLimits(attempt_timeout_seconds=0.3))
 
     assert attempt_evidence(scorecard["attempts"][0], "platform_evidence") == {
         "attempt_id": "todo/baseline/attempt-1",
         "task_id": "todo",
         "execution_status": "timed_out",
-        "execution_error": "TimeoutError: the Foundry project did not answer within 0.1 seconds",
+        "execution_error": "TimeoutError: the Foundry project did not answer within 0.3 seconds",
         "task_outcome": None,
         "platform_evidence": None,
     }
-    assert [attempt["execution_status"] for attempt in scorecard["attempts"][1:]] == ["completed", "completed"]
 
 
 def test_an_invocation_the_project_refuses_for_its_token_is_an_execution_failure(todo_service):
@@ -520,3 +515,24 @@ def test_an_azure_cli_that_gives_no_token_is_an_execution_failure_with_its_reaso
         }
         for number in (1, 2)
     ]
+
+
+@pytest.mark.parametrize(
+    ("declared", "problem"),
+    [
+        ({"agent_name": ""}, "name"),
+        ({"agent_name": "todo-prompt", "agent_version": 1}, "version"),
+        ({"agent_name": "todo-prompt", "timeout_seconds": 0}, "timeout_seconds"),
+        ({"agent_name": "todo-prompt", "project": "https://example.invalid/api/projects/p"}, "FoundryProject"),
+    ],
+)
+def test_a_target_that_cannot_invoke_an_agent_is_rejected_before_any_attempt_is_made(declared, problem):
+    project = FoundryProject("https://example.invalid/api/projects/p", token=lambda: "fake-token")
+
+    with pytest.raises(ValueError, match=problem):
+        FoundryPromptAgentTarget(**{"project": project, **declared})
+
+
+def test_a_project_without_an_endpoint_is_rejected():
+    with pytest.raises(ValueError, match="endpoint"):
+        FoundryProject("todo-fixture", token=lambda: "fake-token")

@@ -21,14 +21,13 @@ from .interface import AgentResponse, InvocationError
 
 # The audience of the tokens a Foundry project accepts.
 FOUNDRY_TOKEN_RESOURCE = "https://ai.azure.com"
-
-# How much of an error body that is not in the expected shape is kept in the reason of a failure.
-_ERROR_BODY_LIMIT = 500
-TOOL_CALL_UNIT = "calls"
-TOOL_CALL_BOUNDARY = "tool calls in the output of the Foundry response, counted by the agent target"
-
 # Returns a bearer token for FOUNDRY_TOKEN_RESOURCE. Called before every request.
 TokenProvider = Callable[[], str]
+
+TOOL_CALL_UNIT = "calls"
+TOOL_CALL_BOUNDARY = "tool calls in the output of the Foundry response, counted by the agent target"
+# How much of a body that is not in the expected shape is kept in the reason of a failure.
+_ERROR_BODY_LIMIT = 500
 
 
 def _run_azure_cli(arguments: Sequence[str]) -> str:
@@ -108,7 +107,7 @@ class FoundryProject:
 
     def __init__(self, endpoint: str, token: TokenProvider | None = None):
         if not isinstance(endpoint, str) or not endpoint.startswith(("https://", "http://")):
-            raise ValueError(f"a Foundry project is identified by its endpoint, an https URL. Got {endpoint!r}")
+            raise ValueError(f"a Foundry project is identified by its endpoint, a URL. Got {endpoint!r}")
         self.endpoint = endpoint.rstrip("/")
         self._token = token if token is not None else AzureCliToken()
 
@@ -262,7 +261,8 @@ def _tool_calls(output: list[Mapping[str, Any]]) -> tuple[ActionEvent, ...]:
     """The tool calls among the output items of a response, in the order of the response.
 
     A tool call is an item whose type ends in `_call`, such as `openapi_call`. What it
-    returned is the item of the type `<that type>_output` with the same `call_id`.
+    returned is the item of the type `<that type>_output` with the same `call_id`. The
+    arguments and what was returned are kept as the project gave them, which is as JSON text.
     """
     returned = {
         item.get("call_id"): item.get("output")
@@ -274,8 +274,12 @@ def _tool_calls(output: list[Mapping[str, Any]]) -> tuple[ActionEvent, ...]:
             tool_name=item.get("name") or item["type"],
             arguments=item.get("arguments"),
             result=returned.get(item.get("call_id")),
-            error=None if item.get("status") in (None, "completed") else f"the call ended with status {item['status']!r}",
+            error=_call_error(item.get("status")),
         )
         for item in output
         if str(item.get("type", "")).endswith("_call")
     )
+
+
+def _call_error(status: Any) -> str | None:
+    return None if status in (None, "completed") else f"the call ended with the status {status!r}"
