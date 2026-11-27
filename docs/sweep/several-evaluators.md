@@ -41,11 +41,12 @@ Each Evaluator declares what it needs. The sweep reads two things from that.
 | Outcome consistency | Nothing in particular. Every completed Attempt has a task outcome. |
 | Resource consistency | Nothing in particular. Every Attempt is timed, and the agent target reports the rest. |
 | Constraint compliance, conditional harm severity | Nothing in particular. The violation assessor belongs to the Task, so every Attempt at the Task is assessed the same way. |
-| Fault robustness | Nothing in particular. The fault is applied and verified by the controls of the experiment, for every Evaluator alike. |
+| Fault robustness, environment robustness | Nothing in particular. The variation is applied and verified by the controls of the experiment, for every Evaluator alike. |
+| Prompt robustness | Nothing in particular. The prompt variants are declared by the experiment, and its Attempts under them are made for every Evaluator alike. |
 | Distributional and sequential trajectory consistency | Action evidence from one declared evidence source, read by one declared recorder. |
 | Calibration, strict confidence discrimination, Brier-based score | A confidence follow-up after each completed Attempt. |
 
-**Which experimental conditions it is calculated from.** Fault robustness compares two conditions: it is calculated from the Attempts of the experiments whose variation declares the kind `fault`, under the baseline and under the fault. Every other Evaluator that exists today is calculated from Attempts under the baseline. For those, an Attempt at a Task given without an experiment had no variation applied to it and is used as a baseline Attempt.
+**Which experimental conditions it is calculated from.** Each robustness metric compares two conditions: it is calculated from the Attempts of the experiments whose variation declares its kind, under the baseline and under that variation. The kind is `fault` for fault robustness, `environment` for environment robustness and `prompt` for prompt robustness. No robustness metric is given an Attempt of an experiment that declares another kind. Every other Evaluator is calculated from Attempts under the baseline. For those, an Attempt at a Task given without an experiment had no variation applied to it and is used as a baseline Attempt.
 
 ## When Attempts are shared
 
@@ -55,7 +56,7 @@ With one `action_evidence` declaration for the whole sweep, as above, nothing di
 
 The action types are not part of what is matched. They are applied when a metric is calculated and do not change what is recorded for an Attempt. Two Evaluators that read the same recording with different action types share Attempts.
 
-Within the Attempts it shares, an Evaluator is given only those made under a condition it is calculated from. Attempts under the variation of an experiment are kept in the scorecard and are given to no Evaluator that is calculated from the baseline. Fault robustness and outcome consistency, selected together, share the baseline Attempts of an experiment that declares a fault, and only fault robustness is given its Attempts under the fault.
+Within the Attempts it shares, an Evaluator is given only those made under a condition it is calculated from. Attempts under the variation of an experiment are kept in the scorecard and are given to no Evaluator that is calculated from the baseline. Fault robustness and outcome consistency, selected together, share the baseline Attempts of an experiment that declares a fault, and only fault robustness is given its Attempts under the fault. The same holds for environment robustness and prompt robustness with their kinds of variation.
 
 ## When separate Attempts are made
 

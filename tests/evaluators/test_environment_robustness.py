@@ -217,17 +217,17 @@ def test_an_environment_variation_records_the_transformation_it_applies():
 
 def test_the_worked_example_of_the_documentation():
     # close: baseline 4/4 = 1, presentation 3/4 = 0.75.
-    # due: baseline 1/2 = 0.5. Five Attempts under the presentation: 1 success and 3 failures in which
+    # reschedule: baseline 1/2 = 0.5. Five Attempts under the presentation: 1 success and 3 failures in which
     #   the agent was served the presentation, and 1 success in which it was not, which is left out: 1/4 = 0.25.
     # add: baseline 2/2. The agent was served the presentation in neither of its two Attempts, so the Task is left out.
     # Baseline accuracy (1 + 0.5) / 2 = 0.75. Under the presentation (0.75 + 0.25) / 2 = 0.5. 0.5 / 0.75 = 2/3.
-    due_presented = attempts("due", RENAMED_FIELDS, [1, 0, 0, 0, 1])
-    due_presented[4] = replace(due_presented[4], observed_condition=NOT_OBSERVED)
+    reschedule_presented = attempts("reschedule", RENAMED_FIELDS, [1, 0, 0, 0, 1])
+    reschedule_presented[4] = replace(reschedule_presented[4], observed_condition=NOT_OBSERVED)
     evidence = (
         attempts("close", BASELINE, [1, 1, 1, 1])
         + attempts("close", RENAMED_FIELDS, [1, 1, 1, 0])
-        + attempts("due", BASELINE, [1, 0])
-        + due_presented
+        + attempts("reschedule", BASELINE, [1, 0])
+        + reschedule_presented
         + attempts("add", BASELINE, [1, 1])
         + attempts("add", RENAMED_FIELDS, [1, 1], observed_condition=NOT_OBSERVED)
     )
@@ -264,7 +264,7 @@ def test_the_worked_example_of_the_documentation():
                 "reason": "the observed condition differs from the intended condition",
                 "count": 3,
                 "ids": [
-                    "due/renamed-fields/attempt-5",
+                    "reschedule/renamed-fields/attempt-5",
                     "add/renamed-fields/attempt-1",
                     "add/renamed-fields/attempt-2",
                 ],
