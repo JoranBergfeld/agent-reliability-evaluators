@@ -18,6 +18,7 @@ from ..evidence import ActionEvent, ResourceMeasurement, ResourceType
 from ..managed_scoring.foundry import FoundryRequestError
 from .foundry_hosted import FoundryHostedAgentTarget, _output_items, _output_text
 from .foundry_prompt_agent import TOOL_CHOICE_NONE, _not_isolated
+from .foundry_prompt_agent import USAGE_SOURCE as USAGE_SOURCE_OF_A_RESPONSE
 from .foundry_prompt_agent import _failure_of as _failure_of_response
 from .foundry_prompt_agent import _tool_calls as _tool_calls_of_response
 from .interface import (
@@ -545,6 +546,7 @@ def _follow_up(response: dict[str, Any], question: str, error: str | None = None
         # As the platform reported it. Usage that was not reported is missing, never zero.
         "token_usage": usage,
         "token_usage_missing": None if usage is not None else NO_FOLLOW_UP_USAGE if response else NO_FOLLOW_UP_RESPONSE,
+        "token_usage_source": None if usage is None else USAGE_SOURCE_OF_A_RESPONSE,
         "tool_calls": _tool_calls_of_response(response),
         "input": question,
         "previous_response_id": response.get("previous_response_id"),

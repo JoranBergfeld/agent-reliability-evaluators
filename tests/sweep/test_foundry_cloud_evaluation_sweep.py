@@ -907,6 +907,8 @@ def test_what_the_follow_up_used_is_recorded_with_its_attempt_apart_from_the_run
             "total_tokens": 802,
         },
         "token_usage_missing": None,
+        # The follow-up was answered by the project's Responses route, so its usage is that of a response.
+        "token_usage_source": "the usage of the response the Foundry project returned for the prompt agent",
         "tool_calls": [],
         "input": attempt["confidence_invocation"]["input"],
         "previous_response_id": "resp_fake_1",
