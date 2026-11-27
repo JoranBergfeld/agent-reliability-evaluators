@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Sequence
+from typing import Any, Iterable, Sequence
 
 from ..agent_target import AgentResponse, AgentTarget, AttemptRequest
 from ..evaluators import EVALUATORS, RELIABILITY_METRICS, Evaluator, Fidelity, MetricResult, ScoringPath
@@ -57,20 +57,23 @@ def run_sweep(
     constraints its Task declares, and an action recording that is not a sequence of ActionEvent.
     """
     selected = [_select(metric, action_evidence) for metric in metrics]
+    _require_one_evaluator_per_metric(selected)
     _require_distinct_tasks(tasks)
     # Called for its check: a second criterion for one metric is rejected here, not after the Attempts.
     criteria_by_metric(acceptance_criteria)
     # With no Evaluator selected the planned Attempts are still made, once.
     sharing = share_attempts((evaluator, evaluator.requirements()) for evaluator in selected) or [SharedAttempts()]
+    planned = [
+        [(task, _attempt_id(task, set_number, number)) for task in tasks for number in range(1, task.attempts + 1)]
+        for set_number in range(1, len(sharing) + 1)
+    ]
+    _require_distinct_attempts(attempt_id for attempts in planned for _, attempt_id in attempts)
     made = [
         [
-            _run_attempt(
-                task, _attempt_id(task, set_number, number), agent_target, _recorded_with(shared, action_evidence)
-            )
-            for task in tasks
-            for number in range(1, task.attempts + 1)
+            _run_attempt(task, attempt_id, agent_target, _recorded_with(shared, action_evidence))
+            for task, attempt_id in attempts
         ]
-        for set_number, shared in enumerate(sharing, start=1)
+        for shared, attempts in zip(sharing, planned)
     ]
     scored = [
         ScoredMetric(
@@ -124,6 +127,8 @@ def _select(
 ) -> _SelectedEvaluator:
     configured = metric if isinstance(metric, ConfiguredEvaluator) else ConfiguredEvaluator(metric_id=metric)
     evaluator = _evaluator(configured.metric_id)
+    if configured.action_evidence is not None and "action_types" not in evaluator.declarations:
+        raise ValueError(f"{configured.metric_id!r} does not use action evidence, and it is configured with one")
     declared = {"action_types": configured.action_evidence or action_evidence}
     _require_declarations(evaluator, declared)
     return _SelectedEvaluator(evaluator, {name: declared[name] for name in evaluator.declarations})
@@ -146,14 +151,31 @@ def _require_declarations(evaluator: Evaluator, declared: dict[str, Any]) -> Non
             raise ValueError(f"{evaluator.definition.metric.metric_id!r} needs {undeclared[name]}")
 
 
+def _require_one_evaluator_per_metric(selected: Sequence[_SelectedEvaluator]) -> None:
+    seen: set[str] = set()
+    for evaluator in selected:
+        metric_id = evaluator.evaluator.definition.metric.metric_id
+        if metric_id in seen:
+            raise ValueError(f"{metric_id!r} is selected more than once, and a scorecard reports each metric once")
+        seen.add(metric_id)
+
+
+def _require_distinct_attempts(planned: Iterable[str]) -> None:
+    seen: set[str] = set()
+    for attempt_id in planned:
+        if attempt_id in seen:
+            raise ValueError(f"more than one Attempt would have the identity {attempt_id!r}")
+        seen.add(attempt_id)
+
+
 def _recorded_with(
     shared: SharedAttempts, action_evidence: ActionEvidenceDeclaration | None
 ) -> ActionEvidenceDeclaration | None:
-    """What the actions of a group's Attempts are recorded with.
+    """What the actions of a set of Attempts are recorded with.
 
-    The Evaluators of a group that need action evidence all need the same recording, so
-    any of their declarations records it. A group that needs none is recorded with what
-    the sweep declares.
+    The Evaluators sharing the set that need action evidence all need the same recording,
+    so any of their declarations records it. A set that none of them needs action evidence
+    from is recorded with what the sweep declares.
     """
     return next(
         (evaluator.declared["action_types"] for evaluator in shared.members if "action_types" in evaluator.declared),
@@ -161,7 +183,7 @@ def _recorded_with(
     )
 
 def _attempt_id(task: Task, set_number: int, number: int) -> str:
-    """The identity of a planned Attempt. Attempts made again for other Evaluators say so."""
+    """The identity of a planned Attempt. The first set of Attempts is identified as it is in a sweep with one set."""
     if set_number == 1:
         return f"{task.task_id}/attempt-{number}"
     return f"{task.task_id}/set-{set_number}/attempt-{number}"

@@ -107,7 +107,10 @@ def two_tasks():
       Sequential: two substitutions, 2 / 2 = 1: 0.
     """
     return ToDo(
-        actions={"close": [READ_UPDATE, READ_UPDATE, UPDATE_READ, UPDATE_READ], "archive": [READ_UPDATE, UPDATE_DELETE]},
+        actions={
+            "close": [READ_UPDATE, READ_UPDATE, UPDATE_READ, UPDATE_READ],
+            "archive": [READ_UPDATE, UPDATE_DELETE],
+        },
         outcomes={"close": ["success", "success", "failure", "failure and deletes unrelated"]},
     )
 
@@ -358,3 +361,50 @@ def test_an_evaluator_whose_attempts_all_fail_does_not_remove_the_metric_of_anot
     assert sequential["state"] == "available"
     assert sequential["value"] == 1
     assert sequential["counts"]["attempts"] == {"total": 2, "valid": 2, "missing": [], "excluded": []}
+
+def test_an_evaluator_configured_with_its_own_action_evidence_needs_none_from_the_sweep():
+    # Read, update against update, read: the same mix, 1.
+    to_do = ToDo(actions={"close": [READ_UPDATE, UPDATE_READ]})
+    own = ConfiguredEvaluator(metric_id=DISTRIBUTIONAL, action_evidence=to_do.native_tool_calls)
+
+    scorecard = run_sweep(tasks=to_do.tasks, agent_target=to_do.target, metrics=[own])
+
+    assert metric(scorecard, DISTRIBUTIONAL)["value"] == 1
+
+
+@pytest.mark.parametrize(
+    ("metrics", "problem"),
+    [
+        (lambda to_do: [OUTCOME, OUTCOME], "selected more than once"),
+        (lambda to_do: [SEQUENTIAL, from_service_side_effects(to_do)], "selected more than once"),
+        (
+            lambda to_do: [ConfiguredEvaluator(metric_id=OUTCOME, action_evidence=to_do.service_side_effects)],
+            "does not use action evidence",
+        ),
+        (
+            lambda to_do: [ConfiguredEvaluator(metric_id=DISTRIBUTIONAL, action_evidence="native tool calls")],
+            "declared as",
+        ),
+        (lambda to_do: [ConfiguredEvaluator(metric_id="")], "metric identity"),
+        (lambda to_do: [ConfiguredEvaluator(metric_id="overall_reliability")], "not a reliability metric"),
+    ],
+)
+def test_a_selection_of_evaluators_the_sweep_cannot_run_is_rejected_before_any_attempt(metrics, problem):
+    to_do = ToDo(actions={"close": [READ_UPDATE, READ_UPDATE]})
+
+    with pytest.raises(ValueError, match=problem):
+        to_do.sweep(metrics(to_do))
+
+    assert to_do.target.service_log == {}
+
+
+def test_tasks_whose_attempts_could_not_be_told_apart_are_rejected_before_any_attempt():
+    # The second Attempts at "close" would be identified exactly as the first Attempts at "close/set-2".
+    to_do = ToDo(
+        actions={"close": [READ_UPDATE] * 2, "close/set-2": [READ_UPDATE] * 2}, attempts={"close": 1, "close/set-2": 1}
+    )
+
+    with pytest.raises(ValueError, match="more than one Attempt would have the identity 'close/set-2/attempt-1'"):
+        to_do.sweep([DISTRIBUTIONAL, from_service_side_effects(to_do)])
+
+    assert to_do.target.service_log == {}
