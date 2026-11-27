@@ -19,7 +19,7 @@ from reliability_evaluators.evidence import (
     TaskOutcome,
     ViolationAssessment,
 )
-from reliability_evaluators.scorecard import to_json
+from reliability_evaluators.scorecard import AcceptanceCriterion, to_json
 from reliability_evaluators.sweep import (
     NO_TASK_OUTCOME_YET,
     ActionEvidenceDeclaration,
@@ -41,13 +41,13 @@ def supplied(scorecard):
     return json.loads(to_json(scorecard))
 
 
-def sweep(script, metrics=("outcome_consistency",), ratings=None, not_known_yet=(), seconds=()):
+def sweep(script, metrics=("outcome_consistency",), ratings=None, not_known_yet=(), seconds=(), criteria=()):
     """Run a sweep with one Task per script entry and one Attempt per scripted behaviour.
 
     `ratings` gives the fake agent's answer to the confidence request of each Attempt, by
     Attempt identity. `not_known_yet` names the Attempts whose task outcome the
     task-success rule cannot decide during the sweep. `seconds` gives how long each Attempt
-    of every Task takes.
+    of every Task takes. `criteria` are the customer's acceptance criteria.
     """
     resources = {task_id: [{"seconds": taken} for taken in seconds] for task_id in script}
     target = FakeAgentTarget(script, resources, confidence=ratings)
@@ -67,7 +67,11 @@ def sweep(script, metrics=("outcome_consistency",), ratings=None, not_known_yet=
         )
         for task_id, behaviours in script.items()
     ]
-    return supplied(run_sweep(tasks=tasks, agent_target=target, metrics=metrics, clock=target.clock))
+    return supplied(
+        run_sweep(
+            tasks=tasks, agent_target=target, metrics=metrics, clock=target.clock, acceptance_criteria=criteria
+        )
+    )
 
 
 def corrected(attempt_id, success, source=REVIEW, provenance=PROVENANCE):
@@ -615,3 +619,38 @@ def test_an_earlier_value_that_differs_only_in_its_last_binary_digit_is_the_same
     assert metric(recalculated, "outcome_consistency")["value"] == 0.25
     (superseded,) = recalculated["superseded_results"]
     assert metric(superseded, "resource_consistency")["value"] == elsewhere
+
+
+AT_LEAST_A_FIFTH = AcceptanceCriterion(metric_id="outcome_consistency", condition={"value": {"at_least": 0.2}})
+
+
+def test_the_acceptance_criterion_is_assessed_again_on_the_recalculated_result():
+    # 0 is below the customer's 0.2 and the recalculated 0.25 is not.
+    earlier = sweep({"close": HALF}, criteria=[AT_LEAST_A_FIFTH])
+    assert metric(earlier)["acceptance"]["status"] == "not_met"
+
+    recalculated = recalculate(
+        earlier_scorecard=earlier,
+        outcome_corrections=[corrected("close/attempt-3", success=True)],
+        acceptance_criteria=[AT_LEAST_A_FIFTH],
+    )
+
+    acceptance = metric(recalculated)["acceptance"]
+    assert acceptance["status"] == "met"
+    assert acceptance["checks"] == [
+        {"subject": "value", "comparison": "at_least", "threshold": 0.2, "observed": 0.25, "met": True}
+    ]
+    (superseded,) = recalculated["superseded_results"]
+    assert metric(superseded)["acceptance"] == metric(earlier)["acceptance"]
+    assert metric(superseded)["acceptance"]["status"] == "not_met"
+
+
+def test_a_recalculation_that_would_drop_an_acceptance_criterion_of_the_earlier_scorecard_fails():
+    # A pipeline that gates on the new scorecard would otherwise find no criterion and no verdict.
+    earlier = sweep({"close": HALF}, criteria=[AT_LEAST_A_FIFTH])
+
+    with pytest.raises(
+        RecalculationFailed,
+        match="the earlier scorecard assessed an acceptance criterion for 'outcome_consistency', and none is declared",
+    ):
+        recalculate(earlier_scorecard=earlier, outcome_corrections=[corrected("close/attempt-3", success=True)])

@@ -16,7 +16,7 @@ from ..evidence import (
     group_by_task,
     read_attempts,
 )
-from ..scorecard import SCHEMA_VERSION, ScoredMetric, build_scorecard
+from ..scorecard import SCHEMA_VERSION, AcceptanceCriterion, ScoredMetric, build_scorecard, criteria_by_metric
 from .declaration import ActionEvidenceDeclaration
 
 SUPERSEDED = "superseded"
@@ -31,10 +31,11 @@ def recalculate(
     earlier_scorecard: Mapping[str, Any],
     outcome_corrections: Sequence[OutcomeCorrection],
     action_evidence: ActionEvidenceDeclaration | None = None,
+    acceptance_criteria: Sequence[AcceptanceCriterion] = (),
 ) -> dict[str, Any]:
     """Score the evidence of an earlier scorecard again, with the corrected task outcomes."""
     try:
-        return _recalculate(earlier_scorecard, outcome_corrections, action_evidence)
+        return _recalculate(earlier_scorecard, outcome_corrections, action_evidence, acceptance_criteria)
     except Exception as error:
         raise RecalculationFailed(f"recalculation failed: {error}") from error
 
@@ -43,6 +44,7 @@ def _recalculate(
     earlier_scorecard: Mapping[str, Any],
     outcome_corrections: Sequence[OutcomeCorrection],
     action_evidence: ActionEvidenceDeclaration | None,
+    acceptance_criteria: Sequence[AcceptanceCriterion],
 ) -> dict[str, Any]:
     with _validating_the_supplied_evidence():
         earlier_metrics, earlier_attempts = _read(earlier_scorecard)
@@ -50,6 +52,7 @@ def _recalculate(
     declared = {"action_types": None if action_evidence is None else action_evidence.mapping}
     with _validating_the_supplied_evidence():
         _require_reproduced(earlier_metrics, _score(evaluators, earlier_attempts, declared))
+    _require_criteria_declared_again(earlier_metrics, acceptance_criteria)
     attempts = apply_outcome_corrections(earlier_attempts, outcome_corrections)
     if not outcome_corrections:
         raise ValueError(
@@ -62,7 +65,9 @@ def _recalculate(
         "metrics": deepcopy(earlier_metrics),
     }
     superseded_results = [*deepcopy(earlier_scorecard.get("superseded_results", [])), superseded]
-    scorecard = build_scorecard(metrics=_score(evaluators, attempts, declared), attempts=attempts)
+    scorecard = build_scorecard(
+        metrics=_score(evaluators, attempts, declared), attempts=attempts, acceptance_criteria=acceptance_criteria
+    )
     return {**scorecard, "superseded_results": superseded_results}
 
 
@@ -173,6 +178,24 @@ def _same(calculated: Any, earlier: Any) -> bool:
 
 def _is_number(value: Any) -> bool:
     return type(value) in (int, float)
+
+
+def _require_criteria_declared_again(
+    earlier_metrics: Sequence[Mapping[str, Any]], acceptance_criteria: Sequence[AcceptanceCriterion]
+) -> None:
+    """Require a criterion for every metric the earlier scorecard assessed one for.
+
+    A criterion cannot be taken from the earlier scorecard, because a customer-supplied
+    assessment is the customer's code. Without this, the new scorecard would silently
+    have no acceptance assessment where the earlier one had one.
+    """
+    declared = criteria_by_metric(acceptance_criteria)
+    for entry in earlier_metrics:
+        if entry.get("acceptance") is not None and entry["metric_id"] not in declared:
+            raise ValueError(
+                f"the earlier scorecard assessed an acceptance criterion for {entry['metric_id']!r}, and none is "
+                "declared for the recalculation. Declare the acceptance criteria again, as for the sweep"
+            )
 
 
 def _correction_records(
