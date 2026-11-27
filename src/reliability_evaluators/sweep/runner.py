@@ -5,10 +5,10 @@ from __future__ import annotations
 import os
 from typing import Any, Sequence
 
-from ..agent_target import AgentTarget, AttemptRequest
+from ..agent_target import AgentResponse, AgentTarget, AttemptRequest
 from ..evaluators import EVALUATORS, RELIABILITY_METRICS, Evaluator, Fidelity, ScoringPath
-from ..evidence import Attempt, EvidenceError, ExecutionStatus, TaskOutcome, group_by_task
-from ..scorecard import ArtifactLocation, ScoredMetric, build_scorecard
+from ..evidence import Attempt, EvidenceError, ExecutionStatus, TaskOutcome, ViolationAssessment, group_by_task
+from ..scorecard import AcceptanceCriterion, ArtifactLocation, ScoredMetric, build_scorecard, criteria_by_metric
 from .declaration import Task
 
 
@@ -17,6 +17,7 @@ def run_sweep(
     tasks: Sequence[Task],
     agent_target: AgentTarget,
     metrics: Sequence[str],
+    acceptance_criteria: Sequence[AcceptanceCriterion] = (),
     artifact_dir: str | os.PathLike[str] | None = None,
 ) -> dict[str, Any]:
     """Make the declared Attempts, score the selected metrics, and return the scorecard.
@@ -25,8 +26,14 @@ def run_sweep(
     after another, Task by Task, and scoring happens in this process. The result is the
     machine-readable reliability scorecard, as JSON-compatible data.
 
+    `acceptance_criteria` are the customer's own, at most one per metric. Each is reported
+    with its metric as met, not met, or not assessed with a reason. Without one, a metric
+    has no acceptance verdict.
+
     A declaration that cannot be run is rejected before any Attempt is made. A task-success
-    rule that does not return a sourced, binary TaskOutcome stops the sweep.
+    rule that does not return a sourced, binary TaskOutcome stops the sweep. So does a
+    violation assessor that does not return sourced violation assessments of the operational
+    constraints its Task declares.
 
     With `artifact_dir`, the attempt-level evidence, the scorecard and the human-readable
     report rendered from it are also written to that directory. The caller chooses it in the
@@ -36,10 +43,10 @@ def run_sweep(
     """
     attempts: list[Attempt] = []
     if artifact_dir is None:
-        return _sweep(tasks, agent_target, metrics, attempts)
+        return _sweep(tasks, agent_target, metrics, acceptance_criteria, attempts)
     location = ArtifactLocation(artifact_dir)
     try:
-        scorecard = _sweep(tasks, agent_target, metrics, attempts)
+        scorecard = _sweep(tasks, agent_target, metrics, acceptance_criteria, attempts)
     except Exception as error:
         raise location.failed(
             "the Evaluator sweep stopped before it produced a scorecard",
@@ -51,11 +58,17 @@ def run_sweep(
 
 
 def _sweep(
-    tasks: Sequence[Task], agent_target: AgentTarget, metrics: Sequence[str], attempts: list[Attempt]
+    tasks: Sequence[Task],
+    agent_target: AgentTarget,
+    metrics: Sequence[str],
+    acceptance_criteria: Sequence[AcceptanceCriterion],
+    attempts: list[Attempt],
 ) -> dict[str, Any]:
     """Collect into `attempts`, so that the caller still has the evidence if the sweep stops."""
     evaluators = [_evaluator(metric_id) for metric_id in metrics]
     _require_distinct_tasks(tasks)
+    # Called for its check: a second criterion for one metric is rejected here, not after the Attempts.
+    criteria_by_metric(acceptance_criteria)
     for task in tasks:
         for number in range(1, task.attempts + 1):
             attempts.append(_run_attempt(task, number, agent_target))
@@ -68,7 +81,7 @@ def _sweep(
         )
         for evaluator in evaluators
     ]
-    return build_scorecard(metrics=scored, attempts=attempts)
+    return build_scorecard(metrics=scored, attempts=attempts, acceptance_criteria=acceptance_criteria)
 
 
 def _evaluator(metric_id: str) -> Evaluator:
@@ -99,6 +112,7 @@ def _run_attempt(task: Task, number: int, agent_target: AgentTarget) -> Attempt:
             task_id=task.task_id,
             execution_status=ExecutionStatus.FAILED,
             execution_error=f"{type(error).__name__}: {error}",
+            operational_constraints=task.operational_constraints,
         )
     outcome = task.success_rule(request, response)
     if not isinstance(outcome, TaskOutcome):
@@ -111,4 +125,24 @@ def _run_attempt(task: Task, number: int, agent_target: AgentTarget) -> Attempt:
         task_id=task.task_id,
         execution_status=ExecutionStatus.COMPLETED,
         task_outcome=outcome,
+        operational_constraints=task.operational_constraints,
+        violation_assessments=_assess_violations(task, request, response),
     )
+
+
+def _assess_violations(
+    task: Task, request: AttemptRequest, response: AgentResponse
+) -> Sequence[ViolationAssessment]:
+    if task.violation_assessor is None:
+        return ()
+    assessments = task.violation_assessor(request, response)
+    if (
+        not isinstance(assessments, Sequence)
+        or isinstance(assessments, str)
+        or not all(isinstance(assessment, ViolationAssessment) for assessment in assessments)
+    ):
+        raise EvidenceError(
+            f"the violation assessor of Task {task.task_id!r} must return a sequence of ViolationAssessment, "
+            f"each with its evidence and source, got {assessments!r}"
+        )
+    return assessments
