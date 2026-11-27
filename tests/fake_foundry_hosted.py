@@ -170,21 +170,23 @@ class FakeTodoHostedAgent:
     done. So its response says nothing about success: only the service does.
 
     `tools` are the fixture's hosted agent tools (`live_fixture.hosted_agent.todo_tools`),
-    which find the service through TODO_SERVICE_URL and TODO_API_KEY.
+    which find the service through TODO_SERVICE_URL and TODO_API_KEY. `usage` is the token
+    usage every response reports, or None for responses that report none.
     """
 
     ANSWER = "All five operations are done. target is now done."
 
-    def __init__(self, tools: Any, name: str = "todo-hosted"):
+    def __init__(self, tools: Any, name: str = "todo-hosted", usage: dict | None = USAGE):
         self._tools = tools
         self._name = name
+        self._usage = usage
         self._responses = 0
 
     def __call__(self, request: dict) -> tuple[int, Any]:
         attempt_id = request["input"].split("Use attempt_id ", 1)[1].split(". ", 1)[0]
         self._responses += 1
         calls = [self._call(attempt_id, tool, todo_id) for tool, todo_id in TASK_STEPS]
-        return 200, completed_response(self._name, self._responses, calls, self.ANSWER)
+        return 200, completed_response(self._name, self._responses, calls, self.ANSWER, self._usage)
 
     def _call(self, attempt_id: str, tool: str, todo_id: str) -> tuple[str, dict, str]:
         arguments: dict[str, Any] = {"attempt_id": attempt_id, "todo_id": todo_id}

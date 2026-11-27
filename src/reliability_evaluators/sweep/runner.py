@@ -8,7 +8,7 @@ from functools import partial
 from time import perf_counter
 from typing import Any, Callable, Sequence
 
-from ..agent_target import AgentResponse, AgentTarget, AttemptRequest
+from ..agent_target import AgentResponse, AgentTarget, AttemptRequest, InvocationFailed
 from ..evaluators import EVALUATORS, RELIABILITY_METRICS, Evaluator, Fidelity, MetricResult, ScoringPath
 from ..evidence import (
     ActionEvidence,
@@ -402,6 +402,7 @@ def _invoke_agent(
             task_id=task.task_id,
             execution_status=ExecutionStatus.FAILED,
             execution_error=f"{type(error).__name__}: {error}",
+            invocation=error.invocation if isinstance(error, InvocationFailed) else None,
             operational_constraints=task.operational_constraints,
         )
         return failed, partial(_with_confidence, ask=None, ask_confidence=ask_confidence)

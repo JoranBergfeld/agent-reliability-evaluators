@@ -16,7 +16,7 @@ from reliability_evaluators.agent_target.foundry_hosted import (
     native_tool_calls,
 )
 from reliability_evaluators.sweep import ActionEvidenceDeclaration, run_sweep
-from tests.fake_foundry_hosted import FakeHostedAgent, FakeTodoHostedAgent, fake_foundry_project
+from tests.fake_foundry_hosted import FakeHostedAgent, FakeTodoHostedAgent, completed_response, fake_foundry_project
 from tests.todo_experiment import ALL_TOOLS_WORK, TodoSetup, update_fails_on
 
 AGENT = {"agent": "todo-hosted", "version": "1"}
@@ -164,3 +164,179 @@ def test_the_tool_calls_of_the_response_can_be_declared_as_the_action_evidence(p
             for name, arguments, returned in TOOL_CALLS_WITH_A_FAILED_UPDATE
         ],
     }
+
+
+def test_the_target_reports_the_time_of_its_request_and_the_tool_call_count_as_resource_measurements(project, setup):
+    # The clock is read just before the request is sent and when the response has been read: 121.5 - 100 = 21.5.
+    readings = iter([100.0, 121.5])
+    target = FoundryHostedAgentTarget(
+        project_endpoint=project.endpoint,
+        agent_name="todo-hosted",
+        credential=lambda: project.token,
+        compose_input=setup.instruction,
+        clock=lambda: next(readings),
+    )
+
+    attempt = one_attempt_with_a_failed_update(project, setup, agent_target=target)
+
+    elapsed, tool_calls = attempt["resource_measurements"]
+    assert (elapsed["resource_type"], elapsed["value"], elapsed["unit"]) == ("elapsed_time", 21.5, "seconds")
+    assert "measured by the agent target" in elapsed["boundary"]
+    assert (tool_calls["resource_type"], tool_calls["value"], tool_calls["unit"]) == ("tool_calls", 5, "calls")
+    assert "counted by the agent target" in tool_calls["boundary"]
+
+
+def test_each_attempt_records_the_token_usage_the_platform_reported(project, setup):
+    attempt = one_attempt_with_a_failed_update(project, setup)
+
+    assert attempt["invocation"]["token_usage"] == {
+        "input_tokens": 9000,
+        "input_tokens_details": {"cached_tokens": 0},
+        "output_tokens": 400,
+        "output_tokens_details": {"reasoning_tokens": 0},
+        "total_tokens": 9400,
+    }
+    assert attempt["invocation"]["token_usage_missing"] is None
+
+
+def test_token_usage_the_platform_did_not_report_is_missing_with_a_reason_and_not_zero(setup):
+    agent = FakeHostedAgent(FakeTodoHostedAgent(todo_tools, usage=None))
+    with fake_foundry_project({"todo-hosted": agent}) as project:
+        attempt = one_attempt_with_a_failed_update(project, setup)
+
+    assert attempt["execution_status"] == "completed"
+    assert attempt["invocation"]["token_usage"] is None
+    assert attempt["invocation"]["token_usage_missing"] == "the response of the hosted agent carried no usage"
+
+
+def test_an_agent_that_reports_completion_after_a_failed_tool_call_is_scored_from_service_evidence(project, setup):
+    attempt = one_attempt_with_a_failed_update(project, setup)
+
+    # The hosted agent answered that everything was done, and the platform reported the response as completed.
+    assert project.agents["todo-hosted"].respond.ANSWER == "All five operations are done. target is now done."
+    assert attempt["invocation"]["status"] == "completed"
+    assert attempt["execution_status"] == "completed"
+    # The service recorded the update as failed and target as not done.
+    assert attempt["observed_condition"] == {
+        "met": True,
+        "source": "events of the to-do service",
+        "observations": {"faulted_calls": ["update"]},
+    }
+    assert attempt["task_outcome"] == {"success": False, "source": "to-do service events and before/after state"}
+    assert setup.evidence[attempt["attempt_id"]]["after"]["target"]["done"] is False
+
+
+class FailsOnce:
+    """A hosted agent whose second invocation is answered with `failure` instead of doing the Task."""
+
+    def __init__(self, failure):
+        self._failure = failure
+        self._works = FakeTodoHostedAgent(todo_tools)
+        self._invocations = 0
+
+    def __call__(self, request):
+        self._invocations += 1
+        return self._failure if self._invocations == 2 else self._works(request)
+
+
+def three_attempts_of_which_the_second_invocation_fails(setup, failure):
+    with fake_foundry_project({"todo-hosted": FakeHostedAgent(FailsOnce(failure))}) as project:
+        return run_sweep(
+            experiments=[setup.experiment("todo", 3, ALL_TOOLS_WORK, AGENT)],
+            agent_target=hosted_agent(project, setup),
+            metrics=["outcome_consistency"],
+        )
+
+
+def test_an_http_error_from_the_agent_endpoint_is_an_execution_failure_and_not_a_task_failure(setup):
+    # Two successes and one failed invocation: p = 2/2 and the value is 1.
+    # Scoring the failed invocation as a task failure would give (2 * 2/3 - 1)^2 = 0.111...
+    error = {"error": {"code": "server_error", "message": "The agent container did not respond."}}
+
+    scorecard = three_attempts_of_which_the_second_invocation_fails(setup, (500, error))
+
+    failed = scorecard["attempts"][1]
+    assert failed["execution_status"] == "failed"
+    assert failed["task_outcome"] is None
+    assert failed["execution_error"] == (
+        "InvocationFailed: the hosted agent endpoint answered HTTP 500: "
+        '{"error": {"code": "server_error", "message": "The agent container did not respond."}}'
+    )
+    assert failed["invocation"]["http_status"] == 500
+    assert failed["invocation"]["error"] == {"code": "server_error", "message": "The agent container did not respond."}
+    assert failed["invocation"]["response_id"] is None
+    outcome_consistency = metric(scorecard)
+    assert outcome_consistency["value"] == 1
+    assert outcome_consistency["counts"]["attempts"]["excluded"] == [
+        {"reason": "execution status is not completed", "count": 1, "ids": ["todo/all-tools-work/attempt-2"]},
+    ]
+
+
+def response_that_did_not_succeed(status, **reported):
+    """The second response of the hosted agent, as the platform returns one that carries a failure."""
+    return {**completed_response("todo-hosted", 2, [], ""), "status": status, **reported}
+
+
+@pytest.mark.parametrize(
+    ("response", "reason"),
+    [
+        (
+            response_that_did_not_succeed("failed", error={"code": "server_error", "message": "The model did not answer."}),
+            "the response caresp_synthetic2 of the hosted agent ended with status 'failed': "
+            '{"code": "server_error", "message": "The model did not answer."}',
+        ),
+        (
+            response_that_did_not_succeed("incomplete", incomplete_details={"reason": "max_output_tokens"}),
+            "the response caresp_synthetic2 of the hosted agent ended with status 'incomplete': "
+            '{"reason": "max_output_tokens"}',
+        ),
+        (
+            response_that_did_not_succeed("completed", error={"code": "server_error", "message": "A tool crashed."}),
+            "the response caresp_synthetic2 of the hosted agent has status 'completed' and carries an error: "
+            '{"code": "server_error", "message": "A tool crashed."}',
+        ),
+    ],
+    ids=["failed", "incomplete", "completed with an error"],
+)
+def test_a_response_that_carries_a_failure_is_an_execution_failure_whatever_its_status(setup, response, reason):
+    scorecard = three_attempts_of_which_the_second_invocation_fails(setup, (200, response))
+
+    failed = scorecard["attempts"][1]
+    assert failed["execution_status"] == "failed"
+    assert failed["execution_error"] == f"InvocationFailed: {reason}"
+    assert failed["task_outcome"] is None
+    # What the platform returned for the failed invocation is kept, its token usage included.
+    assert failed["invocation"]["response_id"] == "caresp_synthetic2"
+    assert failed["invocation"]["status"] == response["status"]
+    assert failed["invocation"]["token_usage"]["total_tokens"] == 9400
+    assert metric(scorecard)["value"] == 1
+
+
+def test_an_answer_that_is_not_a_response_is_an_execution_failure(setup):
+    scorecard = three_attempts_of_which_the_second_invocation_fails(setup, (200, "<html>Bad gateway</html>"))
+
+    failed = scorecard["attempts"][1]
+    assert failed["execution_status"] == "failed"
+    assert failed["execution_error"] == (
+        "InvocationFailed: the hosted agent endpoint answered HTTP 200 with a body that is not a response: "
+        "<html>Bad gateway</html>"
+    )
+    assert failed["task_outcome"] is None
+    assert metric(scorecard)["value"] == 1
+
+
+def test_an_endpoint_that_cannot_be_reached_is_an_execution_failure(setup):
+    with fake_foundry_project({}) as project:
+        pass
+    # Nothing listens at the project's endpoint any more.
+    scorecard = run_sweep(
+        experiments=[setup.experiment("todo", 2, ALL_TOOLS_WORK, AGENT)],
+        agent_target=hosted_agent(project, setup),
+        metrics=["outcome_consistency"],
+    )
+
+    for attempt in scorecard["attempts"]:
+        assert attempt["execution_status"] == "failed"
+        assert attempt["execution_error"].startswith("InvocationFailed: the Foundry project could not be reached: ")
+        assert attempt["task_outcome"] is None
+    assert metric(scorecard)["state"] == "unavailable"
