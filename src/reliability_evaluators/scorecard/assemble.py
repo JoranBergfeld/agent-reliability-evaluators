@@ -18,7 +18,7 @@ from ..evaluators import (
 )
 from ..evidence import Attempt, EvidenceError, ExperimentStatus
 from .acceptance import AcceptanceCriterion, assess, criteria_by_metric
-from .usage import sweep_token_usage
+from .usage import EvaluatorUse, scoring_use, sweep_token_usage
 
 SCHEMA_VERSION = 1
 # Where a scorecard reports token usage. It is metadata, apart from the metrics and their acceptance.
@@ -273,7 +273,18 @@ def build_scorecard(
         "tasks_without_experiment": [
             execution.to_dict() for execution in executions if execution.experiment_id is None
         ],
-        TOKEN_USAGE: sweep_token_usage(attempts),
+        TOKEN_USAGE: sweep_token_usage(
+            attempts,
+            [
+                EvaluatorUse(
+                    metric_id=metric.metric_id,
+                    attempt_ids=tuple(scored_by_id[metric.metric_id].attempts_used),
+                    scoring=scoring_use(scored_by_id[metric.metric_id].scoring_path),
+                )
+                for metric in RELIABILITY_METRICS
+                if metric.metric_id in scored_by_id
+            ],
+        ),
         "attempts": [attempt.to_dict() for attempt in attempts],
     }
 

@@ -97,6 +97,7 @@ def _attempt(recorded: Any) -> Attempt:
         "resource_measurements",
         "invocation",
         "confidence",
+        "confidence_invocation",
         "operational_constraints",
         "violation_assessments",
         "experiment_id",

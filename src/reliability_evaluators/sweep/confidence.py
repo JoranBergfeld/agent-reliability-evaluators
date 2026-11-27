@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+from typing import Any, Mapping
+
 from ..agent_target import (
     AgentResponse,
     AgentTarget,
     AttemptRequest,
     ConfidenceRequest,
     ConfidenceResponse,
+    InvocationFailed,
     IsolatedFollowUp,
 )
 from ..evidence import ConfidenceRating, ConfidenceUnavailable, read_confidence_response
@@ -19,6 +22,13 @@ RULE_NOT_SHAREABLE = "the Task's success rule cannot be shared with the agent"
 ATTEMPT_NOT_COMPLETED = "the Attempt did not complete, so no confidence request was sent"
 SWEEP_CANCELLED = "the sweep was cancelled, so no confidence request was sent"
 NO_RESPONSE = "the agent target returned no confidence response"
+# What is recorded of a confidence request that was sent and of which the agent target recorded nothing.
+NOTHING_RECORDED = "the agent target recorded nothing of the confidence request"
+
+
+def _without_usage(why: str) -> dict[str, Any]:
+    """A record of a confidence request with no usage, in the form the agent targets record one in."""
+    return {"token_usage": None, "token_usage_missing": why}
 
 
 def confidence_prompt(success_rule: str) -> str:
@@ -37,23 +47,28 @@ def confidence_prompt(success_rule: str) -> str:
 
 def elicit_confidence(
     task: Task, attempt: AttemptRequest, response: AgentResponse, agent_target: AgentTarget
-) -> ConfidenceRating | ConfidenceUnavailable:
+) -> tuple[ConfidenceRating | ConfidenceUnavailable, Mapping[str, Any] | None]:
     """Ask the agent once how likely it thinks the completed Attempt succeeded.
 
     The agent is asked only when the target declares an isolated follow-up and the Task
     has a success rule that can be shared. There is one request per Attempt: an answer
     that cannot be used is recorded as unavailable and the agent is not asked again.
     The task response is never searched for a rating.
+
+    Returns the confidence evidence, and what was recorded of the request: None when no
+    request was sent. A request that was sent is a use of the agent of its own, whatever
+    became of its answer. What the target recorded of it is kept as given. Where it
+    recorded nothing, or the answer belongs to another Attempt, the record says that no
+    usage is known for this Attempt and why.
     """
     declaration = getattr(agent_target, "isolated_follow_up", None)
     if not isinstance(declaration, IsolatedFollowUp):
-        return ConfidenceUnavailable(reason=NOT_DECLARED)
+        return ConfidenceUnavailable(reason=NOT_DECLARED), None
     if declaration.supported is not True:
-        return ConfidenceUnavailable(
-            reason=f"{NOT_SUPPORTED}: {declaration.reason}" if declaration.reason else NOT_SUPPORTED
-        )
+        reason = f"{NOT_SUPPORTED}: {declaration.reason}" if declaration.reason else NOT_SUPPORTED
+        return ConfidenceUnavailable(reason=reason), None
     if task.shareable_success_rule is None:
-        return ConfidenceUnavailable(reason=RULE_NOT_SHAREABLE)
+        return ConfidenceUnavailable(reason=RULE_NOT_SHAREABLE), None
     request = ConfidenceRequest(
         attempt=attempt,
         response=response,
@@ -63,11 +78,18 @@ def elicit_confidence(
     try:
         answer = agent_target.elicit_confidence(request)
     except Exception as error:
-        return ConfidenceUnavailable(reason=f"the confidence request failed: {type(error).__name__}: {error}")
+        failed = f"the confidence request failed: {type(error).__name__}: {error}"
+        recorded = error.invocation if isinstance(error, InvocationFailed) else None
+        return ConfidenceUnavailable(reason=failed), _recorded(recorded)
     if not isinstance(answer, ConfidenceResponse) or not isinstance(answer.output, str):
-        return ConfidenceUnavailable(reason=NO_RESPONSE)
+        return ConfidenceUnavailable(reason=NO_RESPONSE), _without_usage(NOTHING_RECORDED)
     if answer.attempt_id != attempt.attempt_id:
-        return ConfidenceUnavailable(
-            reason=f"the confidence response belongs to Attempt {answer.attempt_id!r}, not to this Attempt"
-        )
-    return read_confidence_response(answer.output)
+        elsewhere = f"the confidence response belongs to Attempt {answer.attempt_id!r}, not to this Attempt"
+        # What that response used is not attributed to this Attempt.
+        return ConfidenceUnavailable(reason=elsewhere), _without_usage(elsewhere)
+    return read_confidence_response(answer.output), _recorded(answer.invocation)
+
+
+def _recorded(invocation: Any) -> Mapping[str, Any]:
+    """What an agent target recorded of a confidence request that was sent."""
+    return invocation if isinstance(invocation, Mapping) and invocation else _without_usage(NOTHING_RECORDED)

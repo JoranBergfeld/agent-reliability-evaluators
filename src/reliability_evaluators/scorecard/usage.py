@@ -10,6 +10,7 @@ was not reported is missing, with a reason, and is never counted as zero.
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Iterable, Mapping, Sequence
 
@@ -58,64 +59,126 @@ def evaluator_token_usage(tasks: Iterable[TaskEvidence]) -> dict[str, Any]:
         "meaning": MEANING,
         "unit": UNIT,
         "total": _total(_uses_of(attempts)),
-        "scoring": CODE_IN_THE_CUSTOMER_PROCESS,
+        "scoring": dict(CODE_IN_THE_CUSTOMER_PROCESS),
         "attempts": attempts,
     }
 
 
-def sweep_token_usage(attempts: Sequence[Attempt]) -> dict[str, Any]:
-    """The token usage of an Evaluator sweep: of each Attempt, and of the sweep as a whole.
+@dataclass(frozen=True, kw_only=True)
+class EvaluatorUse:
+    """What one Evaluator of a sweep used: the Attempts it was given, and its own scoring."""
 
-    The sweep total counts each use once, whichever Evaluators used it.
+    metric_id: str
+    # Identities of the Attempts the Evaluator was given, whatever became of each.
+    attempt_ids: tuple[str, ...]
+    # The use that scoring the Evaluator was, as `scoring_use` gives it.
+    scoring: Mapping[str, Any]
+
+
+def sweep_token_usage(attempts: Sequence[Attempt], evaluators: Sequence[EvaluatorUse] = ()) -> dict[str, Any]:
+    """The token usage of an Evaluator sweep: of each Attempt, of each Evaluator, and of the sweep as a whole.
+
+    The sweep total counts each use once, whichever Evaluators used it. The total of an
+    Evaluator is the usage of every Attempt it was given and of its own scoring. Where
+    another Evaluator was given any of the same Attempts, both totals include them: such a
+    total is labelled overlapping and not additive.
     """
-    used = [attempt_token_usage(attempt) for attempt in attempts]
+    used = {attempt.attempt_id: attempt_token_usage(attempt) for attempt in attempts}
+    for attempt_id, entry in used.items():
+        entry["used_by"] = [evaluator.metric_id for evaluator in evaluators if attempt_id in evaluator.attempt_ids]
+    scoring = [_scoring_of(evaluator) for evaluator in evaluators]
     return {
         "meaning": MEANING,
         "unit": UNIT,
-        "sweep": _total(_uses_of(used)),
-        "attempts": used,
+        "sweep": _total([*_uses_of(used.values()), *scoring]),
+        "evaluators": [_evaluator_usage(evaluator, used, evaluators) for evaluator in evaluators],
+        "attempts": list(used.values()),
     }
 
 
+def _evaluator_usage(
+    evaluator: EvaluatorUse, used: Mapping[str, Mapping[str, Any]], evaluators: Sequence[EvaluatorUse]
+) -> dict[str, Any]:
+    """What one Evaluator used, and whether its total includes what the total of another includes too."""
+    given = set(evaluator.attempt_ids)
+    overlaps_with = [
+        other.metric_id for other in evaluators if other is not evaluator and not given.isdisjoint(other.attempt_ids)
+    ]
+    uses = [*_uses_of(used[attempt_id] for attempt_id in evaluator.attempt_ids), _scoring_of(evaluator)]
+    return {
+        "metric_id": evaluator.metric_id,
+        "total": _total(uses),
+        # A total that overlaps with another is not additive: adding them counts what they share twice.
+        "overlapping": bool(overlaps_with),
+        "additive": not overlaps_with,
+        "overlaps_with": overlaps_with,
+        "attempt_ids": list(evaluator.attempt_ids),
+        "scoring": dict(evaluator.scoring),
+    }
+
+
+def _scoring_of(evaluator: EvaluatorUse) -> tuple[dict[str, Any], Mapping[str, Any]]:
+    return {"use": "scoring", "metric_id": evaluator.metric_id}, evaluator.scoring
+
+
+def scoring_use(scoring_path: ScoringPath) -> dict[str, Any]:
+    """The use that scoring an Evaluator on a scoring path was."""
+    return dict(CODE_IN_THE_CUSTOMER_PROCESS)
+
+
 def attempt_token_usage(attempt: Attempt) -> dict[str, Any]:
-    """What one Attempt used: the invocation of the agent for it."""
+    """What one Attempt used: the invocation of the agent for it, and the confidence request that followed it.
+
+    The two are separate requests and stay two uses. `confidence_follow_up` is None when no
+    confidence request was sent for the Attempt.
+    """
     if attempt.execution_status is ExecutionStatus.SETUP_FAILED and attempt.invocation is None:
         invocation = _no_model_use(NOT_INVOKED, response_id=None, request_ids={})
     else:
-        invocation = _recorded_use(attempt.invocation)
+        invocation = _recorded_use(attempt.invocation, "the invocation")
+    follow_up = None
+    if attempt.confidence_invocation is not None:
+        follow_up = _recorded_use(attempt.confidence_invocation, "the confidence request")
     return {
         "attempt_id": attempt.attempt_id,
         "task_id": attempt.task_id,
         "execution_status": attempt.execution_status.value,
         "retry_of": attempt.retry_of,
-        **_sum_of([invocation]),
-        "invocation": invocation,
+        **_sum_of(use for use in (invocation, follow_up) if use is not None),
+        _INVOCATION: invocation,
+        _FOLLOW_UP: follow_up,
     }
 
 
-NOTHING_RECORDED = "the agent target recorded nothing of the invocation"
-NO_USAGE_REPORTED = "the agent target recorded no token usage for the invocation"
-NO_TOTAL = "the token usage the agent target recorded has no total_tokens that is a whole number"
+# The uses of an Attempt, by the name each has in the usage of the Attempt.
+_INVOCATION, _FOLLOW_UP = "invocation", "confidence_follow_up"
+_USES_OF_AN_ATTEMPT = {_INVOCATION: "agent_invocation", _FOLLOW_UP: "confidence_follow_up"}
 
 
-def _recorded_use(recorded: Mapping[str, Any] | None) -> dict[str, Any]:
+def _recorded_use(recorded: Mapping[str, Any] | None, of: str) -> dict[str, Any]:
     """The use an agent target recorded, with the identifiers the platform returned for it.
 
     The count is the `total_tokens` of the `token_usage` the target recorded, as the platform
     reported it. Without one the use is missing, for the reason the target recorded in
-    `token_usage_missing` when it recorded one.
+    `token_usage_missing` when it recorded one. `of` names the request.
     """
     recorded = recorded or {}
     identifiers = {"response_id": recorded.get("response_id"), "request_ids": recorded.get("request_ids") or {}}
     if not recorded:
-        return _missing(NOTHING_RECORDED, **identifiers)
+        return _missing(f"the agent target recorded nothing of {of}", **identifiers)
     usage = recorded.get("token_usage")
     if usage is None:
         why = recorded.get("token_usage_missing")
-        return _missing(why if isinstance(why, str) and why.strip() else NO_USAGE_REPORTED, **identifiers)
+        if not isinstance(why, str) or not why.strip():
+            why = f"the agent target recorded no token usage for {of}"
+        return _missing(why, **identifiers)
     total = usage.get("total_tokens") if isinstance(usage, Mapping) else None
     if not _is_count(total):
-        return _missing(NO_TOTAL, **identifiers)
+        # Nothing is derived from the parts of a usage that states no total.
+        return _missing(
+            f"the token usage the agent target recorded for {of} has no total_tokens that is a whole number",
+            **identifiers,
+        )
     return _reported(total, **identifiers)
 
 
@@ -146,7 +209,12 @@ def _is_count(value: Any) -> bool:
 
 def _uses_of(attempts: Iterable[Mapping[str, Any]]) -> list[tuple[dict[str, Any], Mapping[str, Any]]]:
     """The uses of Attempts, each with what names it where it is listed as missing."""
-    return [({"use": "agent_invocation", "attempt_id": attempt["attempt_id"]}, attempt["invocation"]) for attempt in attempts]
+    return [
+        ({"use": named, "attempt_id": attempt["attempt_id"]}, attempt[use])
+        for attempt in attempts
+        for use, named in _USES_OF_AN_ATTEMPT.items()
+        if attempt[use] is not None
+    ]
 
 
 def _sum_of(uses: Iterable[Mapping[str, Any]]) -> dict[str, Any]:

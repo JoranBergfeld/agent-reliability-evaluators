@@ -699,7 +699,8 @@ def _with_confidence(
         return replace(attempt, confidence=ConfidenceUnavailable(reason=ATTEMPT_NOT_COMPLETED))
     if cancellation.requested():
         return replace(attempt, confidence=ConfidenceUnavailable(reason=SWEEP_CANCELLED))
-    return replace(attempt, confidence=ask())
+    confidence, recorded = ask()
+    return replace(attempt, confidence=confidence, confidence_invocation=recorded)
 
 
 def _resource_measurements(
