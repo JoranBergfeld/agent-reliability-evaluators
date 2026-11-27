@@ -24,7 +24,6 @@ from .attempt import (
 from .confidence import ConfidenceRating, ConfidenceUnavailable
 from .errors import EvidenceError
 from .experiment import Condition, LifecyclePoint, LifecycleStep, ObservedCondition, PromptVariant
-from .platform_evidence import PlatformEvidence
 
 
 def read_attempts(recorded: Any) -> tuple[Attempt, ...]:
@@ -96,7 +95,7 @@ def _attempt(recorded: Any) -> Attempt:
         "superseded_task_outcomes",
         "action_evidence",
         "resource_measurements",
-        "platform_evidence",
+        "invocation",
         "confidence",
         "operational_constraints",
         "violation_assessments",
@@ -131,7 +130,6 @@ def _attempt(recorded: Any) -> Attempt:
                 )
                 for record in _each("resource measurements", fields["resource_measurements"])
             ],
-            "platform_evidence": _platform_evidence(fields["platform_evidence"]),
             "confidence": _confidence(fields["confidence"]),
             "operational_constraints": [
                 OperationalConstraint(**_fields("an operational constraint", record, "constraint_id", "description"))
@@ -163,26 +161,11 @@ def _action_evidence(recorded: Any) -> ActionEvidence | None:
     if recorded is None:
         return None
     fields = _fields("action evidence", recorded, "source", "events")
-    return ActionEvidence(source=fields["source"], events=_action_events("action events", fields["events"]))
-
-
-def _action_events(what: str, recorded: Any) -> list[ActionEvent]:
-    return [
+    events = [
         ActionEvent(**_fields("an action event", event, "tool_name", "arguments", "result", "error"))
-        for event in _each(what, recorded)
+        for event in _each("action events", fields["events"])
     ]
-
-
-def _platform_evidence(recorded: Any) -> PlatformEvidence | None:
-    if recorded is None:
-        return None
-    fields = _fields(
-        "platform evidence", recorded, "source", "identifiers", "token_usage", "token_usage_missing", "tool_calls"
-    )
-    tool_calls = fields["tool_calls"]
-    if tool_calls is not None:
-        tool_calls = _action_events("the tool calls a platform exposed", tool_calls)
-    return PlatformEvidence(**{**fields, "tool_calls": tool_calls})
+    return ActionEvidence(source=fields["source"], events=events)
 
 
 def _confidence(recorded: Any) -> ConfidenceRating | ConfidenceUnavailable | None:

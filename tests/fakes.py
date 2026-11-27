@@ -69,7 +69,7 @@ class FakeAgentTarget:
     is an elapsed time the agent reports itself. An Attempt with no entry takes no time
     and reports nothing.
 
-    `platform_evidence` gives, by Attempt identity, what the platform returned about the
+    `invocations` gives, by Attempt identity, what the agent target recorded of the
     invocation. The agent returns it with its response. Without it the agent returns none.
     `invocation_errors` gives, by Attempt identity, the error an "error" Attempt fails with.
 
@@ -94,7 +94,7 @@ class FakeAgentTarget:
         resources: dict[str, list[dict]] | None = None,
         *,
         confidence: dict[str, object] | None = None,
-        platform_evidence: dict[str, object] | None = None,
+        invocations: dict[str, dict] | None = None,
         invocation_errors: dict[str, Exception] | None = None,
         isolated_follow_up: IsolatedFollowUp | None = IsolatedFollowUp(supported=True),
         output: str = "Done.",
@@ -109,7 +109,7 @@ class FakeAgentTarget:
         self._resources = {task_id: list(used) for task_id, used in (resources or {}).items()}
         self._now = 0.0
         self._confidence = dict(confidence or {})
-        self._platform_evidence = dict(platform_evidence or {})
+        self._invocations = dict(invocations or {})
         self._invocation_errors = dict(invocation_errors or {})
         self._output = output
         if isolated_follow_up is not None:
@@ -160,7 +160,7 @@ class FakeAgentTarget:
         return AgentResponse(
             output=self._output,
             resource_measurements=tuple(measurements),
-            platform_evidence=self._platform_evidence.get(request.attempt_id),
+            invocation=self._invocations.get(request.attempt_id),
         )
 
     def elicit_confidence(self, request: ConfidenceRequest) -> ConfidenceResponse:

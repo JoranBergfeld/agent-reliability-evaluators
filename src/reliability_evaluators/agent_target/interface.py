@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any, Mapping, Protocol
 
-from ..evidence import ActionEvent, PlatformEvidence, ResourceMeasurement
+from ..evidence import ResourceMeasurement
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -31,38 +31,26 @@ class AgentResponse:
     `resource_measurements` is what the agent target measured of the Attempt's resource
     use, such as its tool-call count. A measurement it could not make is left out.
 
-    `platform_evidence` is what the platform returned about the invocation: its
-    identifiers, its token usage and the tool calls it exposed. The sweep keeps it on the
-    Attempt. None means the agent target captured nothing.
+    `invocation` is what the agent target recorded of the invocation itself, as
+    JSON-compatible data: the identifiers the platform returned, the token usage it
+    reported and the tool calls it exposed. It is kept on the Attempt as given.
     """
 
     output: str
     resource_measurements: tuple[ResourceMeasurement, ...] = ()
-    platform_evidence: PlatformEvidence | None = None
+    invocation: Mapping[str, Any] | None = None
 
 
-def platform_tool_calls(request: AttemptRequest, response: AgentResponse) -> tuple[ActionEvent, ...] | None:
-    """The tool calls the platform exposed for an Attempt, in order, as its action evidence.
+class InvocationFailed(Exception):
+    """An invocation that failed, with what the agent target recorded of it.
 
-    Declare it as the `record` of an ActionEvidenceDeclaration to calculate the trajectory
-    metrics from the platform's own tool calls. It returns None, nothing recorded, when
-    the agent target captured none.
-    """
-    evidence = response.platform_evidence
-    return None if evidence is None else evidence.tool_calls
-
-
-class InvocationError(Exception):
-    """An invocation that failed, with what the platform returned about it.
-
-    An agent target raises it instead of any other exception when the platform returned
-    something about the failed invocation, such as the identity of the request. The sweep
-    keeps that on the Attempt, whose execution failed. The Attempt has no task outcome.
+    An agent target may raise any exception from `invoke`. Raising this one keeps
+    `invocation` on the Attempt, in the form `AgentResponse.invocation` has.
     """
 
-    def __init__(self, message: str, *, platform_evidence: PlatformEvidence | None = None):
+    def __init__(self, message: str, *, invocation: Mapping[str, Any] | None = None):
         super().__init__(message)
-        self.platform_evidence = platform_evidence
+        self.invocation = invocation
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -103,8 +91,7 @@ class ConfidenceResponse:
 
 
 class AgentTarget(Protocol):
-    """An agent the sweep can invoke. An invocation that fails raises, an InvocationError
-    when the platform returned something about it.
+    """An agent the sweep can invoke. An invocation that fails raises.
 
     The sweep cannot interrupt an invocation. An agent target stops at
     `request.timeout_seconds` itself and raises `TimeoutError`.

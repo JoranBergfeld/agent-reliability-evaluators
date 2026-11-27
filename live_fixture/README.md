@@ -109,10 +109,6 @@ interface, for work that needs no Foundry. Tests under `tests/` import `live_fix
 `strict_task_outcome` returns a plain dictionary so the fixture does not depend on the offering's
 source. A sweep's task-success rule wraps it:
 `TaskOutcome(success=outcome["success"], source=outcome["source"])`.
-`tests/todo_fixture_sweep.py` does that, and maps the four calls above onto the customer controls of
-an experiment, for the default tests and the live checks. A sweep's prompt is the same for every
-Attempt, so it names one state of the service for the whole experiment (`task_prompt("<state>")`),
-which the prepare control creates and the clean-up control removes.
 
 ### Attempts and the service
 

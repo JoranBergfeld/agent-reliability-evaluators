@@ -24,7 +24,7 @@ import uuid
 import pytest
 
 from live_fixture import connect, provision, teardown
-from reliability_evaluators.agent_target import FoundryProject, FoundryPromptAgentTarget
+from reliability_evaluators.agent_target.foundry_prompt_agent import FoundryPromptAgentTarget
 from reliability_evaluators.sweep import run_sweep
 from tests.todo_fixture_sweep import UPDATE_FAILS, TodoFixtureSweep
 
@@ -58,8 +58,8 @@ def live():
 def swept(live):
     """The scorecard of one sweep on the deployed prompt agent, and what the service recorded per Attempt."""
     fixture = TodoFixtureSweep(live.service, state=f"live-{uuid.uuid4().hex[:8]}")
-    # No token provider: the identity signed in to the Azure CLI is used, as in a customer's CI.
-    target = FoundryPromptAgentTarget(project=FoundryProject(live.project_endpoint), agent_name=live.prompt_agent)
+    # No credential: the identity signed in to the Azure CLI is used, as in a customer's CI.
+    target = FoundryPromptAgentTarget(project_endpoint=live.project_endpoint, agent_name=live.prompt_agent)
     experiment = fixture.experiment(
         attempts=ATTEMPTS,
         starting_state="continuing",
@@ -77,17 +77,15 @@ def swept(live):
 
 def _observation(attempt, service_evidence):
     """What one Attempt showed, for the record of the live run. No token, key or subscription identifier."""
-    platform = attempt["platform_evidence"] or {}
+    invocation = attempt["invocation"] or {}
     events = calls_of(attempt["attempt_id"], service_evidence) if attempt["attempt_id"] in service_evidence else []
     return {
         "attempt_id": attempt["attempt_id"],
         "execution_status": attempt["execution_status"],
         "execution_error": attempt["execution_error"],
         "task_outcome": attempt["task_outcome"],
-        "identifiers": platform.get("identifiers"),
-        "token_usage": platform.get("token_usage"),
-        "token_usage_missing": platform.get("token_usage_missing"),
-        "tool_calls": [call["tool_name"] for call in platform.get("tool_calls") or []],
+        "invocation": {key: value for key, value in invocation.items() if key != "tool_calls"},
+        "tool_calls": [call["name"] for call in invocation.get("tool_calls") or []],
         "service_events_of_the_attempt": [
             [event["tool"], event["todo_id"], event["status"], event["fault_injected"]] for event in events
         ],
@@ -181,22 +179,24 @@ def test_each_completed_attempt_keeps_its_response_identity_its_usage_and_its_or
     response_ids = []
     for attempt_id in BASELINE_ATTEMPTS:
         attempt = attempts[attempt_id]
-        platform = attempt["platform_evidence"]
-        identifiers = platform["identifiers"]
-        response_ids.append(identifiers["response_id"])
-        assert identifiers["response_id"].startswith("resp_")
-        assert identifiers["status"] == "completed"
-        assert identifiers["agent_reference"]["name"] == live.prompt_agent
-        assert identifiers["agent_reference"]["version"]
-        assert identifiers["model"] == live.model_deployment
-        assert identifiers["metadata"] == {"attempt_id": attempt_id, "task_id": "todo"}
-        assert identifiers["request_id"] and identifiers["apim_request_id"]
-        usage = platform["token_usage"]
+        invocation = attempt["invocation"]
+        response_ids.append(invocation["response_id"])
+        assert invocation["response_id"].startswith("resp_")
+        assert (invocation["http_status"], invocation["status"], invocation["error"]) == (200, "completed", None)
+        assert invocation["agent"]["name"] == live.prompt_agent
+        assert invocation["agent"]["version"]
+        assert invocation["model"] == live.model_deployment
+        assert invocation["served_model"]
+        assert invocation["metadata"] == {"attempt_id": attempt_id, "task_id": "todo"}
+        assert sorted(invocation["request_ids"]) == ["apim-request-id", "x-request-id"]
+        assert invocation["composed_input"] is None
+        usage = invocation["token_usage"]
         assert usage["total_tokens"] == usage["input_tokens"] + usage["output_tokens"] > 0
-        assert platform["token_usage_missing"] is None
+        assert invocation["token_usage_missing"] is None
         # The tool calls the project exposed are the calls the service received during the Attempt, in order.
         received = calls_of(attempt_id, service_evidence)
-        assert [TOOL_OF[call["tool_name"]] for call in platform["tool_calls"]] == [event["tool"] for event in received]
+        assert [TOOL_OF[call["name"]] for call in invocation["tool_calls"]] == [event["tool"] for event in received]
+        assert {call["type"] for call in invocation["tool_calls"]} == {"openapi_call"}
         (counted,) = [m for m in attempt["resource_measurements"] if m["resource_type"] == "tool_calls"]
         assert counted["value"] == len(received)
     assert len(set(response_ids)) == ATTEMPTS
@@ -214,13 +214,17 @@ def test_an_injected_tool_fault_fails_the_invocation_and_only_the_service_shows_
         # The caller gets an error and no response. That is an execution failure, never a task failure.
         assert attempt["execution_status"] == "failed"
         assert attempt["task_outcome"] is None
-        assert "HTTP 400 tool_user_error" in attempt["execution_error"]
-        platform = attempt["platform_evidence"]
-        assert platform["identifiers"]["http_status"] == 400
-        assert platform["identifiers"]["error_request_id"]
-        assert platform["token_usage"] is None
-        assert platform["token_usage_missing"] == "the Foundry project answered HTTP 400 and reported no usage"
-        assert platform["tool_calls"] is None
+        assert "HTTP 400: tool_user_error" in attempt["execution_error"]
+        invocation = attempt["invocation"]
+        assert invocation["http_status"] == 400
+        assert invocation["error"]["code"] == "tool_user_error"
+        assert invocation["request_ids"]
+        assert invocation["response_id"] is None
+        assert invocation["token_usage"] is None
+        assert invocation["token_usage_missing"] == "the Foundry project returned no response, so no usage was reported"
+        assert invocation["tool_calls"] is None
+        # The target measured nothing of an invocation that gave no response.
+        assert attempt["resource_measurements"] == []
     # No Attempt under the fault completed, so fault robustness has nothing to compare and gives no number.
     fault_robustness = metric(scorecard, "fault_robustness")
     assert fault_robustness["state"] == "unavailable"

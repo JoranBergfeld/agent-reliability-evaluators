@@ -35,7 +35,6 @@ from .experiment import (
     json_data,
 )
 from .grouping import TaskEvidence, group_by_task, require_unambiguous
-from .platform_evidence import PlatformEvidence
 from .reading import read_attempts
 
 __all__ = [
@@ -55,7 +54,6 @@ __all__ = [
     "ObservedCondition",
     "OperationalConstraint",
     "OutcomeCorrection",
-    "PlatformEvidence",
     "PromptVariant",
     "ResourceMeasurement",
     "ResourceType",

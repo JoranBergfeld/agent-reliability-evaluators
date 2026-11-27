@@ -59,8 +59,8 @@ A metric result that a recalculation has replaced. It is kept, marked as superse
 **Execution status**:
 How the running of an attempt or experiment ended, such as completed, timed out, cancelled or setup failed. It is separate from the task outcome and from the state of a reliability metric: an execution failure keeps its reason and is not a task failure, an unavailable measurement or not applicable.
 
-**Platform evidence**:
-What the platform that ran the agent returned about the invocation of an attempt: its identifiers, its token usage and the tool calls it exposed. It is kept as returned, for a failed invocation too, and it never decides a task outcome.
+**Invocation evidence**:
+What an agent target recorded of the invocation of an attempt: the identifiers the platform returned, the token usage it reported and the tool calls it exposed. It is kept as returned, for a failed invocation too, and it never decides a task outcome.
 
 **Confidence rating**:
 The evaluated agent's estimate, given after an attempt, of its confidence in the task outcome.
