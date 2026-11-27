@@ -399,7 +399,7 @@ Two resource groups were created for this work, in the subscription named `Sandb
 | `rg-are-52-2b5fa34d` | Never became a fixture. Its model deployment was refused with `(InvalidResourceProperties) Failed to validate policies for model gpt-4.1-mini/2025-04-14`, as one was for the prompt agent target. Provisioning again a few minutes later, with nothing changed, succeeded. |
 | `rg-are-52-4918529c` | The fixture for everything above. |
 
-{TEARDOWN}
+The first was deleted by the provisioning that failed. The second was deleted with the fixture's `teardown`, which took 29 minutes. Both soft-deleted Foundry accounts were purged. Afterwards a separate `az group exists` returned `false` for each of the two, and no soft-deleted account of either was listed. The evals and the runs made above were in the fixture's project and went with it.
 
 ## Not verified
 
