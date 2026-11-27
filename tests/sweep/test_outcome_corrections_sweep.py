@@ -330,3 +330,42 @@ def test_a_task_outcome_that_was_not_known_during_the_sweep_can_be_supplied_late
     assert third["superseded_task_outcomes"] == [{"task_outcome": None, "correction_provenance": PROVENANCE}]
     (superseded,) = recalculated["superseded_results"]
     assert [correction["superseded_task_outcome"] for correction in superseded["outcome_corrections"]] == [None, None]
+
+
+def test_a_recalculated_scorecard_can_be_corrected_again_and_keeps_every_earlier_record():
+    # 2 of 4 successes: 0. The third Attempt corrected to a success: 0.25. Corrected back: 0.
+    second_provenance = "A. de Vries on 2026-12-01: the first review read the wrong item"
+    earlier = sweep({"close": HALF})
+    first = supplied(
+        recalculate(earlier_scorecard=earlier, outcome_corrections=[corrected("close/attempt-3", success=True)])
+    )
+
+    second = recalculate(
+        earlier_scorecard=first,
+        outcome_corrections=[
+            corrected("close/attempt-3", success=False, source="second review", provenance=second_provenance)
+        ],
+    )
+
+    assert metric(second)["value"] == 0
+    third = attempt(second, "close/attempt-3")
+    assert third["task_outcome"] == {"success": False, "source": "second review"}
+    assert third["superseded_task_outcomes"] == [
+        {"task_outcome": {"success": False, "source": SOURCE}, "correction_provenance": PROVENANCE},
+        {"task_outcome": {"success": True, "source": REVIEW}, "correction_provenance": second_provenance},
+    ]
+    oldest, latest = second["superseded_results"]
+    assert (oldest["status"], latest["status"]) == ("superseded", "superseded")
+    assert oldest == first["superseded_results"][0]
+    assert metric(oldest)["value"] == 0
+    assert latest["metrics"] == first["metrics"]
+    assert metric(latest)["value"] == 0.25
+    assert latest["outcome_corrections"] == [
+        {
+            "attempt_id": "close/attempt-3",
+            "task_id": "close",
+            "task_outcome": {"success": False, "source": "second review"},
+            "provenance": second_provenance,
+            "superseded_task_outcome": {"success": True, "source": REVIEW},
+        }
+    ]

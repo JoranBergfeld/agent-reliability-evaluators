@@ -41,7 +41,8 @@ def recalculate(
         "outcome_corrections": _correction_records(outcome_corrections, earlier_attempts),
         "metrics": deepcopy(earlier_scorecard["metrics"]),
     }
-    return {**build_scorecard(metrics=scored, attempts=attempts), "superseded_results": [superseded]}
+    superseded_results = [*deepcopy(earlier_scorecard.get("superseded_results", [])), superseded]
+    return {**build_scorecard(metrics=scored, attempts=attempts), "superseded_results": superseded_results}
 
 
 def _correction_records(
