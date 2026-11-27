@@ -515,3 +515,52 @@ def test_supplied_evidence_that_does_not_validate_fails_the_recalculation(supply
 
     with pytest.raises(RecalculationFailed, match=f"recalculation failed: the supplied evidence does not validate: .*{problem}"):
         recalculate(earlier_scorecard=earlier, outcome_corrections=[corrected("close/attempt-3", success=True)])
+
+
+def with_metric(of, /, **result):
+    """The earlier result of one metric, with some of it changed."""
+    return changed(lambda scorecard: metric(scorecard, of).update(result))
+
+
+@pytest.mark.parametrize(
+    ("supply", "problem"),
+    [
+        (changed(lambda scorecard: scorecard["metrics"].append("brier_based_score")), "a metric result is recorded as an object"),
+        (with_metric("outcome_consistency", metric_id="overall_reliability"), "'overall_reliability' is not a reliability metric"),
+        (with_metric("calibration", metric_id="outcome_consistency"), "more than one result for 'outcome_consistency'"),
+        (changed(lambda scorecard: metric(scorecard, "outcome_consistency").pop("state")), "the result of 'outcome_consistency' is recorded without its state"),
+        (with_metric("calibration", state="available", value=0.5), "'calibration' has no Evaluator in this version"),
+    ],
+)
+def test_earlier_metric_results_that_cannot_be_read_fail_the_recalculation(supply, problem):
+    earlier = supply(sweep({"close": HALF}))
+
+    with pytest.raises(RecalculationFailed, match=f"recalculation failed: the supplied evidence does not validate: .*{problem}"):
+        recalculate(earlier_scorecard=earlier, outcome_corrections=[corrected("close/attempt-3", success=True)])
+
+
+@pytest.mark.parametrize(
+    ("supply", "differs_in"),
+    [
+        # The evidence was changed after the earlier result was calculated from it.
+        (with_attempt(task_outcome={"success": True, "source": SOURCE}), "value, details"),
+        # The earlier result is not the one that was calculated.
+        (with_metric("outcome_consistency", value=0.9), "value"),
+        (with_metric("outcome_consistency", state="unavailable", value=None, reason="no Tasks"), "state, value, reason"),
+        # The earlier result was calculated by another version of the metric definition.
+        (
+            changed(lambda scorecard: metric(scorecard, "outcome_consistency")["definition"].update(version="0.9.0")),
+            "definition",
+        ),
+    ],
+)
+def test_supplied_evidence_that_does_not_reproduce_the_earlier_result_fails_the_recalculation(supply, differs_in):
+    # Otherwise the new result would differ from the superseded one for more than the corrected outcome.
+    earlier = supply(sweep({"close": HALF}))
+
+    with pytest.raises(
+        RecalculationFailed,
+        match="recalculation failed: the supplied evidence does not validate: it does not reproduce the earlier "
+        f"result of 'outcome_consistency', which differs in: {differs_in}$",
+    ):
+        recalculate(earlier_scorecard=earlier, outcome_corrections=[corrected("close/attempt-4", success=True)])
