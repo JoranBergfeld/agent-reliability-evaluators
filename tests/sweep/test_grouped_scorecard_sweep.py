@@ -9,8 +9,15 @@ pair is in `tests/evaluators/`.
 import pytest
 
 from reliability_evaluators.evidence import ActionEvent, OperationalConstraint, TaskOutcome, ViolationAssessment
-from reliability_evaluators.sweep import ActionEvidenceDeclaration, ConfiguredEvaluator, Task, run_sweep
-from tests.fakes import FakeActingAgentTarget
+from reliability_evaluators.sweep import (
+    ActionEvidenceDeclaration,
+    Condition,
+    ConfiguredEvaluator,
+    Experiment,
+    Task,
+    run_sweep,
+)
+from tests.fakes import FakeActingAgentTarget, FakeControls, FakeTodoAgent, FakeTodoService, todo_list
 
 OUTCOME = "outcome_consistency"
 DISTRIBUTIONAL = "distributional_trajectory_consistency"
@@ -408,3 +415,164 @@ def test_tasks_whose_attempts_could_not_be_told_apart_are_rejected_before_any_at
         to_do.sweep([DISTRIBUTIONAL, from_service_side_effects(to_do)])
 
     assert to_do.target.service_log == {}
+
+
+BASELINE = Condition(condition_id="baseline", description="The to-do service accepts every request.")
+ADD_FAILS = Condition(
+    condition_id="add-fails", description="The to-do service refuses to add an item.", parameters={"add_fails": True}
+)
+
+
+class Controlled:
+    """A fake to-do service whose lists outlive Attempts, with its agent and its customer controls.
+
+    The agent adds one item to its Task's list, and a Task succeeds when the list then holds
+    exactly one item. Only the controls of an experiment ever empty a list.
+    """
+
+    def __init__(self, task_ids=("add",), failures=None):
+        self.service = FakeTodoService(task_ids)
+        self.agent = FakeTodoAgent(self.service)
+        self.controls = FakeControls(self.service, failures=failures)
+
+    def task(self, task_id, attempts):
+        return Task(
+            task_id=task_id, prompt="Add one item to the list.", success_rule=self._exactly_one_item, attempts=attempts
+        )
+
+    def experiment(self, attempts, variation=None):
+        return Experiment(
+            experiment_id="add-item",
+            task=self.task("add", attempts),
+            agent_configuration={"agent": "todo-agent", "version": "3"},
+            starting_state="fresh",
+            baseline=BASELINE,
+            variation=variation,
+            controls=self.controls,
+            write_capable=True,
+            authorized_resources=[todo_list("add")],
+        )
+
+    @staticmethod
+    def recording(evidence_source):
+        """A declaration of its own recorder. The agent calls the service once in every Attempt."""
+        return ActionEvidenceDeclaration(
+            evidence_source=evidence_source,
+            record=lambda attempt, response: [ActionEvent(tool_name="add_item")],
+            action_types={"add_item": "create"},
+        )
+
+    def _exactly_one_item(self, attempt, response):
+        items = self.service.lists.get(todo_list(attempt.task_id), [])
+        return TaskOutcome(success=len(items) == 1, source="final state of the fake to-do service")
+
+
+def test_an_evaluator_is_given_no_attempt_made_under_a_variation_and_the_scorecard_shows_it():
+    # plain, without an experiment: its list is never emptied, so both Attempts fail. p = 0/2: 1.
+    # add, baseline: 2 successes. Variation: the fault occurs twice and the Task fails twice.
+    #   From the baseline only, p = 2/2: 1. Mixing the conditions would give p = 2/4: 0.
+    # Outcome consistency: (1 + 1) / 2 = 1. With the conditions mixed it would be (1 + 0) / 2 = 0.5.
+    controlled = Controlled(task_ids=("plain", "add"))
+
+    scorecard = run_sweep(
+        tasks=[controlled.task("plain", attempts=2)],
+        experiments=[controlled.experiment(attempts=2, variation=ADD_FAILS)],
+        agent_target=controlled.agent,
+        metrics=[OUTCOME, "resource_consistency"],
+    )
+
+    not_under_a_variation = [
+        "plain/attempt-1",
+        "plain/attempt-2",
+        "add-item/baseline/attempt-1",
+        "add-item/baseline/attempt-2",
+    ]
+    assert [attempt["attempt_id"] for attempt in scorecard["attempts"]] == [
+        *not_under_a_variation,
+        "add-item/add-fails/attempt-1",
+        "add-item/add-fails/attempt-2",
+    ]
+    assert metric(scorecard, OUTCOME)["value"] == 1
+    assert metric(scorecard, OUTCOME)["attempts_used"] == {
+        "attempt_ids": not_under_a_variation,
+        "shared_with": ["resource_consistency"],
+    }
+    assert metric(scorecard, "resource_consistency")["attempts_used"] == {
+        "attempt_ids": not_under_a_variation,
+        "shared_with": [OUTCOME],
+    }
+
+
+def test_an_experiment_is_run_again_for_the_evaluator_that_needs_something_else():
+    # Every Attempt makes the one call, so both metrics are 1. Each Attempt succeeds only if the
+    # controls prepared its state, also when the experiment is run again.
+    controlled = Controlled()
+
+    scorecard = run_sweep(
+        experiments=[controlled.experiment(attempts=2)],
+        agent_target=controlled.agent,
+        metrics=[
+            DISTRIBUTIONAL,
+            ConfiguredEvaluator(metric_id=SEQUENTIAL, action_evidence=controlled.recording("service-side effects")),
+        ],
+        action_evidence=controlled.recording("native tool calls"),
+    )
+
+    first = ["add-item/baseline/attempt-1", "add-item/baseline/attempt-2"]
+    again = ["add-item/set-2/baseline/attempt-1", "add-item/set-2/baseline/attempt-2"]
+    assert [
+        (attempt["attempt_id"], attempt["experiment_id"], attempt["action_evidence"]["source"])
+        for attempt in scorecard["attempts"]
+    ] == [
+        (first[0], "add-item", "native tool calls"),
+        (first[1], "add-item", "native tool calls"),
+        (again[0], "add-item/set-2", "service-side effects"),
+        (again[1], "add-item/set-2", "service-side effects"),
+    ]
+    assert [attempt["task_outcome"]["success"] for attempt in scorecard["attempts"]] == [True] * 4
+    assert [(experiment["experiment_id"], experiment["execution"]) for experiment in scorecard["experiments"]] == [
+        ("add-item", {"status": "completed", "reason": None, "attempts_planned": 2, "attempts_recorded": 2}),
+        ("add-item/set-2", {"status": "completed", "reason": None, "attempts_planned": 2, "attempts_recorded": 2}),
+    ]
+    assert metric(scorecard, DISTRIBUTIONAL)["value"] == 1
+    assert metric(scorecard, DISTRIBUTIONAL)["attempts_used"] == {"attempt_ids": first, "shared_with": []}
+    assert metric(scorecard, SEQUENTIAL)["value"] == 1
+    assert metric(scorecard, SEQUENTIAL)["attempts_used"] == {"attempt_ids": again, "shared_with": []}
+
+def test_an_experiment_is_not_run_again_on_state_that_its_first_run_did_not_restore():
+    # The clean-up after the last of the first three Attempts fails, so the list is not restored.
+    #   Distributional rests on the two Attempts that completed, which make the same call: 1.
+    #   The Attempts for sequential would start from that list, so none of them is made.
+    controlled = Controlled(failures={("clean_up", "add-item/baseline/attempt-3"): "the list could not be deleted"})
+
+    scorecard = run_sweep(
+        experiments=[controlled.experiment(attempts=3)],
+        agent_target=controlled.agent,
+        metrics=[
+            DISTRIBUTIONAL,
+            ConfiguredEvaluator(metric_id=SEQUENTIAL, action_evidence=controlled.recording("service-side effects")),
+        ],
+        action_evidence=controlled.recording("native tool calls"),
+    )
+
+    assert [(attempt["attempt_id"], attempt["execution_status"]) for attempt in scorecard["attempts"]] == [
+        ("add-item/baseline/attempt-1", "completed"),
+        ("add-item/baseline/attempt-2", "completed"),
+        ("add-item/baseline/attempt-3", "cleanup_failed"),
+    ]
+    again = scorecard["experiments"][1]
+    assert again["experiment_id"] == "add-item/set-2"
+    assert again["execution"] == {
+        "status": "stopped",
+        "reason": (
+            "experiment 'add-item' did not restore the test resource 'todo-list/add': "
+            "clean_up failed after Attempt 'add-item/baseline/attempt-3': RuntimeError: the list could not be deleted"
+        ),
+        "attempts_planned": 3,
+        "attempts_recorded": 0,
+    }
+    assert metric(scorecard, DISTRIBUTIONAL)["value"] == 1
+    sequential = metric(scorecard, SEQUENTIAL)
+    assert sequential["state"] == "unavailable"
+    assert sequential["value"] is None
+    assert sequential["attempts_used"] == {"attempt_ids": [], "shared_with": []}

@@ -38,7 +38,11 @@ class _Stop:
 
 
 def run_experiments(
-    experiments: Sequence[Experiment], make_attempt: MakeAttempt, ask_confidence: bool, attempts: list[Attempt]
+    experiments: Sequence[Experiment],
+    make_attempt: MakeAttempt,
+    ask_confidence: bool,
+    attempts: list[Attempt],
+    unrestored: dict[str, str] | None = None,
 ) -> list[dict[str, Any]]:
     """Run the experiments in the order declared. Returns their scorecard records.
 
@@ -47,12 +51,14 @@ def run_experiments(
 
     An experiment is not started when it may change a test resource that an earlier
     experiment failed to restore. Experiments that share no such resource are unrelated.
+    `unrestored` holds those test resources, each with why it was not restored. A caller
+    that runs experiments more than once in a sweep passes the same one every time.
 
     `ask_confidence` says whether a selected metric uses confidence. An Attempt for which
     the agent was not invoked then records why it has no confidence rating.
     """
     records = []
-    unrestored: dict[str, str] = {}
+    unrestored = {} if unrestored is None else unrestored
     for experiment in experiments:
         planned = len(_planned_attempts(experiment))
         already_made = len(attempts)

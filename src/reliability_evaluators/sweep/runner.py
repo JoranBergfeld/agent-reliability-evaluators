@@ -145,6 +145,8 @@ def _sweep(
     _require_distinct_identities(planned)
     made: list[list[Attempt]] = []
     experiment_records: list[dict[str, Any]] = []
+    # The test resources an experiment did not restore. No later set runs an experiment on them either.
+    unrestored: dict[str, str] = {}
     for shared, plan in zip(sharing, planned):
         first = len(attempts)
         ask_confidence = "confidence" in shared.requirements
@@ -165,6 +167,7 @@ def _sweep(
                 lambda task, number, attempt_id: invoke_agent(task, attempt_id),
                 ask_confidence,
                 attempts,
+                unrestored,
             )
         )
         made.append(attempts[first:])
