@@ -349,6 +349,7 @@ def test_the_scorecard_records_what_each_experiment_declared_and_how_it_ran():
             },
             "write_capable": True,
             "authorized_resources": ["todo-list/add"],
+            "attempt_set": 1,
             "limits": {"attempt_timeout_seconds": None, "total_timeout_seconds": None, "max_retries": 0},
             "execution": {
                 "status": "completed",

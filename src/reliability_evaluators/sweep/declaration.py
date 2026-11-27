@@ -23,7 +23,23 @@ from ..evidence import (
 
 # Decides the task outcome of one Attempt and says what it was decided from. It should
 # look at independent evidence, such as the state of a service, not only at the response.
-TaskSuccessRule = Callable[[AttemptRequest, AgentResponse], TaskOutcome]
+# A rule that cannot decide during the sweep returns NO_TASK_OUTCOME_YET.
+TaskSuccessRule = Callable[[AttemptRequest, AgentResponse], "TaskOutcome | NoTaskOutcomeYet"]
+
+
+class NoTaskOutcomeYet:
+    """What a task-success rule returns when the task outcome is not known during the sweep.
+
+    The Attempt is then recorded without a task outcome, for example because it is
+    labelled afterwards. It is not a task failure. The outcome can be supplied later,
+    with `recalculate`.
+    """
+
+    def __repr__(self) -> str:
+        return "NO_TASK_OUTCOME_YET"
+
+
+NO_TASK_OUTCOME_YET = NoTaskOutcomeYet()
 
 # Returns the actions of one Attempt, in order, from the declared evidence source. An empty
 # sequence confirms that the Attempt took no action; None says that nothing was recorded.

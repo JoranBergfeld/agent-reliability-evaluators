@@ -13,4 +13,4 @@ Decided in [Choose scorecard evidence access and retention](https://github.com/J
 ## Consequences
 
 - The evidence behind a scorecard can expire or be deleted under the platform's lifecycle policy, and the scorecard does not change to say so. The scorecard and its counts are subject to the same policy.
-- Anything that needs earlier evidence depends on the customer supplying it from their platform. The [spec](https://github.com/JoranBergfeld/agent-reliability-evaluators/issues/25) assumes this for recalculating after a corrected task outcome.
+- Anything that needs earlier evidence depends on the customer supplying it from their platform. The [spec](https://github.com/JoranBergfeld/agent-reliability-evaluators/issues/25) assumes this for recalculating after a corrected task outcome, and [the recalculation](../sweep/late-and-corrected-outcomes.md) works that way: the customer supplies the earlier scorecard, the earlier scorecard is not revised, and a new one marks its results as superseded.

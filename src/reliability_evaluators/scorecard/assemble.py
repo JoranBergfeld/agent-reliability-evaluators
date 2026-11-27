@@ -5,10 +5,10 @@ from __future__ import annotations
 import json
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Sequence
+from typing import Any, Iterable, Mapping, Sequence
 
 from ..evaluators import RELIABILITY_METRICS, Fidelity, MetricResult, MetricState, ReliabilityMetric, ScoringPath
-from ..evidence import Attempt, ExperimentStatus
+from ..evidence import Attempt, EvidenceError, ExperimentStatus
 from .acceptance import AcceptanceCriterion, assess, criteria_by_metric
 
 SCHEMA_VERSION = 1
@@ -65,10 +65,84 @@ class ExecutionRecord:
             "attempts_not_made": self.not_made,
             "retries": self.retries,
         }
-        if self.experiment_id is not None:
-            # A later set runs the experiment again under an identity of its own.
-            return {**self.declaration, "limits": self.limits, "execution": execution}
-        return {"task_id": self.task_id, "attempt_set": self.attempt_set, "limits": self.limits, "execution": execution}
+        declared = self.declaration if self.experiment_id is not None else {"task_id": self.task_id}
+        return {**declared, "attempt_set": self.attempt_set, "limits": self.limits, "execution": execution}
+
+
+def read_execution_record(recorded: Any, *, of_experiment: bool) -> ExecutionRecord:
+    """The execution record that was written as `recorded`, for an experiment or for a Task given without one.
+
+    It is read strictly, as attempt-level evidence is: a record that this version would not
+    write back unchanged is refused. The limits are data here, and are not checked.
+    """
+    if not isinstance(recorded, Mapping):
+        raise EvidenceError(f"an execution record is an object. Got {recorded!r}")
+    named = recorded.get("experiment_id") if of_experiment else recorded.get("task_id")
+    name = f"the execution record of {'experiment' if of_experiment else 'Task'} {named!r}"
+    execution, limits = recorded.get("execution"), recorded.get("limits")
+    if not isinstance(execution, Mapping) or not isinstance(limits, Mapping):
+        raise EvidenceError(f"{name} is recorded without its limits or without its execution")
+    try:
+        status = ExperimentStatus(execution.get("status"))
+    except ValueError:
+        raise EvidenceError(f"{name} has the status {execution.get('status')!r}, which no execution ends with") from None
+    not_completed = execution.get("attempts_not_completed")
+    counts = [execution.get(key) for key in ("attempts_planned", "attempts_recorded", "attempts_not_made", "retries")]
+    if (
+        not isinstance(named, str)
+        or not isinstance(recorded.get("task_id"), str)
+        or type(recorded.get("attempt_set")) is not int
+        or not isinstance(not_completed, list)
+        or any(type(count) is not int for count in counts)
+    ):
+        raise EvidenceError(f"{name} is not what this version records for it")
+    record = ExecutionRecord(
+        task_id=recorded["task_id"],
+        experiment_id=named if of_experiment else None,
+        declaration=(
+            {key: value for key, value in recorded.items() if key not in ("attempt_set", "limits", "execution")}
+            if of_experiment
+            else {}
+        ),
+        attempt_set=recorded["attempt_set"],
+        limits=dict(limits),
+        status=status,
+        reason=execution.get("reason"),
+        planned=counts[0],
+        recorded=counts[1],
+        not_completed=tuple(not_completed),
+        not_made=counts[2],
+        retries=counts[3],
+    )
+    if json.loads(to_json(record.to_dict())) != json.loads(to_json(dict(recorded))):
+        raise EvidenceError(f"{name} is not what this version records for it")
+    return record
+
+
+@dataclass(frozen=True)
+class CutShort:
+    """The experiments, and the Tasks given without one, whose Attempts for a metric were cut short.
+
+    They were cut short when not all the Attempts planned under the conditions the metric is
+    calculated from were made, or not one of them completed.
+    """
+
+    experiment_ids: tuple[str, ...] = ()
+    task_ids: tuple[str, ...] = ()
+
+    @classmethod
+    def of(cls, records: Iterable[ExecutionRecord]) -> CutShort:
+        records = tuple(records)
+        return cls(
+            tuple(record.experiment_id for record in records if record.experiment_id is not None),
+            tuple(record.task_id for record in records if record.experiment_id is None),
+        )
+
+    def __bool__(self) -> bool:
+        return bool(self.experiment_ids or self.task_ids)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"experiment_ids": list(self.experiment_ids), "task_ids": list(self.task_ids)}
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -81,10 +155,8 @@ class ScoredMetric:
     # Identities of the Attempts the Evaluator was given, whatever became of each. The value
     # may rest on fewer: `result.attempt_ids` are the ones it rests on.
     attempts_used: tuple[str, ...] = ()
-    # The experiments and Tasks whose Attempts for this Evaluator were cut short: not all
-    # that were planned under the conditions it is calculated from were made, or not one
-    # of them completed.
-    cut_short: tuple[ExecutionRecord, ...] = ()
+    # Where the Attempts for this Evaluator were cut short.
+    cut_short: CutShort = CutShort()
 
 
 def build_scorecard(
@@ -169,10 +241,7 @@ def _execution_failure(scored: ScoredMetric) -> dict[str, Any] | None:
             "the Attempts that supply this metric's evidence were cut short, and what was collected "
             f"does not permit a calculation: {scored.result.reason}"
         ),
-        "experiment_ids": [
-            execution.experiment_id for execution in scored.cut_short if execution.experiment_id is not None
-        ],
-        "task_ids": [execution.task_id for execution in scored.cut_short if execution.experiment_id is None],
+        **scored.cut_short.to_dict(),
     }
 
 
@@ -209,6 +278,7 @@ def _metric_entry(
     entry = {
         **scored.result.to_dict(),
         "execution_failure": execution_failure,
+        "cut_short": scored.cut_short.to_dict(),
         "scoring_path": scored.scoring_path.value,
         "fidelity": scored.fidelity.value,
     }

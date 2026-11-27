@@ -100,7 +100,7 @@ The sets are made one after another: every Task and experiment for the first set
 
 The first set is identified exactly as in a sweep with one set. An Attempt's `task_id` is the Task either way.
 
-A Task given without an experiment that is attempted again has an entry of its own under `tasks_without_experiment`, with its `attempt_set`. An experiment that is run again is a run of its own. It has its own entry under `experiments` in the scorecard, and your controls are invoked around each of its Attempts with the experiment identity `<experiment>/set-2`. A test resource that an experiment did not restore stops every later experiment that may change it, in the same set and in later ones: an experiment is not run again on state its first run left behind.
+A Task given without an experiment that is attempted again has an entry of its own under `tasks_without_experiment`, with its `attempt_set`. An experiment that is run again is a run of its own. It has its own entry under `experiments` in the scorecard, with its `attempt_set` too, and your controls are invoked around each of its Attempts with the experiment identity `<experiment>/set-2`. A test resource that an experiment did not restore stops every later experiment that may change it, in the same set and in later ones: an experiment is not run again on state its first run left behind.
 
 Two recordings are the same when they have the same `evidence_source` and the same `record` callable. A different callable is a different requirement, also when it happens to read the same data.
 
@@ -145,7 +145,7 @@ An Evaluator that cannot calculate a value from its Attempts reports an unavaila
 
 A sweep that is cancelled makes no further Attempts in any set. The [execution limits](execution-limits.md) of a Task apply to each set anew: a Task that is attempted again has its time limit and its retries again.
 
-A customer callable that breaks its contract still stops the whole sweep: a task-success rule that returns no sourced task outcome, a violation assessor that returns no violation assessments, or an action recorder that returns something other than action events. That is a mistake in the declaration and not a failed Attempt.
+A customer callable that breaks its contract still stops the whole sweep: a task-success rule that returns neither a sourced task outcome nor `NO_TASK_OUTCOME_YET`, a violation assessor that returns no violation assessments, or an action recorder that returns something other than action events. That is a mistake in the declaration and not a failed Attempt.
 
 ## What is not there yet
 

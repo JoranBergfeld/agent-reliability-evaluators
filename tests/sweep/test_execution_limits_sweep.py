@@ -332,6 +332,8 @@ def test_a_task_that_reaches_its_total_time_limit_keeps_the_evidence_it_collecte
     outcome_consistency = metric(scorecard)
     assert outcome_consistency["state"] == "available"
     assert outcome_consistency["value"] == pytest.approx(5 / 9, abs=1e-12)
+    # The value stands, and the metric says that the Attempts it rests on were cut short at "close".
+    assert outcome_consistency["cut_short"] == {"experiment_ids": [], "task_ids": ["close"]}
 
 
 def recording(evidence_source):
@@ -467,6 +469,7 @@ def test_a_valid_metric_is_preserved_when_the_attempts_of_another_task_fail():
     assert outcome_consistency["state"] == "available"
     assert outcome_consistency["value"] == pytest.approx(0.36, abs=1e-12)
     assert outcome_consistency["execution_failure"] is None
+    assert outcome_consistency["cut_short"] == {"experiment_ids": [], "task_ids": ["archive"]}
     assert outcome_consistency["counts"]["tasks"]["excluded"] == [
         {"reason": "fewer than two Attempts with a task outcome", "count": 1, "ids": ["archive"]},
     ]

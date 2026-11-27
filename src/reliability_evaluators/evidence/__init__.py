@@ -1,6 +1,9 @@
 """Evidence model: the Attempt record, what it records about its experiment, its validation,
 and the grouping Evaluators are called with.
 
+Also task outcomes supplied or corrected after the run, and the reading of evidence that a
+customer supplies again.
+
 Pure: standard library only, no I/O. The canonical metric definitions depend on it.
 """
 
@@ -17,6 +20,7 @@ from .attempt import (
     ViolationAssessment,
 )
 from .confidence import ConfidenceRating, ConfidenceUnavailable, read_confidence_response
+from .corrections import OutcomeCorrection, apply_outcome_corrections
 from .errors import EvidenceError
 from .experiment import (
     Condition,
@@ -30,6 +34,7 @@ from .experiment import (
     json_data,
 )
 from .grouping import TaskEvidence, group_by_task, require_unambiguous
+from .reading import read_attempts
 
 __all__ = [
     "ActionEvent",
@@ -47,6 +52,7 @@ __all__ = [
     "LifecycleStep",
     "ObservedCondition",
     "OperationalConstraint",
+    "OutcomeCorrection",
     "ResourceMeasurement",
     "ResourceType",
     "SeverityLevel",
@@ -56,8 +62,10 @@ __all__ = [
     "TaskOutcome",
     "VariationKind",
     "ViolationAssessment",
+    "apply_outcome_corrections",
     "group_by_task",
     "json_data",
+    "read_attempts",
     "read_confidence_response",
     "require_unambiguous",
 ]

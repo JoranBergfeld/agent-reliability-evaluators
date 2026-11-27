@@ -165,8 +165,8 @@ A third status, `reporting_failed`, never appears in a scorecard. It is the stat
 
 An experiment is what you declared as an `Experiment`. A Task given without one is not an experiment, and the scorecard does not list it as one. Both get the same record of their execution limits and of what became of their planned Attempts:
 
-- `experiments` has one entry per declared experiment: [what it declared](controlled-experiments.md#what-the-scorecard-records), then `limits` and `execution`.
-- `tasks_without_experiment` has one entry per Task given without an experiment: `task_id` and `attempt_set`, then `limits` and `execution`.
+- `experiments` has one entry per declared experiment: [what it declared](controlled-experiments.md#what-the-scorecard-records), then `attempt_set`, `limits` and `execution`.
+- `tasks_without_experiment` has one entry per Task given without an experiment: `task_id`, then `attempt_set`, `limits` and `execution`.
 
 `attempt_set` is 1 unless [Evaluators need separate Attempts](several-evaluators.md#when-separate-attempts-are-made). Then every Task and experiment is attempted again in a later set, with an entry of its own: a Task under the same `task_id` and the next `attempt_set`, an experiment under the identity `<experiment>/set-2`. Each set is made under the Task's limits anew.
 
@@ -223,6 +223,14 @@ A metric has no result when its Evaluator cannot calculate a value and the Attem
 
 `experiment_ids` and `task_ids` name the experiments, and the Tasks given without one, whose Attempts were cut short.
 
+Every selected metric also says where its Attempts were cut short, whether or not it has a result:
+
+```json
+"cut_short": {"experiment_ids": [], "task_ids": ["close"]}
+```
+
+Both lists are empty when none were. A metric that is `available` with a `cut_short` that is not empty has a value that rests on less than was planned.
+
 | What you see on a selected metric | What it means | What to do |
 | --- | --- | --- |
 | `state` is `available` | A value was calculated. In a partial scorecard, read its `counts` to see what it rests on. | |
@@ -230,6 +238,8 @@ A metric has no result when its Evaluator cannot calculate a value and the Attem
 | `state` is `null` and `execution_failure` is set | The Attempts were cut short. Nothing was measured. | Investigate the failure. |
 
 `execution_failure` is `null` on every metric that has a result. The same failure is listed in `missing` with the kind `metric_result`.
+
+A [recalculation](late-and-corrected-outcomes.md#a-partial-scorecard-an-execution-failure-and-retries) with task outcomes supplied or corrected afterwards keeps all of this as it was: the scorecard stays partial, and a metric without a result still has none.
 
 An acceptance criterion on a metric without a result is not assessed, and the execution failure is its reason. A metric that kept its result in a partial scorecard is assessed like any other. To require a minimum amount of evidence, put `minimum_counts` in the criterion: see [acceptance criteria](../acceptance_criteria/readme.md).
 

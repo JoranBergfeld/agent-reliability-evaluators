@@ -168,6 +168,7 @@ def test_there_is_no_combined_score_and_no_built_in_threshold():
         "reason",
         "definition",
         "execution_failure",
+        "cut_short",
         "scoring_path",
         "fidelity",
         "counts",
