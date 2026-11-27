@@ -80,13 +80,13 @@ class Condition:
         )
 
     def to_dict(self) -> dict[str, Any]:
-        recorded = {
+        # The kind is recorded for a variation that declares one. The baseline has none.
+        return {
             "condition_id": self.condition_id,
+            **({} if self.kind is None else {"kind": self.kind.value}),
             "description": self.description,
             "parameters": self.parameters,
         }
-        # Recorded for a variation that declares one. The baseline has no kind.
-        return recorded if self.kind is None else {**recorded, "kind": self.kind.value}
 
 
 @dataclass(frozen=True, kw_only=True)

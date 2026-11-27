@@ -58,6 +58,11 @@ def run_sweep(
     record no starting-state policy and no condition. The sweep never assumes that the
     agent target resets conversation or external state.
 
+    A metric that compares one kind of variation with the baseline, such as fault
+    robustness, is scored from the Attempts of the experiments whose variation declares
+    that kind, under both conditions. At least one experiment has to declare it. Every
+    other metric is scored from Attempts under the baseline only.
+
     `action_evidence` declares where the actions of every Attempt are recorded from and
     what action type each tool name is. The trajectory metrics need it, and every metric
     that needs it is scored from the same Attempts.

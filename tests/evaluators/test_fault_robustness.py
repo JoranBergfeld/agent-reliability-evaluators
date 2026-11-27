@@ -306,7 +306,9 @@ def test_a_task_in_which_the_fault_never_occurred_is_not_evidence_of_tolerance()
     # exposed: baseline 2/2 = 1, fault 0/2 = 0. unexposed: baseline 2/2, and both Attempts intended for
     # the fault succeeded, but the fault occurred in neither. Only "exposed" is compared: 0 / 1 = 0.
     # Counting "unexposed" as having survived would give ((0 + 1) / 2) / 1 = 0.5.
-    unexposed = [replace(attempt, observed_condition=NOT_OBSERVED) for attempt in attempts("unexposed", TOOL_FAULT, [1, 1])]
+    unexposed = [
+        replace(attempt, observed_condition=NOT_OBSERVED) for attempt in attempts("unexposed", TOOL_FAULT, [1, 1])
+    ]
     evidence = (
         attempts("exposed", BASELINE, [1, 1])
         + attempts("exposed", TOOL_FAULT, [0, 0])
@@ -480,7 +482,80 @@ def test_a_baseline_attempt_is_not_recorded_under_a_kind_of_variation():
 
 
 def test_two_attempts_with_the_same_identity_are_rejected_rather_than_matched_arbitrarily():
-    evidence = attempts("close", BASELINE, [1, 1]) + attempts("close", TOOL_FAULT, [1]) + attempts("close", TOOL_FAULT, [0])
+    under_fault_twice = attempts("close", TOOL_FAULT, [1]) + attempts("close", TOOL_FAULT, [0])
 
     with pytest.raises(EvidenceError, match="close/update-fails/attempt-1"):
-        fault_robustness.evaluate(group_by_task(evidence))
+        fault_robustness.evaluate(group_by_task(attempts("close", BASELINE, [1, 1]) + under_fault_twice))
+
+
+def test_the_worked_example_of_the_documentation():
+    # close: baseline 5/5 = 1. Five Attempts under the fault: 2 successes and 2 failures in which the
+    #   fault occurred, and 1 success in which it did not, which is left out: 2/4 = 0.5.
+    # archive: baseline 1/2 = 0.5, fault 0/2 = 0.
+    # rename: baseline 2/2. The fault occurred in neither of its two Attempts, so the Task is left out.
+    # Baseline accuracy (1 + 0.5) / 2 = 0.75. Under the fault (0.5 + 0) / 2 = 0.25. 0.25 / 0.75 = 1/3.
+    close_under_fault = attempts("close", TOOL_FAULT, [1, 1, 0, 0, 1])
+    close_under_fault[4] = replace(close_under_fault[4], observed_condition=NOT_OBSERVED)
+    evidence = (
+        attempts("close", BASELINE, [1, 1, 1, 1, 1])
+        + close_under_fault
+        + attempts("archive", BASELINE, [1, 0])
+        + attempts("archive", TOOL_FAULT, [0, 0])
+        + attempts("rename", BASELINE, [1, 1])
+        + attempts("rename", TOOL_FAULT, [1, 1], observed_condition=NOT_OBSERVED)
+    )
+
+    result = fault_robustness.evaluate(group_by_task(evidence))
+
+    assert result.value == pytest.approx(1 / 3, abs=1e-12)
+    assert result.details["baseline"]["accuracy"] == 0.75
+    assert result.details["fault"]["accuracy"] == 0.25
+    assert result.counts["tasks"].to_dict() == {
+        "total": 3,
+        "valid": 2,
+        "missing": [],
+        "excluded": [{"reason": "no valid Attempt under the fault variation", "count": 1, "ids": ["rename"]}],
+    }
+    assert result.counts["baseline_attempts"].to_dict() == {
+        "total": 9,
+        "valid": 7,
+        "missing": [],
+        "excluded": [
+            {
+                "reason": "its Task has no valid Attempt under the fault variation",
+                "count": 2,
+                "ids": ["rename/baseline/attempt-1", "rename/baseline/attempt-2"],
+            }
+        ],
+    }
+    assert result.counts["fault_attempts"].to_dict() == {
+        "total": 9,
+        "valid": 6,
+        "missing": [],
+        "excluded": [
+            {
+                "reason": CONDITION_DIFFERS,
+                "count": 3,
+                "ids": [
+                    "close/update-fails/attempt-5",
+                    "rename/update-fails/attempt-1",
+                    "rename/update-fails/attempt-2",
+                ],
+            }
+        ],
+    }
+
+
+def test_a_value_of_1_does_not_mean_that_every_task_survived_the_fault():
+    # weak: baseline 2/4 = 0.5, fault 4/4 = 1. strong: baseline 4/4 = 1, fault 2/4 = 0.5.
+    # Both accuracies are (0.5 + 1) / 2 = 0.75, so the value is 0.75 / 0.75 = 1,
+    # although "strong" lost half of its successes under the fault.
+    result = evaluate({"weak": ([1, 1, 0, 0], [1, 1, 1, 1]), "strong": ([1, 1, 1, 1], [1, 1, 0, 0])})
+
+    assert result.value == 1
+    assert result.details["capped"] is False
+    assert result.details["per_task"][1] == {
+        "task_id": "strong",
+        "baseline": {"attempts": 4, "successes": 4, "success_frequency": 1.0},
+        "fault": {"attempts": 4, "successes": 2, "success_frequency": 0.5},
+    }

@@ -132,7 +132,10 @@ def test_a_sweep_scores_fault_robustness_in_the_scorecard():
         ],
     }
     assert fault_robustness["evidence"] == {
-        "attempt_ids": [f"add-item/{condition}/attempt-{number}" for condition in ("baseline", "add-fails") for number in range(1, 5)]
+        "attempt_ids": [
+            *(f"add-item/baseline/attempt-{number}" for number in range(1, 5)),
+            *(f"add-item/add-fails/attempt-{number}" for number in range(1, 5)),
+        ]
     }
     assert json.loads(to_json(scorecard)) == scorecard
 
@@ -320,7 +323,13 @@ def test_a_criterion_can_require_a_number_of_valid_attempts_under_the_fault():
     assert fault_robustness["acceptance"]["status"] == "not_met"
     assert fault_robustness["acceptance"]["checks"] == [
         {"subject": "value", "comparison": "at_least", "threshold": 0.9, "observed": 1.0, "met": True},
-        {"subject": "counts.fault_attempts.valid", "comparison": "at_least", "threshold": 3, "observed": 2, "met": False},
+        {
+            "subject": "counts.fault_attempts.valid",
+            "comparison": "at_least",
+            "threshold": 3,
+            "observed": 2,
+            "met": False,
+        },
     ]
 
 
@@ -412,8 +421,9 @@ def test_the_scorecard_records_the_kind_of_the_variation():
 
 def test_the_baseline_of_an_experiment_declares_no_kind_of_variation():
     refusing = Condition(condition_id="baseline", kind="fault", description="Every request is refused.")
+    problem = "the baseline of experiment 'add-item' is not a variation, so it declares no kind"
 
-    with pytest.raises(ValueError, match="the baseline of experiment 'add-item' is not a variation, so it declares no kind"):
+    with pytest.raises(ValueError, match=problem):
         Fixture().experiment(attempts=1, baseline=refusing)
 
 

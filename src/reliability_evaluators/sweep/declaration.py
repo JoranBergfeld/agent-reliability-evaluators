@@ -171,7 +171,8 @@ class Experiment:
     # "fresh" or "continuing". See StartingStatePolicy.
     starting_state: StartingStatePolicy
     baseline: Condition
-    # The one intended difference from the baseline. None: the baseline only.
+    # The one intended difference from the baseline, with the kind that says what it changes.
+    # None: the baseline only.
     variation: Condition | None
     controls: CustomerControls
     # Whether the agent or the controls can change anything outside the conversation.

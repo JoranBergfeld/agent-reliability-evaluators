@@ -19,6 +19,7 @@ NOT_COMPLETED = "execution status is not completed"
 CONDITION_DIFFERS = "the observed condition differs from the intended condition"
 NOT_VERIFIED = "no observed condition shows that the intended condition occurred"
 NO_OUTCOME = "no task outcome recorded"
+NEITHER_CONDITION = "no valid Attempt under either condition"
 # In the order they are reported in.
 EXCLUSIONS = (NOT_COMPLETED, CONDITION_DIFFERS, NOT_VERIFIED)
 
@@ -180,9 +181,9 @@ def _tasks_not_compared(
         elif task.task_id in in_baseline:
             reason = f"no valid Attempt {variation}"
         else:
-            reason = "no valid Attempt under either condition"
+            reason = NEITHER_CONDITION
         lacking.setdefault(reason, []).append(task.task_id)
-    reasons = (f"no valid Attempt {baseline}", f"no valid Attempt {variation}", "no valid Attempt under either condition")
+    reasons = (f"no valid Attempt {baseline}", f"no valid Attempt {variation}", NEITHER_CONDITION)
     return _counted_in_order(lacking, reasons)
 
 
