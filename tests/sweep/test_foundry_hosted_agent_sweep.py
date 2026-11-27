@@ -6,6 +6,7 @@ the fixture's to-do service, also on this machine. Every assertion is on the
 machine-readable scorecard. Expected values are calculated by hand.
 """
 
+import json
 import time
 
 import pytest
@@ -18,7 +19,9 @@ from reliability_evaluators.agent_target.foundry_hosted import (
     UnsupportedAgent,
     native_tool_calls,
 )
-from reliability_evaluators.sweep import ActionEvidenceDeclaration, run_sweep
+from reliability_evaluators.evidence import OutcomeCorrection, TaskOutcome
+from reliability_evaluators.scorecard import to_json
+from reliability_evaluators.sweep import ActionEvidenceDeclaration, ExecutionLimits, recalculate, run_sweep
 from tests.fake_foundry_hosted import FakeHostedAgent, FakeTodoHostedAgent, completed_response, fake_foundry_project
 from tests.todo_experiment import ALL_TOOLS_WORK, TodoSetup, update_fails_on
 
@@ -385,27 +388,36 @@ def test_a_hosted_agent_is_not_asked_for_a_confidence_rating(project, setup):
     assert len(project.agents["todo-hosted"].invocations) == 1
 
 
-def test_an_agent_that_does_not_answer_within_the_time_limit_is_an_execution_failure(setup):
+@pytest.mark.parametrize(
+    ("declared_for_the_attempt", "set_on_the_target"),
+    [(0.2, None), (None, 0.2), (0.2, 30.0)],
+    ids=["the Attempt's declared limit", "the target's own limit", "the declared limit before the target's"],
+)
+def test_an_agent_that_does_not_answer_within_the_time_limit_is_timed_out(
+    setup, declared_for_the_attempt, set_on_the_target
+):
     def answers_after_a_second(request):
         time.sleep(1.0)
         return 200, completed_response("todo-hosted", 1, [], "Done.")
 
+    limits = ExecutionLimits(attempt_timeout_seconds=declared_for_the_attempt)
+    own_limit = {} if set_on_the_target is None else {"timeout_seconds": set_on_the_target}
     with fake_foundry_project({"todo-hosted": FakeHostedAgent(answers_after_a_second)}) as project:
         target = FoundryHostedAgentTarget(
             project_endpoint=project.endpoint,
             agent_name="todo-hosted",
             credential=lambda: project.token,
             compose_input=setup.instruction,
-            timeout_seconds=0.2,
+            **own_limit,
         )
         (attempt,) = run_sweep(
-            experiments=[setup.experiment("todo", 1, ALL_TOOLS_WORK, AGENT)],
+            experiments=[setup.experiment("todo", 1, ALL_TOOLS_WORK, AGENT, limits)],
             agent_target=target,
             metrics=["outcome_consistency"],
         )["attempts"]
 
-    assert attempt["execution_status"] == "failed"
-    assert attempt["execution_error"] == "InvocationFailed: the hosted agent did not answer within 0.2 seconds"
+    assert attempt["execution_status"] == "timed_out"
+    assert attempt["execution_error"] == "TimeoutError: the hosted agent did not answer within 0.2 seconds"
     assert attempt["task_outcome"] is None
 
 
@@ -488,3 +500,26 @@ def test_the_configuration_of_an_unsupported_agent_is_refused_before_any_attempt
     with fake_foundry_project({"todo-hosted": agent}) as project:
         with pytest.raises(UnsupportedAgent, match="serves the protocols \\['invocations'\\] and not the Responses"):
             hosted_agent(project, setup).agent_configuration()
+
+
+def test_what_the_platform_returned_is_kept_when_the_scorecard_is_recalculated(project, setup):
+    # As run: todo p = 3/3 gives 1 and todo-flaky-update p = 3/5 gives 0.04, mean 0.52.
+    # With the second Attempt of todo corrected to a failure: p = 2/3, (2 * 2/3 - 1)^2 = 1/9, mean (1/9 + 0.04) / 2.
+    earlier = json.loads(to_json(flaky_update_sweep(project, setup)))
+
+    recalculated = recalculate(
+        earlier_scorecard=earlier,
+        outcome_corrections=[
+            OutcomeCorrection(
+                attempt_id="todo/all-tools-work/attempt-2",
+                task_outcome=TaskOutcome(success=False, source="manual review of the service events"),
+                provenance="synthetic correction",
+            )
+        ],
+    )
+
+    assert metric(recalculated)["value"] == pytest.approx((1 / 9 + 0.04) / 2, abs=1e-12)
+    assert [attempt["invocation"] for attempt in recalculated["attempts"]] == [
+        attempt["invocation"] for attempt in earlier["attempts"]
+    ]
+    assert recalculated["attempts"][1]["invocation"]["response_id"] == "caresp_synthetic2"

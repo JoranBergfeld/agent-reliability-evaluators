@@ -7,9 +7,11 @@ machine and the deployed one.
 
 from __future__ import annotations
 
+import re
+
 from live_fixture import TASK_PROMPT, TodoService, strict_task_outcome, task_prompt
 from reliability_evaluators.evidence import TaskOutcome
-from reliability_evaluators.sweep import Condition, Experiment, ObservedCondition, Task
+from reliability_evaluators.sweep import Condition, ExecutionLimits, Experiment, ObservedCondition, Task
 
 EVENTS_SOURCE = "events of the to-do service"
 ALL_TOOLS_WORK = Condition(condition_id="all-tools-work", description="Every tool of the to-do service works.")
@@ -75,14 +77,24 @@ class TodoSetup:
     @staticmethod
     def _failing_tool(context) -> str | None:
         parameters = context.condition.parameters
-        number = int(context.attempt_id.rsplit("-", 1)[1])
+        number = int(re.search(r"/attempt-(\d+)", context.attempt_id).group(1))
         return parameters["failing_tool"] if number in parameters.get("in_attempts", ()) else None
 
-    def experiment(self, task_id: str, attempts: int, baseline: Condition, agent_configuration: dict) -> Experiment:
+    def experiment(
+        self,
+        task_id: str,
+        attempts: int,
+        baseline: Condition,
+        agent_configuration: dict,
+        limits: ExecutionLimits = ExecutionLimits(),
+    ) -> Experiment:
         """The fixture's Task attempted under one condition, from fresh state every time."""
+        task = Task(
+            task_id=task_id, prompt=TASK_PROMPT, success_rule=self.strict_success, attempts=attempts, limits=limits
+        )
         return Experiment(
             experiment_id=task_id,
-            task=Task(task_id=task_id, prompt=TASK_PROMPT, success_rule=self.strict_success, attempts=attempts),
+            task=task,
             agent_configuration=agent_configuration,
             starting_state="fresh",
             baseline=baseline,

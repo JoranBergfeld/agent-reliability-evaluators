@@ -84,7 +84,8 @@ class FoundryHostedAgentTarget:
     `compose_input` gives what the agent is sent for an Attempt. Without it the agent is
     sent the Task's prompt as it is.
 
-    `timeout_seconds` is how long the target waits for the agent's answer to one request.
+    `timeout_seconds` is how long the target waits for the agent's answer to one request,
+    unless a time limit is declared for the Attempt: the target then stops at that limit.
     `clock` gives seconds and never runs backwards. The target times its own request on it.
 
     The target does not ask the agent for a confidence rating: see `isolated_follow_up`.
@@ -127,10 +128,10 @@ class FoundryHostedAgentTarget:
         }
         token = self._credential()
         self._require_supported_agent(token)
+        # The time limit the customer declared for the Attempt comes before the target's own.
+        limit = self._timeout_seconds if request.timeout_seconds is None else request.timeout_seconds
         started = self._clock()
-        answer = _send(
-            "POST", f"{self._agent_url}/endpoint/protocols/openai/responses", token, self._timeout_seconds, body
-        )
+        answer = _send("POST", f"{self._agent_url}/endpoint/protocols/openai/responses", token, limit, body)
         elapsed = self._clock() - started
         if answer.status != 200:
             raise InvocationFailed(
@@ -153,7 +154,6 @@ class FoundryHostedAgentTarget:
             resource_measurements=_resource_measurements(elapsed, invocation["tool_calls"]),
             invocation=invocation,
         )
-
 
     def agent_configuration(self) -> dict[str, Any]:
         """What identifies the agent, as the project reports it, to declare as an experiment's agent configuration.
@@ -180,14 +180,15 @@ class FoundryHostedAgentTarget:
         Raises otherwise. The agent is looked up once. An agent that is not supported is never sent a request.
         """
         if self._agent is None:
-            answer = _send("GET", self._agent_url, token, self._timeout_seconds)
+            answer = _send("GET", self._agent_url, token, self._timeout_seconds, awaited="the Foundry project")
             if answer.status != 200 or not isinstance(answer.json, dict):
                 raise InvocationFailed(
                     f"agent {self._agent_name!r} could not be looked up in the Foundry project: "
                     f"HTTP {answer.status}: {answer.text[:_SHOWN_BODY]}"
                 )
             self._agent = answer.json
-        kind = ((self._agent.get("versions") or {}).get("latest") or {}).get("definition", {}).get("kind")
+        latest = (self._agent.get("versions") or {}).get("latest") or {}
+        kind = (latest.get("definition") or {}).get("kind")
         if kind != "hosted":
             raise UnsupportedAgent(
                 f"agent {self._agent_name!r} is of kind {kind!r} and not a hosted agent, so it was not invoked"
@@ -219,7 +220,14 @@ class _Answer:
             return None
 
 
-def _send(method: str, url: str, token: str, timeout_seconds: float, body: dict[str, Any] | None = None) -> _Answer:
+def _send(
+    method: str,
+    url: str,
+    token: str,
+    timeout_seconds: float,
+    body: dict[str, Any] | None = None,
+    awaited: str = "the hosted agent",
+) -> _Answer:
     """Send one request to the project. It is sent once: a request that may have reached the agent is not repeated."""
     request = urllib.request.Request(
         f"{url}?api-version={API_VERSION}",
@@ -236,7 +244,8 @@ def _send(method: str, url: str, token: str, timeout_seconds: float, body: dict[
         # URLError is an OSError. No answer came back, so nothing is known about what the agent did.
         reason = getattr(error, "reason", error)
         if isinstance(reason, TimeoutError):
-            raise InvocationFailed(f"the hosted agent did not answer within {timeout_seconds:g} seconds") from error
+            # The sweep records a TimeoutError as an Attempt that timed out.
+            raise TimeoutError(f"{awaited} did not answer within {timeout_seconds:g} seconds") from error
         raise InvocationFailed(f"the Foundry project could not be reached: {reason}") from error
 
 
@@ -330,10 +339,9 @@ def _tool_calls(response: dict[str, Any]) -> list[dict[str, Any]] | None:
     None when the response has no list of output items: the calls were then not exposed,
     which is not the same as no call.
     """
-    output = response.get("output")
-    if not isinstance(output, list):
+    items = _output_items(response)
+    if items is None:
         return None
-    items = [item for item in output if isinstance(item, dict)]
     returned = {
         item.get("call_id"): item.get("output") for item in items if item.get("type") == "function_call_output"
     }
@@ -359,12 +367,18 @@ def _decoded(arguments: Any) -> Any:
         return arguments
 
 
+def _output_items(response: dict[str, Any]) -> list[dict[str, Any]] | None:
+    """The output items of a response, in order, or None when it has no list of them."""
+    output = response.get("output")
+    return [item for item in output if isinstance(item, dict)] if isinstance(output, list) else None
+
+
 def _output_text(response: dict[str, Any]) -> str:
     """The text of the agent's messages, in order."""
     return "".join(
-        part.get("text", "")
-        for item in response.get("output", [])
-        if item.get("type") == "message"
-        for part in item.get("content", [])
-        if part.get("type") == "output_text"
+        part.get("text") or ""
+        for item in _output_items(response) or []
+        if item.get("type") == "message" and isinstance(item.get("content"), list)
+        for part in item["content"]
+        if isinstance(part, dict) and part.get("type") == "output_text"
     )
