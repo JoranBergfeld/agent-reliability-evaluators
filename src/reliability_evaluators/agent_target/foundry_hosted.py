@@ -81,8 +81,11 @@ class FoundryHostedAgentTarget:
     name of the hosted agent in it. `credential` returns the bearer token to call the project
     with, for the resource `https://ai.azure.com`. Without it the token comes from the Azure CLI.
 
-    `compose_input` gives what the agent is sent for an Attempt. Without it the agent is
-    sent the Task's prompt as it is.
+    `compose_input` gives what the agent is sent for an Attempt instead of its prompt, for an
+    agent that has to be told which test data the Attempt works on. Without it the agent is
+    sent the Attempt's prompt exactly as it is. A composed input is recorded on the Attempt.
+    Under a prompt variation the prompt is the exact text of a prompt variant, so whatever
+    `compose_input` adds to it has to be the same under the baseline and every variant.
 
     `timeout_seconds` is how long the target waits for the agent's answer to one request,
     unless a time limit is declared for the Attempt: the target then stops at that limit.
@@ -115,13 +118,15 @@ class FoundryHostedAgentTarget:
         # What the project said about the agent, once it has been looked up.
         self._agent: dict[str, Any] | None = None
         self._credential = credential or AzureCliCredential()
-        self._compose_input = compose_input or (lambda request: request.prompt)
+        self._compose_input = compose_input
         self._timeout_seconds = timeout_seconds
         self._clock = clock
 
     def invoke(self, request: AttemptRequest) -> AgentResponse:
+        # Without a composed input the agent is sent the Attempt's prompt exactly as it is.
+        composed = None if self._compose_input is None else self._compose_input(request)
         body = {
-            "input": self._compose_input(request),
+            "input": request.prompt if composed is None else composed,
             "stream": False,
             # Identifies the Attempt on the platform. The response returns it.
             "metadata": {"attempt_id": request.attempt_id, "task_id": request.task_id},
@@ -136,16 +141,16 @@ class FoundryHostedAgentTarget:
         if answer.status != 200:
             raise InvocationFailed(
                 f"the hosted agent endpoint answered HTTP {answer.status}: {answer.text[:_SHOWN_BODY]}",
-                invocation=_invocation(answer, {}),
+                invocation=_invocation(answer, {}, composed),
             )
         response = answer.json
         if not isinstance(response, dict):
             raise InvocationFailed(
                 "the hosted agent endpoint answered HTTP 200 with a body that is not a response: "
                 f"{answer.text[:_SHOWN_BODY]}",
-                invocation=_invocation(answer, {}),
+                invocation=_invocation(answer, {}, composed),
             )
-        invocation = _invocation(answer, response)
+        invocation = _invocation(answer, response, composed)
         failure = _failure_of(response)
         if failure is not None:
             raise InvocationFailed(failure, invocation=invocation)
@@ -254,16 +259,18 @@ def _answer(status: int, answered: Any) -> _Answer:
     return _Answer(status, answered.read().decode(errors="replace"), request_ids)
 
 
-def _invocation(answer: _Answer, response: dict[str, Any]) -> dict[str, Any]:
+def _invocation(answer: _Answer, response: dict[str, Any], composed_input: str | None) -> dict[str, Any]:
     """What the platform returned about one invocation, as it returned it.
 
     `response` is the response object of the answer, or empty when the answer has none.
+    `composed_input` is what the agent was sent when that was not the Attempt's prompt as it is.
     """
     usage = response.get("usage")
     return {
         "agent_target": AGENT_TARGET,
         "protocol": RESPONSES_PROTOCOL,
         "api_version": API_VERSION,
+        "composed_input": composed_input,
         "http_status": answer.status,
         "request_ids": answer.request_ids,
         "agent": response.get("agent_reference"),

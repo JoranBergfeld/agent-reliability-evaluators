@@ -21,7 +21,7 @@ from reliability_evaluators.agent_target.foundry_hosted import (
 )
 from reliability_evaluators.evidence import OutcomeCorrection, TaskOutcome
 from reliability_evaluators.scorecard import render_report, to_json
-from reliability_evaluators.sweep import ActionEvidenceDeclaration, ExecutionLimits, recalculate, run_sweep
+from reliability_evaluators.sweep import ActionEvidenceDeclaration, ExecutionLimits, Task, recalculate, run_sweep
 from tests.fake_foundry_hosted import FakeHostedAgent, FakeTodoHostedAgent, completed_response, fake_foundry_project
 from tests.report_reader import assert_faithful_rendering
 from tests.todo_experiment import ALL_TOOLS_WORK, TodoSetup, update_fails_on
@@ -536,3 +536,35 @@ def test_the_report_shows_what_the_platform_returned_for_each_attempt(project, s
 
     assert report.value("/attempts/0/invocation/response_id") == "caresp_synthetic1"
     assert report.value("/attempts/4/invocation/tool_calls/4/name") == "update_todo"
+
+
+def test_the_agent_is_sent_the_prompt_exactly_as_it_is_unless_the_customer_composes_the_input(project, setup):
+    def never_decided(attempt, response):
+        return TaskOutcome(success=False, source="not decided in this test")
+
+    agent = project.agents["todo-hosted"]
+    agent.respond = lambda request: (200, completed_response("todo-hosted", 1, [], "Done."))
+    target = FoundryHostedAgentTarget(
+        project_endpoint=project.endpoint, agent_name="todo-hosted", credential=lambda: project.token
+    )
+
+    (attempt,) = run_sweep(
+        tasks=[Task(task_id="close", prompt="Close the item.  ", success_rule=never_decided, attempts=1)],
+        agent_target=target,
+        metrics=["outcome_consistency"],
+    )["attempts"]
+
+    assert [request["input"] for request in agent.invocations] == ["Close the item.  "]
+    assert attempt["invocation"]["composed_input"] is None
+
+
+def test_an_input_the_customer_composed_is_recorded_as_it_was_sent(project, setup):
+    attempt = one_attempt_with_a_failed_update(project, setup)
+
+    assert attempt["invocation"]["composed_input"] == (
+        "Use attempt_id offline.todo-flaky-update.update-fails-intermittently.attempt-1. "
+        "Read todo target. Create a todo with id scratch and title Temporary, then read scratch "
+        "and delete scratch. Finally update target to done=true. "
+        "Perform the operations one at a time in that order, not in parallel. "
+        "Only target and scratch may be changed. Do not change or delete unrelated."
+    )

@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import re
 
-from live_fixture import TASK_PROMPT, TodoService, strict_task_outcome, task_prompt
+from live_fixture import TASK_PROMPT, TodoService, strict_task_outcome
 from reliability_evaluators.evidence import TaskOutcome
 from reliability_evaluators.sweep import Condition, ExecutionLimits, Experiment, ObservedCondition, Task
 
@@ -46,8 +46,11 @@ class TodoSetup:
         return f"{self._run_id}.{attempt_id.replace('/', '.')}"
 
     def instruction(self, request) -> str:
-        """What the agent is sent for an Attempt: the Task's prompt, for the Attempt's own state."""
-        return task_prompt(self.on_service(request.attempt_id))
+        """What the agent is sent for an Attempt: its prompt, after which state on the service is the Attempt's.
+
+        For the fixture's own prompt this is `live_fixture.task_prompt` of the Attempt's identifier.
+        """
+        return f"Use attempt_id {self.on_service(request.attempt_id)}. {request.prompt}"
 
     def strict_success(self, request, response) -> TaskOutcome:
         outcome = strict_task_outcome(self._service.evidence(self.on_service(request.attempt_id)))
