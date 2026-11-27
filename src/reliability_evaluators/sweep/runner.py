@@ -2,16 +2,23 @@
 
 from __future__ import annotations
 
+import os
 from typing import Any, Sequence
 
 from ..agent_target import AgentTarget, AttemptRequest
 from ..evaluators import EVALUATORS, RELIABILITY_METRICS, Evaluator, Fidelity, ScoringPath
 from ..evidence import Attempt, EvidenceError, ExecutionStatus, TaskOutcome, group_by_task
-from ..scorecard import ScoredMetric, build_scorecard
+from ..scorecard import ArtifactLocation, ScoredMetric, build_scorecard
 from .declaration import Task
 
 
-def run_sweep(*, tasks: Sequence[Task], agent_target: AgentTarget, metrics: Sequence[str]) -> dict[str, Any]:
+def run_sweep(
+    *,
+    tasks: Sequence[Task],
+    agent_target: AgentTarget,
+    metrics: Sequence[str],
+    artifact_dir: str | os.PathLike[str] | None = None,
+) -> dict[str, Any]:
     """Make the declared Attempts, score the selected metrics, and return the scorecard.
 
     `metrics` names the reliability metrics to score, by metric identity. Attempts run one
@@ -20,12 +27,38 @@ def run_sweep(*, tasks: Sequence[Task], agent_target: AgentTarget, metrics: Sequ
 
     A declaration that cannot be run is rejected before any Attempt is made. A task-success
     rule that does not return a sourced, binary TaskOutcome stops the sweep.
+
+    With `artifact_dir`, the attempt-level evidence, the scorecard and the human-readable
+    report rendered from it are also written to that directory. The caller chooses it in the
+    run or artifact context of the platform it runs on. The sweep then either delivers all
+    three or raises ReportingFailure: whatever stops it, a rejected declaration included, is
+    raised as that, and the evidence collected until then is kept at the location.
     """
+    attempts: list[Attempt] = []
+    if artifact_dir is None:
+        return _sweep(tasks, agent_target, metrics, attempts)
+    location = ArtifactLocation(artifact_dir)
+    try:
+        scorecard = _sweep(tasks, agent_target, metrics, attempts)
+    except Exception as error:
+        raise location.failed(
+            "the Evaluator sweep stopped before it produced a scorecard",
+            error,
+            evidence=[attempt.to_dict() for attempt in attempts],
+        ) from error
+    location.deliver(scorecard)
+    return scorecard
+
+
+def _sweep(
+    tasks: Sequence[Task], agent_target: AgentTarget, metrics: Sequence[str], attempts: list[Attempt]
+) -> dict[str, Any]:
+    """Collect into `attempts`, so that the caller still has the evidence if the sweep stops."""
     evaluators = [_evaluator(metric_id) for metric_id in metrics]
     _require_distinct_tasks(tasks)
-    attempts = [
-        _run_attempt(task, number, agent_target) for task in tasks for number in range(1, task.attempts + 1)
-    ]
+    for task in tasks:
+        for number in range(1, task.attempts + 1):
+            attempts.append(_run_attempt(task, number, agent_target))
     evidence = group_by_task(attempts)
     scored = [
         ScoredMetric(
