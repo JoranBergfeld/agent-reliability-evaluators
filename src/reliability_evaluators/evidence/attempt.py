@@ -56,6 +56,32 @@ class TaskOutcome:
         return {"success": self.success, "source": self.source}
 
 
+@dataclass(frozen=True, kw_only=True)
+class SupersededTaskOutcome:
+    """A task outcome record that a later one replaced. It is kept, not overwritten.
+
+    `task_outcome` is the record as it was: None when the Attempt had no task outcome
+    until one was supplied. `correction_provenance` is the provenance of the correction
+    that replaced it: who or what supplied or corrected the outcome, when and why.
+    """
+
+    task_outcome: TaskOutcome | None
+    correction_provenance: str
+
+    def __post_init__(self) -> None:
+        if self.task_outcome is not None and not isinstance(self.task_outcome, TaskOutcome):
+            raise EvidenceError(
+                f"a superseded task outcome is a TaskOutcome with its source, or None. Got {self.task_outcome!r}"
+            )
+        _require_text("a superseded task outcome", correction_provenance=self.correction_provenance)
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "task_outcome": None if self.task_outcome is None else self.task_outcome.to_dict(),
+            "correction_provenance": self.correction_provenance,
+        }
+
+
 class ResourceType(str, Enum):
     """The resources an Attempt's use of is measured."""
 
@@ -238,6 +264,8 @@ class Attempt:
     task_id: str
     execution_status: ExecutionStatus
     task_outcome: TaskOutcome | None = None
+    # The task outcome records that corrections replaced, oldest first. `task_outcome` is the current one.
+    superseded_task_outcomes: tuple[SupersededTaskOutcome, ...] = ()
     # Why the execution did not complete, when it did not.
     execution_error: str | None = None
     # The actions the agent took, in order. None means they were not recorded, which is
@@ -275,6 +303,7 @@ class Attempt:
             raise EvidenceError(
                 f"a task outcome is a TaskOutcome with its source. Got {self.task_outcome!r}"
             )
+        self._require_superseded_task_outcomes()
         if self.action_evidence is not None and not isinstance(self.action_evidence, ActionEvidence):
             raise EvidenceError(
                 f"action evidence is an ActionEvidence with its source. Got {self.action_evidence!r}"
@@ -316,6 +345,22 @@ class Attempt:
                 f"an observed condition is an ObservedCondition with its source, not a label. "
                 f"Got {self.observed_condition!r}"
             )
+
+    def _require_superseded_task_outcomes(self) -> None:
+        try:
+            superseded = tuple(self.superseded_task_outcomes)
+        except TypeError:
+            superseded = (self.superseded_task_outcomes,)
+        if not all(isinstance(record, SupersededTaskOutcome) for record in superseded):
+            raise EvidenceError(
+                "superseded task outcomes are a sequence of SupersededTaskOutcome, oldest first. "
+                f"Got {self.superseded_task_outcomes!r}"
+            )
+        if superseded and self.task_outcome is None:
+            raise EvidenceError(
+                f"Attempt {self.attempt_id!r} has superseded task outcomes and no task outcome that replaced them"
+            )
+        object.__setattr__(self, "superseded_task_outcomes", superseded)
 
     def _require_one_measurement_per_resource_type(self) -> None:
         try:
@@ -377,6 +422,7 @@ class Attempt:
             "execution_status": self.execution_status.value,
             "execution_error": self.execution_error,
             "task_outcome": None if self.task_outcome is None else self.task_outcome.to_dict(),
+            "superseded_task_outcomes": [record.to_dict() for record in self.superseded_task_outcomes],
             "action_evidence": None if self.action_evidence is None else self.action_evidence.to_dict(),
             "resource_measurements": [measurement.to_dict() for measurement in self.resource_measurements],
             "confidence": None if self.confidence is None else self.confidence.to_dict(),

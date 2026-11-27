@@ -211,4 +211,4 @@ The Attempt identity is `<experiment_id>/<condition_id>/attempt-<number>`. `kind
 
 - Attempts under a variation are used only by the metric that compares that kind of variation with the baseline. Every other metric scores Attempts under the baseline only. Fault is the only kind of variation in this version. Each metric's `attempts_used` in the scorecard lists the Attempts its Evaluator was given.
 - A Task can be declared in one experiment only, so that Attempts made under different declarations are never mixed in one Task's evidence. To attempt the same work under a second variation, declare a second Task for it.
-- If a task-success rule returns something that is not a `TaskOutcome`, the sweep stops with an error and does not invoke `clean_up`.
+- If a task-success rule returns something that is neither a `TaskOutcome` nor [`NO_TASK_OUTCOME_YET`](late-and-corrected-outcomes.md#leaving-an-outcome-open-during-the-sweep), the sweep stops with an error and does not invoke `clean_up`.

@@ -27,7 +27,7 @@ from ..evidence import (
 )
 from ..scorecard import AcceptanceCriterion, ArtifactLocation, ScoredMetric, build_scorecard, criteria_by_metric
 from .confidence import ATTEMPT_NOT_COMPLETED, elicit_confidence
-from .declaration import ActionEvidenceDeclaration, ConfiguredEvaluator, Experiment, Task
+from .declaration import ActionEvidenceDeclaration, ConfiguredEvaluator, Experiment, NoTaskOutcomeYet, Task
 from .lifecycle import ConfidenceFollowUp, planned_attempt_ids, run_experiments
 from .reuse import SharedAttempts, share_attempts
 
@@ -90,8 +90,12 @@ def run_sweep(
     never runs backwards. An agent target that reports its own elapsed time is recorded
     instead. Every other resource measurement comes from the agent target.
 
+    A task-success rule that cannot decide during the sweep returns NO_TASK_OUTCOME_YET. The
+    Attempt is then recorded without a task outcome, which is not a task failure, and the
+    outcome can be supplied later with `recalculate`.
+
     A declaration that cannot be run is rejected before any Attempt is made. A task-success
-    rule that does not return a sourced, binary TaskOutcome stops the sweep. So does a
+    rule that returns anything else than a sourced, binary TaskOutcome stops the sweep. So does a
     violation assessor that does not return sourced violation assessments of the operational
     constraints its Task declares, and an action recording that is not a sequence of ActionEvent.
 
@@ -407,10 +411,12 @@ def _invoke_agent(
         return failed, partial(_with_confidence, ask=None, ask_confidence=ask_confidence)
     elapsed = clock() - started
     outcome = task.success_rule(request, response)
-    if not isinstance(outcome, TaskOutcome):
+    if isinstance(outcome, NoTaskOutcomeYet):
+        outcome = None
+    elif not isinstance(outcome, TaskOutcome):
         raise EvidenceError(
             f"the task-success rule of Task {task.task_id!r} must return a TaskOutcome with its source, "
-            f"got {outcome!r}"
+            f"or NO_TASK_OUTCOME_YET, got {outcome!r}"
         )
     # The task outcome is decided before the agent is asked for its confidence rating, so the
     # rating cannot enter the outcome, and the follow-up cannot disturb what the outcome is decided from.

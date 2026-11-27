@@ -1,8 +1,9 @@
 """The human-readable report: one self-contained HTML rendering of the machine-readable scorecard.
 
 The report is generic on purpose. It knows that a scorecard lists `metrics` and `attempts`,
-and it describes the four metric states. Every other field is laid out by its shape, so a
-field or a state that the scorecard gains is shown without a change here.
+that a recalculated one lists the `superseded_results` it replaces, and it describes the
+four metric states. Every other field is laid out by its shape, so a field or a state that
+the scorecard gains is shown without a change here.
 """
 
 from __future__ import annotations
@@ -63,6 +64,7 @@ class _Report:
         sections = [self._section(key, value) for key, value in self._scorecard.items() if _is_filled(value)]
         return _PAGE.format(
             style=_STYLE,
+            notice=_RECALCULATION_NOTICE if _is_records(self._scorecard.get("superseded_results")) else "",
             summary=self._fields(summary, "") if summary else "",
             sections="\n".join(sections),
         )
@@ -71,9 +73,19 @@ class _Report:
         pointer = _child("", key)
         if key == "metrics" and _is_records(value):
             metrics = "\n".join(
-                self._metric(entry, _child(pointer, position), position) for position, entry in enumerate(value)
+                self._metric(entry, _child(pointer, position), f"metric-{position}")
+                for position, entry in enumerate(value)
             )
             return f'<section id="metrics">\n<h2>Metrics</h2>\n{_METRICS_NOTE}\n{metrics}\n</section>'
+        if key == "superseded_results" and _is_records(value):
+            results = "\n".join(
+                self._superseded_result(result, _child(pointer, position), position)
+                for position, result in enumerate(value)
+            )
+            return (
+                f'<section id="superseded-results">\n<h2>Superseded results</h2>\n{_SUPERSEDED_NOTE}\n'
+                f"{results}\n</section>"
+            )
         if key == "attempts" and _is_records(value):
             attempts = "\n".join(
                 self._attempt(entry, _child(pointer, position), position) for position, entry in enumerate(value)
@@ -81,19 +93,43 @@ class _Report:
             return f'<section id="attempts">\n<h2>Attempt-level evidence</h2>\n{_ATTEMPTS_NOTE}\n{attempts}\n</section>'
         return f'<section>\n<h2 data-key="{escape(key)}">{escape(key)}</h2>\n{self._render(value, pointer)}\n</section>'
 
-    def _metric(self, entry: dict[str, Any], pointer: str, position: int) -> str:
+    def _superseded_result(self, result: dict[str, Any], pointer: str, position: int) -> str:
+        """One earlier result: what superseded it, and its metrics, each marked as superseded."""
+        metrics = result.get("metrics")
+        shown_as_metrics = _is_records(metrics)
+        rest = {key: value for key, value in result.items() if not (shown_as_metrics and key == "metrics")}
+        parts = [self._fields(rest, pointer)] if rest else []
+        if shown_as_metrics:
+            parts += [
+                self._metric(
+                    entry,
+                    _child(_child(pointer, "metrics"), at),
+                    f"superseded-result-{position}-metric-{at}",
+                    superseded=True,
+                )
+                for at, entry in enumerate(metrics)
+            ]
+        body = "\n".join(parts)
+        return (
+            f'<section class="superseded" id="superseded-result-{position}">\n'
+            f"<h3>Superseded result</h3>\n{body}\n</section>"
+        )
+
+    def _metric(self, entry: dict[str, Any], pointer: str, element_id: str, *, superseded: bool = False) -> str:
         promoted = {key for key in ("name", "state") if key in entry and not isinstance(entry[key], (dict, list))}
         heading = self._value(entry["name"], _child(pointer, "name")) if "name" in promoted else "Unnamed metric"
-        css, state = "metric", ""
+        css, state = ("metric superseded" if superseded else "metric"), ""
+        if superseded:
+            state = _SUPERSEDED_METRIC
         if "state" in promoted:
             recorded = entry["state"]
             described = isinstance(recorded, str) and recorded in _STATES
             css += f" state-{recorded}" if described else " state-other"
             description = _STATES[recorded] if described else _UNDESCRIBED_STATE
-            state = f'<p class="state">{self._value(recorded, _child(pointer, "state"))} {escape(description)}</p>'
+            state += f'<p class="state">{self._value(recorded, _child(pointer, "state"))} {escape(description)}</p>'
         rest = {key: value for key, value in entry.items() if key not in promoted}
         fields = self._fields(rest, pointer, css="fields of-metric") if rest else ""
-        return f'<article class="{css}" id="metric-{position}">\n<h3>{heading}</h3>\n{state}\n{fields}\n</article>'
+        return f'<article class="{css}" id="{element_id}">\n<h3>{heading}</h3>\n{state}\n{fields}\n</article>'
 
     def _attempt(self, attempt: dict[str, Any], pointer: str, position: int) -> str:
         identified = "attempt_id" in attempt and not isinstance(attempt["attempt_id"], (dict, list))
@@ -193,6 +229,18 @@ _METRICS_NOTE = (
     "excluded is evidence that exists and was deliberately not used.</p>"
 )
 
+_RECALCULATION_NOTICE = (
+    '<p class="notice">This scorecard is a recalculation: a task outcome was supplied or corrected after the run. '
+    'It supersedes the earlier results, which are kept under <a href="#superseded-results">Superseded results</a>.</p>'
+)
+
+_SUPERSEDED_NOTE = (
+    '<p class="note">The results that this scorecard replaces, oldest first, each with the task outcomes that were '
+    "supplied or corrected to replace it. They are kept as a record. The current results are under Metrics.</p>"
+)
+
+_SUPERSEDED_METRIC = '<p class="superseded-mark">Superseded. This is not the current result of the metric.</p>\n'
+
 _ATTEMPTS_NOTE = (
     '<p class="note">The scorecard\'s evidence for each Attempt. The execution status says how the running of an '
     "Attempt ended. It is not the task outcome: an Attempt that did not complete has no task outcome and is not "
@@ -238,6 +286,10 @@ color:var(--alert);font-weight:600}
 .state-not_configured h3{color:var(--muted)}
 .state-not_configured .state .v{border:2px dotted var(--muted);color:var(--muted)}
 .of-metric>tbody>tr>th[data-key=value]+td>.v{font-size:1.75rem;font-weight:600}
+.notice{padding:.6rem 1rem;border:1px solid var(--warn);border-radius:.4rem}
+.metric.superseded{border-style:dashed}
+.superseded-mark{color:var(--warn);font-weight:600}
+.superseded .of-metric>tbody>tr>th[data-key=value]+td>.v{text-decoration:line-through}
 [data-scorecard$="/execution_status"]{padding:0 .5rem;border:1px solid var(--alert);border-radius:1rem;
 color:var(--alert)}
 .is-completed[data-scorecard$="/execution_status"]{border-color:var(--line);color:inherit}
@@ -256,6 +308,7 @@ _PAGE = """<!doctype html>
 <h1>Reliability scorecard</h1>
 <p>Each reliability metric is reported on its own. There is no combined score and no built-in threshold. \
 A higher value is not always better: read the interpretation of each metric.</p>
+{notice}
 {summary}
 </header>
 <main>

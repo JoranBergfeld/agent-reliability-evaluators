@@ -143,7 +143,7 @@ An Evaluator is given the Attempts of its own set and nothing else. Which other 
 
 An Evaluator that cannot calculate a value from its Attempts reports an unavailable measurement with its reason and counts. That concerns its own metric only. The sweep goes on to the next set, and the metrics of the other Evaluators keep the values their own Attempts support.
 
-A customer callable that breaks its contract still stops the whole sweep: a task-success rule that returns no sourced task outcome, a violation assessor that returns no violation assessments, or an action recorder that returns something other than action events. That is a mistake in the declaration and not a failed Attempt.
+A customer callable that breaks its contract still stops the whole sweep: a task-success rule that returns neither a sourced task outcome nor `NO_TASK_OUTCOME_YET`, a violation assessor that returns no violation assessments, or an action recorder that returns something other than action events. That is a mistake in the declaration and not a failed Attempt.
 
 ## What is not there yet
 

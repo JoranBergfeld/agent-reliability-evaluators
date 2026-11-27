@@ -43,6 +43,15 @@ An operation supplied by the customer that the evaluator sweep invokes at a defi
 The success or failure of an attempt, determined against the customer's task-success definition, with its source recorded. It is not inferred from the agent's response alone and is distinct from deciding whether a reliability metric meets an acceptance criterion.
 _Avoid_: Reliability acceptance
 
+**Outcome correction**:
+A task outcome supplied or corrected for one attempt after the run, with its source and its provenance. The attempt keeps the record that the correction replaced.
+
+**Recalculation**:
+Scoring the evidence of an earlier reliability scorecard again after an outcome correction. It gives a new scorecard and leaves the earlier one as it was.
+
+**Superseded result**:
+A metric result that a recalculation has replaced. It is kept, marked as superseded, in the scorecard that replaces it, and is not the current result.
+
 **Execution status**:
 How the running of an attempt or experiment ended, such as completed, timed out, cancelled or setup failed. It is separate from the task outcome and from the state of a reliability metric: an execution failure keeps its reason and is not a task failure, an unavailable measurement or not applicable.
 
