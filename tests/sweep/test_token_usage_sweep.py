@@ -8,19 +8,30 @@ import json
 
 import pytest
 
-from reliability_evaluators.agent_target import ConfidenceResponse, InvocationFailed
+from reliability_evaluators.agent_target import AgentResponse, ConfidenceResponse, InvocationFailed
 from reliability_evaluators.evidence import ActionEvent, OutcomeCorrection, TaskOutcome
-from reliability_evaluators.scorecard import AcceptanceCriterion, to_json
+from reliability_evaluators.scorecard import AcceptanceCriterion, PreparationUsage, to_json
 from reliability_evaluators.sweep import (
     ActionEvidenceDeclaration,
+    Condition,
     ConfiguredEvaluator,
     ExecutionLimits,
+    Experiment,
+    PromptVariant,
     RecalculationFailed,
     Task,
     recalculate,
     run_sweep,
 )
-from tests.fakes import FakeActingAgentTarget, FakeAgentTarget, cancelling, taking
+from tests.fakes import (
+    FakeActingAgentTarget,
+    FakeAgentTarget,
+    FakeControls,
+    FakeTodoService,
+    cancelling,
+    taking,
+    todo_list,
+)
 
 SOURCE = "final state of the fake service"
 OUTCOME = "outcome_consistency"
@@ -384,6 +395,214 @@ def test_a_confidence_request_that_fails_keeps_what_was_recorded_of_it():
     assert (attempt["coverage"], attempt["total_tokens"]) == ("complete", 850)
 
 
+class MeteredTodoAgent:
+    """A to-do agent that adds one item to its Task's list and reports 100 tokens for every invocation."""
+
+    def __init__(self, service):
+        self._service = service
+        self.invoked = 0
+
+    def invoke(self, request):
+        self.invoked += 1
+        self._service.add(todo_list(request.task_id), "buy milk")
+        return AgentResponse(output="Done.", invocation={"token_usage": {"total_tokens": 100}})
+
+
+GENERATED = "generated with a model by the customer's variant script and approved by the support team"
+
+
+def reworded_experiment(service, experiment_id="add-item", task_id="add"):
+    """One Attempt under the Task's own instruction and one under each of two generated prompt variants."""
+    return Experiment(
+        experiment_id=experiment_id,
+        task=Task(
+            task_id=task_id,
+            prompt="Add one item to the list.",
+            success_rule=lambda attempt, response: TaskOutcome(
+                success=len(service.lists[todo_list(attempt.task_id)]) == 1, source=SOURCE
+            ),
+            attempts=1,
+        ),
+        agent_configuration={"agent": "todo-agent"},
+        starting_state="fresh",
+        baseline=Condition(condition_id="original", description="The agent is given the Task's own instruction."),
+        variation=Condition(
+            condition_id="reworded", kind="prompt", description="The agent is given the instruction in another wording."
+        ),
+        prompt_variants=[
+            PromptVariant(variant_id="please", text="Please add an item to my list.", source=GENERATED),
+            PromptVariant(variant_id="terse", text="One more item.", source=GENERATED),
+        ],
+        controls=FakeControls(service),
+        write_capable=True,
+        authorized_resources=[todo_list(task_id)],
+    )
+
+
+def reworded_sweep(preparation_usage, metrics=(OUTCOME, "prompt_robustness")):
+    service = FakeTodoService(["add"])
+    return run_sweep(
+        experiments=[reworded_experiment(service)],
+        agent_target=MeteredTodoAgent(service),
+        metrics=metrics,
+        preparation_usage=preparation_usage,
+    )
+
+
+def test_what_the_customer_reports_for_generating_variations_is_listed_apart_and_counted_once():
+    # Three Attempts of 100 tokens: one under the baseline and one under each prompt variant.
+    # The customer generated the variants with a model and reports 450 tokens for it.
+    #   sweep: 300 + 450 = 750 tokens
+    #   prompt robustness, which compares the variants with the baseline: 300 + 450 = 750 tokens
+    #   outcome consistency, which is given the baseline Attempt only: 100 tokens
+    generation = PreparationUsage(
+        preparation_id="prompt-variants",
+        description="The two prompt variants of add-item were generated with a model.",
+        source="usage logged by the customer's variant script",
+        experiment_ids=["add-item"],
+        total_tokens=450,
+    )
+
+    scorecard = reworded_sweep([generation])
+
+    usage = scorecard["token_usage"]
+    assert usage["shared_preparation"] == [
+        {
+            "preparation_id": "prompt-variants",
+            "description": "The two prompt variants of add-item were generated with a model.",
+            "source": "usage logged by the customer's variant script",
+            "experiment_ids": ["add-item"],
+            "basis": "reported",
+            "total_tokens": 450,
+            "reason": None,
+            "used_by": ["prompt_robustness"],
+        }
+    ]
+    # It is not the usage of any Attempt.
+    assert [entry["total_tokens"] for entry in usage["attempts"]] == [100, 100, 100]
+    assert usage["sweep"] == {
+        "coverage": "complete",
+        "total_tokens": 750,
+        "uses_reported": 4,
+        "uses_missing": 0,
+        "missing": [],
+    }
+    assert per_evaluator(usage) == {
+        OUTCOME: ("complete", 100, True, False),
+        "prompt_robustness": ("complete", 750, True, False),
+    }
+    assert [entry["preparation_ids"] for entry in usage["evaluators"]] == [[], ["prompt-variants"]]
+
+
+def test_generated_variations_whose_usage_the_customer_does_not_know_leave_the_sweep_total_partial():
+    generation = PreparationUsage(
+        preparation_id="prompt-variants",
+        description="The two prompt variants of add-item were generated with a model.",
+        source="the customer's variant script",
+        experiment_ids=["add-item"],
+        missing_reason="the variant script logged no usage",
+    )
+
+    usage = reworded_sweep([generation])["token_usage"]
+
+    assert (usage["shared_preparation"][0]["basis"], usage["shared_preparation"][0]["total_tokens"]) == ("missing", None)
+    assert usage["sweep"] == {
+        "coverage": "partial",
+        "total_tokens": 300,
+        "uses_reported": 3,
+        "uses_missing": 1,
+        "missing": [
+            {
+                "use": "shared_preparation",
+                "preparation_id": "prompt-variants",
+                "reason": "the variant script logged no usage",
+            }
+        ],
+    }
+    assert per_evaluator(usage)["prompt_robustness"] == ("partial", 300, True, False)
+
+
+def test_without_usage_from_the_customer_nothing_is_reported_or_assumed_for_generated_variations():
+    # The offering generates no variation and cannot know what generating one used.
+    usage = reworded_sweep([])["token_usage"]
+
+    assert usage["shared_preparation"] == []
+    assert (usage["sweep"]["coverage"], usage["sweep"]["total_tokens"]) == ("complete", 300)
+    assert "reported only where the customer declares it" in usage["scope"]
+
+
+@pytest.mark.parametrize(
+    ("declared", "problem"),
+    [
+        ({"experiment_ids": ["remove-item"]}, "names the experiment 'remove-item', which is not declared"),
+        ({"experiment_ids": []}, "names the experiments whose variation it prepared"),
+        ({"total_tokens": 450, "missing_reason": "not logged"}, "either its total_tokens or its missing_reason"),
+        ({"total_tokens": None}, "either its total_tokens or its missing_reason"),
+        ({"total_tokens": 450.5}, "a whole number of tokens"),
+        ({"total_tokens": -1}, "a whole number of tokens"),
+        ({"source": " "}, "records its source"),
+    ],
+)
+def test_preparation_usage_that_cannot_be_reported_is_rejected_before_any_attempt_is_made(declared, problem):
+    service = FakeTodoService(["add"])
+    agent = MeteredTodoAgent(service)
+
+    with pytest.raises(ValueError, match=problem):
+        run_sweep(
+            experiments=[reworded_experiment(service)],
+            agent_target=agent,
+            metrics=["prompt_robustness"],
+            preparation_usage=[
+                PreparationUsage(
+                    **{
+                        "preparation_id": "prompt-variants",
+                        "description": "The prompt variants were generated with a model.",
+                        "source": "usage logged by the customer's variant script",
+                        "experiment_ids": ["add-item"],
+                        "total_tokens": 450,
+                        **declared,
+                    }
+                )
+            ],
+        )
+
+    assert agent.invoked == 0
+
+
+def test_preparation_of_an_experiment_without_a_variation_or_declared_twice_is_rejected():
+    service = FakeTodoService(["add"])
+    unvaried = Experiment(
+        experiment_id="add-item",
+        task=Task(
+            task_id="add",
+            prompt="Add one item.",
+            success_rule=lambda attempt, response: TaskOutcome(success=True, source=SOURCE),
+            attempts=1,
+        ),
+        agent_configuration={"agent": "todo-agent"},
+        starting_state="fresh",
+        baseline=Condition(condition_id="original", description="The agent is given the Task's own instruction."),
+        variation=None,
+        controls=FakeControls(service),
+        write_capable=True,
+        authorized_resources=[todo_list("add")],
+    )
+    generation = PreparationUsage(
+        preparation_id="prompt-variants",
+        description="The prompt variants were generated with a model.",
+        source="usage logged by the customer's variant script",
+        experiment_ids=["add-item"],
+        total_tokens=450,
+    )
+
+    with pytest.raises(ValueError, match="experiment 'add-item' declares no variation"):
+        run_sweep(
+            experiments=[unvaried], agent_target=MeteredTodoAgent(service), metrics=[OUTCOME], preparation_usage=[generation]
+        )
+    with pytest.raises(ValueError, match="more than one preparation is declared as 'prompt-variants'"):
+        reworded_sweep([generation, generation])
+
+
 def test_a_recalculation_keeps_the_usage_of_the_sweep_whose_evidence_it_scores_again():
     earlier = supplied(
         sweep(
@@ -404,6 +623,30 @@ def test_a_recalculation_keeps_the_usage_of_the_sweep_whose_evidence_it_scores_a
     assert (metric(earlier)["value"], metric(recalculated)["value"]) == (0, 1)
     assert recalculated["token_usage"]["sweep"]["total_tokens"] == 1602
     assert recalculated["token_usage"] == earlier["token_usage"]
+
+
+def test_a_recalculation_keeps_what_the_customer_reported_for_generated_variations():
+    generation = PreparationUsage(
+        preparation_id="prompt-variants",
+        description="The two prompt variants of add-item were generated with a model.",
+        source="usage logged by the customer's variant script",
+        experiment_ids=["add-item"],
+        total_tokens=450,
+    )
+    earlier = supplied(reworded_sweep([generation], metrics=("prompt_robustness",)))
+    correction = OutcomeCorrection(
+        attempt_id="add-item/reworded/terse/attempt-1",
+        task_outcome=TaskOutcome(success=False, source="manual review"),
+        provenance="J. Jansen: the item was added to another list",
+    )
+
+    recalculated = recalculate(earlier_scorecard=earlier, outcome_corrections=[correction])
+
+    # Prompt robustness goes from 2/2 over 1/1, which is 1, to 1/2 over 1/1, which is 0.5.
+    assert (metric(earlier, "prompt_robustness")["value"], metric(recalculated, "prompt_robustness")["value"]) == (1, 0.5)
+    # No evidence gives the 450 tokens again: they are carried over as the customer reported them.
+    assert recalculated["token_usage"] == earlier["token_usage"]
+    assert recalculated["token_usage"]["sweep"]["total_tokens"] == 750
 
 
 def test_usage_that_the_supplied_evidence_does_not_give_fails_the_recalculation():

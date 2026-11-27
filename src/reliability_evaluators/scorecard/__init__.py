@@ -21,7 +21,7 @@ from .assemble import (
 )
 from .delivery import ArtifactLocation, ReportingFailure
 from .report import render_report
-from .usage import evaluator_token_usage
+from .usage import PreparationUsage, code_scoring_use, evaluator_token_usage, read_preparation_usage
 
 __all__ = [
     "RESCORE",
@@ -33,13 +33,16 @@ __all__ = [
     "CutShort",
     "ExecutionRecord",
     "MissingResult",
+    "PreparationUsage",
     "ReportingFailure",
     "ScorecardStatus",
     "ScoredMetric",
     "build_scorecard",
+    "code_scoring_use",
     "criteria_by_metric",
     "evaluator_token_usage",
     "read_execution_record",
+    "read_preparation_usage",
     "render_report",
     "rescore_entry",
     "to_json",

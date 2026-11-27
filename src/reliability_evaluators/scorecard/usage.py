@@ -4,8 +4,9 @@ Pure: no I/O. Usage is metadata. Nothing here reads a metric value or an accepta
 assessment, and nothing that scores or assesses reads what is reported here.
 
 A use is one thing that could have used a model: the invocation of the agent for an Attempt,
-the confidence request that followed it. A total counts each use once. A use whose count
-was not reported is missing, with a reason, and is never counted as zero.
+the confidence request that followed it, preparation the customer did with a model, or the
+scoring of an Evaluator. A total counts each use once. A use whose count was not reported
+is missing, with a reason, and is never counted as zero.
 """
 
 from __future__ import annotations
@@ -15,7 +16,7 @@ from enum import Enum
 from typing import Any, Iterable, Mapping, Sequence
 
 from ..evaluators import ScoringPath
-from ..evidence import Attempt, ExecutionStatus, TaskEvidence
+from ..evidence import Attempt, ConditionRole, ExecutionStatus, TaskEvidence
 
 UNIT = "tokens"
 MEANING = (
@@ -23,6 +24,19 @@ MEANING = (
     "metric, and it takes no part in any metric value or acceptance assessment. It is not an estimate, not an "
     "amount of money and not a limit. A count that was not reported is missing, with a reason, and is never "
     "counted as zero."
+)
+SCOPE = (
+    "Covered: the invocation of the agent for each Attempt, the confidence request that followed it, the "
+    "scoring of each Evaluator, and preparation that the customer declares usage for. The offering generates "
+    "no task variations, so what generating them used is reported only where the customer declares it. A count "
+    "is the total the platform reported for a request: usage of a model behind a tool is in it only where the "
+    "platform includes it. This is not a report of all cost."
+)
+EVALUATOR_TOTALS = (
+    "The total of an Evaluator covers every Attempt it was given, each with its confidence follow-up, the "
+    "shared preparation of what those Attempts were made under, and its own scoring. A total labelled "
+    "overlapping includes usage that the total of another Evaluator includes too. Such totals are not additive: "
+    "adding them counts what they share more than once. The sweep total counts each use once."
 )
 
 
@@ -53,15 +67,103 @@ def evaluator_token_usage(tasks: Iterable[TaskEvidence]) -> dict[str, Any]:
 
     `tasks` is the grouped Attempt evidence the Evaluator is called with. The result is
     JSON-compatible data. It needs no scorecard and no sweep.
+
+    The usage of an Attempt is read from what its agent target recorded of the invocation,
+    and of the confidence request that followed it: the `total_tokens` of the `token_usage`
+    there. A resource measurement of token usage is evidence for resource consistency and
+    is not read here.
     """
     attempts = [attempt_token_usage(attempt) for task in tasks for attempt in task.attempts]
     return {
         "meaning": MEANING,
         "unit": UNIT,
         "total": _total(_uses_of(attempts)),
-        "scoring": dict(CODE_IN_THE_CUSTOMER_PROCESS),
+        "scoring": code_scoring_use(),
         "attempts": attempts,
     }
+
+
+@dataclass(frozen=True, kw_only=True)
+class PreparationUsage:
+    """What preparing the variation of experiments used, as the customer reports it.
+
+    The offering generates no task variations. A customer who generated some with a model,
+    such as the prompt variants of an experiment, declares here what that used, because
+    nothing else can know it. `experiment_ids` names the experiments whose variation was
+    prepared. `source` says where the count comes from.
+
+    `total_tokens` is the count. A customer who knows that a model was used and not how
+    much gives `missing_reason` instead: the usage is then reported as missing.
+    """
+
+    preparation_id: str
+    description: str
+    source: str
+    experiment_ids: Sequence[str]
+    total_tokens: int | None = None
+    missing_reason: str | None = None
+
+    def __post_init__(self) -> None:
+        for name in ("preparation_id", "description", "source"):
+            value = getattr(self, name)
+            if not isinstance(value, str) or not value.strip():
+                raise ValueError(f"preparation usage is identified, described and records its source: {name} is {value!r}")
+        this = f"the preparation {self.preparation_id!r}"
+        experiment_ids = self.experiment_ids
+        if (
+            isinstance(experiment_ids, str)
+            or not isinstance(experiment_ids, Sequence)
+            or not experiment_ids
+            or any(not isinstance(one, str) or not one.strip() for one in experiment_ids)
+        ):
+            raise ValueError(
+                f"{this} names the experiments whose variation it prepared, by experiment identity. "
+                f"Got {experiment_ids!r}"
+            )
+        object.__setattr__(self, "experiment_ids", tuple(experiment_ids))
+        reason = self.missing_reason
+        if (self.total_tokens is None) == (reason is None):
+            raise ValueError(
+                f"{this} reports either its total_tokens or its missing_reason: a count that is not known "
+                "is missing with a reason, and is never zero"
+            )
+        if self.total_tokens is not None and not _is_count(self.total_tokens):
+            raise ValueError(f"{this} reports a whole number of tokens, 0 or more. Got {self.total_tokens!r}")
+        if reason is not None and (not isinstance(reason, str) or not reason.strip()):
+            raise ValueError(f"{this} says why its usage is missing. Got {reason!r}")
+
+    def to_dict(self) -> dict[str, Any]:
+        use = _reported(self.total_tokens) if self.missing_reason is None else _missing(self.missing_reason)
+        return {
+            "preparation_id": self.preparation_id,
+            "description": self.description,
+            "source": self.source,
+            "experiment_ids": list(self.experiment_ids),
+            **use,
+        }
+
+
+def read_preparation_usage(recorded: Any) -> tuple[PreparationUsage, ...]:
+    """The preparation usage that a scorecard reports as `recorded`, as it was declared.
+
+    Raises ValueError for what is not a list of preparations as this version reports them.
+    """
+    if not isinstance(recorded, list) or not all(isinstance(entry, Mapping) for entry in recorded):
+        raise ValueError(f"shared preparation is reported as a list of preparations. Got {recorded!r}")
+    try:
+        return tuple(
+            PreparationUsage(
+                preparation_id=entry["preparation_id"],
+                description=entry["description"],
+                source=entry["source"],
+                experiment_ids=entry["experiment_ids"],
+                total_tokens=entry["total_tokens"],
+                missing_reason=entry["reason"],
+            )
+            for entry in recorded
+        )
+    except KeyError as missing:
+        raise ValueError(f"a shared preparation is reported without its {missing.args[0]}") from None
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -71,40 +173,100 @@ class EvaluatorUse:
     metric_id: str
     # Identities of the Attempts the Evaluator was given, whatever became of each.
     attempt_ids: tuple[str, ...]
-    # The use that scoring the Evaluator was, as `scoring_use` gives it.
+    # The use that scoring the Evaluator was, as `code_scoring_use` or `managed_scoring_use` gives it.
     scoring: Mapping[str, Any]
 
 
-def sweep_token_usage(attempts: Sequence[Attempt], evaluators: Sequence[EvaluatorUse] = ()) -> dict[str, Any]:
+def sweep_token_usage(
+    attempts: Sequence[Attempt],
+    evaluators: Sequence[EvaluatorUse] = (),
+    preparation_usage: Sequence[PreparationUsage] = (),
+) -> dict[str, Any]:
     """The token usage of an Evaluator sweep: of each Attempt, of each Evaluator, and of the sweep as a whole.
 
     The sweep total counts each use once, whichever Evaluators used it. The total of an
-    Evaluator is the usage of every Attempt it was given and of its own scoring. Where
-    another Evaluator was given any of the same Attempts, both totals include them: such a
-    total is labelled overlapping and not additive.
+    Evaluator is the usage of every Attempt it was given, of the shared preparation of what
+    those Attempts were made under, and of its own scoring. Where another Evaluator was
+    given any of the same Attempts or preparation, both totals include it: such a total is
+    labelled overlapping and not additive.
+
+    `preparation_usage` is what the customer reports for preparing the variation of
+    experiments. It is listed apart from the Attempts. An Evaluator used a preparation when
+    it was given an Attempt made under the variation of an experiment the preparation names.
     """
-    used = {attempt.attempt_id: attempt_token_usage(attempt) for attempt in attempts}
+    by_identity = {attempt.attempt_id: attempt for attempt in attempts}
+    used = {attempt_id: attempt_token_usage(attempt) for attempt_id, attempt in by_identity.items()}
     for attempt_id, entry in used.items():
         entry["used_by"] = [evaluator.metric_id for evaluator in evaluators if attempt_id in evaluator.attempt_ids]
-    scoring = [_scoring_of(evaluator) for evaluator in evaluators]
+    prepared_for = {
+        evaluator.metric_id: [
+            preparation.preparation_id
+            for preparation in preparation_usage
+            if any(_made_under_the_variation(by_identity[one], preparation) for one in evaluator.attempt_ids)
+        ]
+        for evaluator in evaluators
+    }
+    preparations = {
+        preparation.preparation_id: {
+            **preparation.to_dict(),
+            "used_by": [
+                evaluator.metric_id
+                for evaluator in evaluators
+                if preparation.preparation_id in prepared_for[evaluator.metric_id]
+            ],
+        }
+        for preparation in preparation_usage
+    }
+    every_use = [
+        *_uses_of(used.values()),
+        *map(_preparation_use, preparations.values()),
+        *map(_scoring_of, evaluators),
+    ]
     return {
         "meaning": MEANING,
+        "scope": SCOPE,
         "unit": UNIT,
-        "sweep": _total([*_uses_of(used.values()), *scoring]),
-        "evaluators": [_evaluator_usage(evaluator, used, evaluators) for evaluator in evaluators],
+        "sweep": _total(every_use),
+        "evaluator_totals": EVALUATOR_TOTALS,
+        "evaluators": [_evaluator_usage(evaluator, used, preparations, prepared_for) for evaluator in evaluators],
+        "shared_preparation": list(preparations.values()),
         "attempts": list(used.values()),
     }
 
 
+def _made_under_the_variation(attempt: Attempt, preparation: PreparationUsage) -> bool:
+    return attempt.condition_role is ConditionRole.VARIATION and attempt.experiment_id in preparation.experiment_ids
+
+
 def _evaluator_usage(
-    evaluator: EvaluatorUse, used: Mapping[str, Mapping[str, Any]], evaluators: Sequence[EvaluatorUse]
+    evaluator: EvaluatorUse,
+    used: Mapping[str, Mapping[str, Any]],
+    preparations: Mapping[str, Mapping[str, Any]],
+    prepared_for: Mapping[str, Sequence[str]],
 ) -> dict[str, Any]:
     """What one Evaluator used, and whether its total includes what the total of another includes too."""
-    given = set(evaluator.attempt_ids)
-    overlaps_with = [
-        other.metric_id for other in evaluators if other is not evaluator and not given.isdisjoint(other.attempt_ids)
+    preparation_ids = prepared_for[evaluator.metric_id]
+    overlaps_with = sorted(
+        {
+            other
+            for attempt_id in evaluator.attempt_ids
+            for other in used[attempt_id]["used_by"]
+            if other != evaluator.metric_id
+        }
+        | {
+            other
+            for preparation_id in preparation_ids
+            for other in preparations[preparation_id]["used_by"]
+            if other != evaluator.metric_id
+        },
+        # In the order the Evaluators are reported in.
+        key=list(prepared_for).index,
+    )
+    uses = [
+        *_uses_of(used[attempt_id] for attempt_id in evaluator.attempt_ids),
+        *(_preparation_use(preparations[preparation_id]) for preparation_id in preparation_ids),
+        _scoring_of(evaluator),
     ]
-    uses = [*_uses_of(used[attempt_id] for attempt_id in evaluator.attempt_ids), _scoring_of(evaluator)]
     return {
         "metric_id": evaluator.metric_id,
         "total": _total(uses),
@@ -113,8 +275,13 @@ def _evaluator_usage(
         "additive": not overlaps_with,
         "overlaps_with": overlaps_with,
         "attempt_ids": list(evaluator.attempt_ids),
+        "preparation_ids": list(preparation_ids),
         "scoring": dict(evaluator.scoring),
     }
+
+
+def _preparation_use(preparation: Mapping[str, Any]) -> tuple[dict[str, Any], Mapping[str, Any]]:
+    return {"use": "shared_preparation", "preparation_id": preparation["preparation_id"]}, preparation
 
 
 def _scoring_of(evaluator: EvaluatorUse) -> tuple[dict[str, Any], Mapping[str, Any]]:

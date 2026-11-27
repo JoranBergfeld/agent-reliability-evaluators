@@ -28,11 +28,13 @@ from ..scorecard import (
     AcceptanceCriterion,
     CutShort,
     ExecutionRecord,
+    PreparationUsage,
     ScorecardStatus,
     ScoredMetric,
     build_scorecard,
     criteria_by_metric,
     read_execution_record,
+    read_preparation_usage,
 )
 from .declaration import ActionEvidenceDeclaration, ConfiguredEvaluator, ExecutionLimits
 from .runner import _select, _SelectedEvaluator
@@ -154,6 +156,7 @@ def _scorecard(
         executions=earlier.executions,
         max_concurrent_attempts=earlier.max_concurrent_attempts,
         acceptance_criteria=acceptance_criteria,
+        preparation_usage=earlier.preparation_usage,
     )
 
 
@@ -192,6 +195,8 @@ class _EarlierScorecard:
     max_concurrent_attempts: int
     # The results it had itself superseded, oldest first.
     superseded_results: list[Any]
+    # What the customer reported for preparing the variation of experiments, which no evidence gives again.
+    preparation_usage: tuple[PreparationUsage, ...]
 
 
 def _read(earlier_scorecard: Any) -> _EarlierScorecard:
@@ -238,6 +243,13 @@ def _read(earlier_scorecard: Any) -> _EarlierScorecard:
         )
     for experiment in experiments:
         _recorded_experiment(experiment)
+    token_usage = earlier_scorecard.get(TOKEN_USAGE)
+    if not isinstance(token_usage, Mapping):
+        raise EvidenceError(f"it does not report its token usage. Got {token_usage!r}")
+    try:
+        preparation_usage = read_preparation_usage(token_usage.get("shared_preparation"))
+    except ValueError as error:
+        raise EvidenceError(f"its token usage is not what this version reports: {error}") from error
     return _EarlierScorecard(
         supplied=earlier_scorecard,
         metrics=earlier_scorecard[_METRICS],
@@ -252,6 +264,7 @@ def _read(earlier_scorecard: Any) -> _EarlierScorecard:
         ),
         max_concurrent_attempts=allowed,
         superseded_results=superseded_results,
+        preparation_usage=preparation_usage,
     )
 
 

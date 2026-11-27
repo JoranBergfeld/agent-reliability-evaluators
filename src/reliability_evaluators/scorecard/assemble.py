@@ -18,7 +18,7 @@ from ..evaluators import (
 )
 from ..evidence import Attempt, EvidenceError, ExperimentStatus
 from .acceptance import AcceptanceCriterion, assess, criteria_by_metric
-from .usage import EvaluatorUse, code_scoring_use, managed_scoring_use, sweep_token_usage
+from .usage import EvaluatorUse, PreparationUsage, code_scoring_use, managed_scoring_use, sweep_token_usage
 
 SCHEMA_VERSION = 1
 # Where a scorecard reports token usage. It is metadata, apart from the metrics and their acceptance.
@@ -218,6 +218,7 @@ def build_scorecard(
     executions: Sequence[ExecutionRecord],
     max_concurrent_attempts: int,
     acceptance_criteria: Sequence[AcceptanceCriterion] = (),
+    preparation_usage: Sequence[PreparationUsage] = (),
 ) -> dict[str, Any]:
     """Assemble the scorecard as JSON-compatible data.
 
@@ -241,6 +242,11 @@ def build_scorecard(
 
     `max_concurrent_attempts` is how many Attempts of Tasks given without an experiment
     the sweep allowed in flight at once; 1 means they ran one after another.
+
+    `token_usage` reports what the Attempts, their confidence follow-ups, the scoring of
+    each selected metric and the preparation in `preparation_usage` used, in tokens. It is
+    metadata, apart from the metrics: no metric entry and no acceptance assessment holds or
+    reads any of it.
     """
     scored_by_id = {scored.definition.metric.metric_id: scored for scored in metrics}
     criteria = criteria_by_metric(acceptance_criteria)
@@ -288,6 +294,7 @@ def build_scorecard(
                 for metric in RELIABILITY_METRICS
                 if metric.metric_id in scored_by_id
             ],
+            preparation_usage,
         ),
         "attempts": [attempt.to_dict() for attempt in attempts],
     }

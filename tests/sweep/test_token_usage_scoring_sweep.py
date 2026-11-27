@@ -5,11 +5,14 @@ Foundry project. Every assertion is on the machine-readable scorecard. The count
 of a saved managed run (decision ticket #24), and expected totals are added by hand.
 """
 
+import json
+
 import pytest
 
 from reliability_evaluators.evidence import TaskOutcome
 from reliability_evaluators.managed_scoring import FoundryManagedScoring
-from reliability_evaluators.sweep import ConfiguredEvaluator, Task, run_sweep
+from reliability_evaluators.scorecard import to_json
+from reliability_evaluators.sweep import ConfiguredEvaluator, Task, rescore_in_customer_process, run_sweep
 from tests.fake_foundry import FakeFoundryProject
 from tests.fakes import FakeAgentTarget
 
@@ -198,6 +201,27 @@ def test_managed_scoring_that_stops_before_it_made_a_run_reports_no_usage():
     assert (evaluator["scoring"]["run_id"], evaluator["scoring"]["reported"]) == (None, None)
     # Nothing is known of the Attempts or of the scoring: there is no total, and it is not zero.
     assert (total["coverage"], total["total_tokens"]) == ("unavailable", None)
+
+
+def test_a_customer_process_rescore_is_a_scoring_of_its_own_that_used_no_tokens():
+    earlier = json.loads(to_json(sweep(FakeFoundryProject())))
+
+    rescored = rescore_in_customer_process(earlier_scorecard=earlier, metrics=[OUTCOME])
+
+    (before,) = earlier["token_usage"]["evaluators"]
+    (after,) = rescored["token_usage"]["evaluators"]
+    assert after["customer_process_rescore"] == {
+        "basis": "no_model_use",
+        "total_tokens": 0,
+        "reason": "the Evaluator is calculated by code in the customer's process, which uses no model",
+        "scoring_path": "customer_process",
+    }
+    # What the managed run used is still not known, and the rescore does not stand in for it:
+    # 790 + 812 = 1602 tokens is still a partial sum, for the Evaluator and for the sweep.
+    assert {key: value for key, value in after.items() if key != "customer_process_rescore"} == before
+    assert after["scoring"]["basis"] == "missing"
+    assert (after["total"]["coverage"], after["total"]["total_tokens"]) == ("partial", 1602)
+    assert rescored["token_usage"]["sweep"] == earlier["token_usage"]["sweep"]
 
 
 @pytest.mark.parametrize("unusable", [[{"model_name": "gpt-4.1-mini"}], [row("gpt-4.1-mini", "1976", 1862, 114)], "none"])
