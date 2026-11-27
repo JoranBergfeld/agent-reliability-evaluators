@@ -56,20 +56,32 @@ class CustomerControls(Protocol):
     """The controls a customer supplies so that the sweep can run a controlled experiment.
 
     The sweep invokes them at defined lifecycle points and never looks inside the agent's
-    tools. A control that cannot do its work raises.
+    tools. They may act through the customer's own test tools. A control that cannot do
+    its work raises.
     """
 
     def prepare_state(self, context: ControlContext) -> None:
-        """Bring the test setup into the state the Attempt starts from."""
+        """Bring the test setup into the state the Attempt starts from.
+
+        Invoked before every Attempt under fresh state. Under continuing state it is
+        invoked once, before the first Attempt under each condition.
+        """
 
     def apply_condition(self, context: ControlContext) -> None:
-        """Put the intended condition in place, the baseline included."""
+        """Put the intended condition in place, the baseline included. Invoked before every Attempt."""
 
     def verify_condition(self, context: ControlContext) -> ObservedCondition:
-        """Report, from evidence, the condition the Attempt actually ran under."""
+        """Report, from evidence, whether the Attempt ran under the intended condition.
+
+        Invoked after every Attempt whose setup succeeded, also when the invocation failed.
+        """
 
     def clean_up(self, context: ControlContext) -> None:
-        """Restore the test setup. It may find the state only partly prepared."""
+        """Restore the test setup. It may find the state only partly prepared.
+
+        Invoked after every Attempt under fresh state. Under continuing state it is
+        invoked once, after the last Attempt under each condition.
+        """
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -78,12 +90,18 @@ class Experiment:
 
     The Task is attempted `task.attempts` times under the baseline and, when a variation
     is declared, as many times under the variation. Everything else is held fixed.
+
+    Nothing here has a default except the test resources: the starting-state policy in
+    particular is always declared, so that state never continues by accident.
     """
 
     experiment_id: str
+    # The Task with its task-success rule and the number of Attempts under each condition.
     task: Task
-    # What identifies the agent under test, such as its name, version and model.
+    # What identifies the agent under test, such as its name, version and model. The sweep
+    # records it and does not configure the agent from it.
     agent_configuration: Mapping[str, Any]
+    # "fresh" or "continuing". See StartingStatePolicy.
     starting_state: StartingStatePolicy
     baseline: Condition
     # The one intended difference from the baseline. None: the baseline only.
@@ -91,6 +109,7 @@ class Experiment:
     controls: CustomerControls
     # Whether the agent or the controls can change anything outside the conversation.
     write_capable: bool
+    # The test resources a write-capable experiment is authorized to change, by name.
     authorized_resources: Sequence[str] = ()
 
     def __post_init__(self) -> None:
@@ -119,7 +138,9 @@ class Experiment:
             if not isinstance(self.variation, Condition):
                 raise ValueError(f"{this} declares its variation as a Condition or as None, got {self.variation!r}")
             if self.variation.condition_id == self.baseline.condition_id:
-                raise ValueError(f"the variation of {this} differs from the baseline, and both are {self.baseline.condition_id!r}")
+                raise ValueError(
+                    f"the variation of {this} differs from the baseline, and both are {self.baseline.condition_id!r}"
+                )
         for point in LifecyclePoint:
             if not callable(getattr(self.controls, point.value, None)):
                 raise ValueError(f"the controls of {this} have no {point.value} control")
@@ -129,12 +150,17 @@ class Experiment:
         if type(self.write_capable) is not bool:
             raise ValueError(f"{this} declares write_capable as True or False, got {self.write_capable!r}")
         resources = self.authorized_resources
-        resources = (resources,) if isinstance(resources, str) else tuple(resources)
-        object.__setattr__(self, "authorized_resources", resources)
-        if any(not isinstance(resource, str) or not resource.strip() for resource in resources):
-            raise ValueError(f"{this} identifies the test resources it may change by name, got {resources!r}")
+        if isinstance(resources, str) or any(
+            not isinstance(resource, str) or not resource.strip() for resource in resources
+        ):
+            raise ValueError(
+                f"{this} identifies the test resources it may change as a list of names, got {resources!r}"
+            )
+        object.__setattr__(self, "authorized_resources", tuple(resources))
         if self.write_capable and not resources:
-            raise ValueError(f"{this} is write-capable, so it identifies the test resources it is authorized to change")
+            raise ValueError(
+                f"{this} is write-capable, so it identifies the test resources it is authorized to change"
+            )
         if resources and not self.write_capable:
             raise ValueError(f"{this} is not write-capable, so it is authorized to change nothing, got {resources!r}")
 

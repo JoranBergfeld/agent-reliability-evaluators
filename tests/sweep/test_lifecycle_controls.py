@@ -126,6 +126,21 @@ def test_continuing_state_prepares_once_and_cleans_up_once():
     ]
 
 
+def test_continuing_state_does_not_continue_from_the_baseline_into_the_variation():
+    # The variation starts from prepared state, like the baseline did, so the two differ
+    # only by the declared variation.
+    fixture = Fixture()
+
+    scorecard = fixture.sweep(fixture.experiment(starting_state="continuing", attempts=2, variation=ADD_FAILS))
+
+    assert control_points(scorecard) == [
+        ["prepare_state", "apply_condition", "verify_condition"],
+        ["apply_condition", "verify_condition", "clean_up"],
+        ["prepare_state", "apply_condition", "verify_condition"],
+        ["apply_condition", "verify_condition", "clean_up"],
+    ]
+
+
 def test_each_attempt_records_the_intended_and_the_observed_condition():
     fixture = Fixture()
 
@@ -452,11 +467,12 @@ class NoCleanUp:
         ({"agent_configuration": {"agent": object()}}, "JSON-compatible"),
         ({"baseline": None}, "baseline"),
         ({"variation": "add-fails"}, "variation"),
-        ({"variation": Condition(condition_id="baseline", description="Also the baseline.")}, "differs from the baseline"),
+        ({"variation": Condition(condition_id="baseline", description="Again.")}, "differs from the baseline"),
         ({"controls": NoCleanUp()}, "clean_up"),
         ({"write_capable": "yes"}, "write_capable"),
         ({"write_capable": True, "authorized_resources": []}, "identifies the test resources"),
         ({"write_capable": True, "authorized_resources": [""]}, "identifies the test resources"),
+        ({"write_capable": True, "authorized_resources": "todo-list/add"}, "as a list of names"),
         ({"write_capable": False}, "not write-capable"),
     ],
 )
@@ -486,5 +502,31 @@ def test_a_sweep_whose_experiments_cannot_be_told_apart_is_rejected():
         sweep([], [add, same_task])
     with pytest.raises(ValueError, match="more than one Task is declared as 'add'"):
         sweep([task_given_twice], [add])
-    with pytest.raises(ValueError, match="more than one Attempt would have the identity 'add-item/baseline/attempt-1'"):
+    with pytest.raises(ValueError, match="more than one Attempt would have the identity 'add-item/baseline/"):
         sweep([colliding_task], [add])
+
+
+def test_a_clean_up_that_fails_after_the_last_attempt_still_stops_the_experiments_that_depend_on_it():
+    # Under continuing state the clean-up control runs once, after the last Attempt. Every
+    # Attempt of "add" was made, so "add" completed, but it left the shared list behind.
+    fixture = Fixture(
+        task_ids=("add", "tidy"),
+        failures={("clean_up", "add-item/baseline/attempt-2"): "the list could not be deleted"},
+    )
+
+    scorecard = fixture.sweep(
+        fixture.experiment(
+            "add", starting_state="continuing", attempts=2, authorized_resources=["todo-list/add", "todo-list/shared"]
+        ),
+        fixture.experiment("tidy", attempts=2, authorized_resources=["todo-list/tidy", "todo-list/shared"]),
+    )
+
+    assert [attempt["execution_status"] for attempt in scorecard["attempts"]] == ["completed", "cleanup_failed"]
+    assert execution(scorecard, "add-item") == {
+        "status": "completed",
+        "reason": None,
+        "attempts_planned": 2,
+        "attempts_recorded": 2,
+    }
+    assert execution(scorecard, "tidy-item")["status"] == "stopped"
+    assert execution(scorecard, "tidy-item")["attempts_recorded"] == 0

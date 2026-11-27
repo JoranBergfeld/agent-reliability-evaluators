@@ -42,6 +42,7 @@ def run_experiments(
     records = []
     unrestored: dict[str, str] = {}
     for experiment in experiments:
+        planned = len(_planned_attempts(experiment))
         made: list[Attempt] = []
         stop_reason = next(
             (unrestored[resource] for resource in experiment.authorized_resources if resource in unrestored), None
@@ -58,14 +59,15 @@ def run_experiments(
                             f"{resource!r}: {stop.reason}",
                         )
         attempts.extend(made)
-        status = ExperimentStatus.COMPLETED if stop_reason is None else ExperimentStatus.STOPPED
+        # An experiment whose every Attempt was made completed, even if its last clean-up failed.
+        stopped = len(made) < planned
         records.append(
             {
                 **experiment.to_dict(),
                 "execution": {
-                    "status": status.value,
-                    "reason": stop_reason,
-                    "attempts_planned": len(_planned_attempts(experiment)),
+                    "status": (ExperimentStatus.STOPPED if stopped else ExperimentStatus.COMPLETED).value,
+                    "reason": stop_reason if stopped else None,
+                    "attempts_planned": planned,
                     "attempts_recorded": len(made),
                 },
             }

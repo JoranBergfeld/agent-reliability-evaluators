@@ -86,6 +86,32 @@ class Attempt:
             raise EvidenceError(
                 f"a task outcome is a TaskOutcome with its source. Got {self.task_outcome!r}"
             )
+        self._require_recorded_experiment()
+
+    def _require_recorded_experiment(self) -> None:
+        if self.starting_state is not None:
+            try:
+                object.__setattr__(self, "starting_state", StartingStatePolicy(self.starting_state))
+            except ValueError:
+                raise EvidenceError(f"{self.starting_state!r} is not a starting-state policy") from None
+        if self.intended_condition is None and self.condition_role is None:
+            pass
+        elif not isinstance(self.intended_condition, Condition):
+            raise EvidenceError(
+                f"an intended condition is a Condition, not a label. Got {self.intended_condition!r}"
+            )
+        else:
+            try:
+                object.__setattr__(self, "condition_role", ConditionRole(self.condition_role))
+            except ValueError:
+                raise EvidenceError(
+                    f"a condition is the baseline or the variation of its experiment. Got {self.condition_role!r}"
+                ) from None
+        if self.observed_condition is not None and not isinstance(self.observed_condition, ObservedCondition):
+            raise EvidenceError(
+                f"an observed condition is an ObservedCondition with its source, not a label. "
+                f"Got {self.observed_condition!r}"
+            )
 
     def to_dict(self) -> dict[str, Any]:
         return {
@@ -104,5 +130,4 @@ class Attempt:
     def _intended_condition(self) -> dict[str, Any] | None:
         if self.intended_condition is None:
             return None
-        role = None if self.condition_role is None else self.condition_role.value
-        return {"role": role, **self.intended_condition.to_dict()}
+        return {"role": self.condition_role.value, **self.intended_condition.to_dict()}
