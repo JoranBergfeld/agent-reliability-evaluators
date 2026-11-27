@@ -44,7 +44,7 @@ What the sweep does for a metric on this path:
 
 **Each metric has runs of its own.** An evaluator that raises fails its whole run, and takes the results of every other evaluator in that run with it (observed, see below). So no two metrics share a run: a metric whose run fails costs no other metric its result. The first runs of a sweep are all started before the first of them is waited for, and so are the second runs.
 
-`FoundryManagedScoring` waits up to `run_timeout_seconds` (900 by default) for each run, counted from when that run was made, and asks for the run's status every `poll_interval_seconds` (10 by default). A run that has not ended in time is cancelled and its metric has no result. The second run takes about two seconds for every six bytes of the result (observed): raise `run_timeout_seconds` for a sweep of several hundred Attempts.
+`FoundryManagedScoring` waits up to `run_timeout_seconds` (900 by default) for each run, counted from when that run was made, and asks for the run's status every `poll_interval_seconds` (10 by default). A run that has not ended in time is cancelled and its metric has no result. The second run takes two to three seconds for every six bytes of the result (observed): raise `run_timeout_seconds` for a sweep of several hundred Attempts.
 
 To register from a separate CI step, without a sweep:
 
@@ -92,7 +92,7 @@ The canonical definitions and the Evidence model therefore have to stay inside t
 
 ### Adding another Evaluator
 
-Declare the Attempt evidence it is calculated from in `MANAGED_ATTEMPT_EVIDENCE` in [`artifact.py`](../../src/reliability_evaluators/managed_scoring/artifact.py), by the field names of the Attempt record. The same derivation then produces its artifact, and the same reader reads its evidence. Then run its Evaluator-seam vectors against the derived artifact, as the outcome consistency test does. That test is what shows the declared evidence is enough. Only outcome consistency has been derived and proven. An Evaluator that also takes a customer declaration, such as the action types of the trajectory metrics, needs that declaration transported too, which nothing does yet.
+Declare the Attempt evidence it is calculated from in `MANAGED_ATTEMPT_EVIDENCE` in [`artifact.py`](../../src/reliability_evaluators/managed_scoring/artifact.py), by the field names of the Attempt record. The same derivation then produces its artifact, and the same reader reads its evidence. Then run its Evaluator-seam vectors against the derived artifact, as the outcome consistency test does. That test is what shows the declared evidence is enough. Its result comes back through the same encoding, whatever units its counts are in and whatever its details hold, as long as they are JSON data. Only outcome consistency has been derived and proven. An Evaluator that also takes a customer declaration, such as the action types of the trajectory metrics, needs that declaration transported too, which nothing does yet.
 
 ## Registration
 
@@ -153,17 +153,21 @@ The sweep makes two runs for a metric, under one evaluation:
 
 ### What it costs
 
-Foundry grades the rows of a run one after another, at about two seconds a row (observed), and every row carries the evidence. So a result costs time and submitted characters in proportion to its size:
+Foundry grades the rows of a run one after another, at two to three seconds a row (observed), and every row carries the evidence. So a result costs time and submitted characters in proportion to its size:
 
 | Sweep | Size of the encoded result | Rows of the second run | What was seen or follows |
 | --- | --- | --- | --- |
-| 2 Attempts, unavailable measurement | about 260 bytes | about 45 | See [observed live](#returning-a-result-that-is-not-a-plain-value-observed-on-2026-11-27) |
-| 8 Attempts in 2 Tasks | about 250 bytes | about 45 | See [observed live](#returning-a-result-that-is-not-a-plain-value-observed-on-2026-11-27) |
-| 50 Attempts in 10 Tasks | 365 bytes | 61 | About 2 minutes at two seconds a row. Not run live |
-| 500 Attempts in 100 Tasks | 1,677 bytes | 280 | About 10 minutes at two seconds a row, and 1.4 million characters. Not run live |
-| 750 Attempts in 150 Tasks | | 420 | Refused: the run would submit 3.0 million characters |
+| 2 Attempts in 2 Tasks, an unavailable measurement | 259 bytes | 44 | Seen live: the sweep took 141 seconds, registration and both runs included |
+| 8 Attempts in 2 Tasks, a value | 266 bytes | 45 | Seen live: the sweep took 164 and 203 seconds |
+| 50 Attempts in 10 Tasks | 365 bytes | 61 | Not run live. Three to four minutes at the pace that was seen |
+| 500 Attempts in 100 Tasks | 1,677 bytes | 280 | Not run live. About a quarter of an hour at that pace, more than the default `run_timeout_seconds`, and 1.4 million submitted characters |
+| 750 Attempts in 150 Tasks | | 420 | Refused by the sweep: the run would submit 3.0 million characters |
 
 The sizes of the last three rows were measured with the derived evaluator on this machine, with Attempt identities of the form `task-7/attempt-3`. Identities that have less in common deflate less. The limit of 1,900,000 characters is therefore reached somewhere between 500 and 750 such Attempts for outcome consistency, where the evidence alone would fit many more. A metric that reports more details has a larger result and reaches the limit sooner.
+
+Before this version a managed sweep made one run with one row and took 43 to 52 seconds. Returning the state, the reason and the counts is what the added minutes buy.
+
+**A row that Foundry does not grade is asked for again.** Twice, Foundry returned one row of a completed run as an error where the evaluator had not raised and the other rows were graded (observed). A result takes many rows, so the sweep asks again for the parts that did not come back, in a further run with only those rows, up to three times in all. The evaluator returns the same part for the same evidence, and the digest is checked whichever run a part came from. A part that does not come back in three runs leaves the metric without a result. `managed_scoring.encoded_result.run_ids` names every run that returned a part.
 
 ## What the scorecard shows
 
@@ -180,7 +184,7 @@ The metric's entry has the same fields as a customer-process entry, and these di
 | `attempts_used` | The Attempts the evaluator was given, as on the other path |
 | `managed_scoring.evaluator` | The registered name, the version that ran and the SHA-256 of its code |
 | `managed_scoring.eval_id`, `run_id`, `output_item_id` | Where the plain value came from in your project: the evaluation, its first run and the output item of the `value` row |
-| `managed_scoring.encoded_result` | Where the rest came from: the `run_id` of the second run, and the `bytes` and `parts` of the encoded result |
+| `managed_scoring.encoded_result` | Where the rest came from: the `run_ids` of the runs that returned its parts, and the `bytes` and `parts` of the encoded result |
 | `managed_scoring.evidence_sha256` | The digest the evidence was submitted with: the SHA-256 of the evidence as JSON |
 | `managed_scoring.platform_diagnostics` | The threshold, label and pass flag Foundry attached to the value. Absent for a metric without a value |
 | `acceptance` | `not_assessed` when you declared a criterion, with the reason that the value is an unverified result, or that the metric is an unavailable measurement |
@@ -206,7 +210,7 @@ The metric's entry has the same fields as a customer-process entry, and these di
     "eval_id": "eval_1",
     "run_id": "evalrun_1",
     "output_item_id": "1",
-    "encoded_result": {"run_id": "evalrun_2", "bytes": 261, "parts": 44},
+    "encoded_result": {"run_ids": ["evalrun_2"], "bytes": 259, "parts": 44},
     "evidence_sha256": "dd62..."
   }
 }
@@ -277,7 +281,8 @@ With `artifact_dir`, the partial scorecard, its report and the evidence are deli
 | A run returned fewer output items than rows were submitted, or not one for each row | No result |
 | The project refuses or does not answer a request after the Attempts were made | No result, with the request and its answer |
 | The run ended as failed or canceled, or did not end in time | No result, with the run's error |
-| A completed run with an item that carries an error, whose result is in the status `error`, that has no result for the metric, or whose score is not a number | No result. One such row is enough: a result is not put together from some of its parts |
+| A completed run with an item that carries an error, that has no result for the metric, or whose score is not a number | No result. One such row is enough: a result is not put together from some of its parts |
+| A completed run with a row whose result is in the status `error` | The part that row asked for is asked for again. No result when it has not come back after three runs |
 | A score outside the scale of the metric | No result. The score is not reported |
 | Managed scoring stops on an error of its own | No result for every metric on this path, with that error |
 
@@ -372,7 +377,7 @@ Rescore with the commit or tag of the offering that made the scorecard. Another 
 
 ## What stays in your project
 
-Each sweep creates one evaluation and two runs in your project for every metric on this path, and evaluator versions as described above. Every row of every run holds the submitted evidence. The offering does not delete them. Your project governs access to them, their retention and their deletion.
+Each sweep creates one evaluation and two runs in your project for every metric on this path, more runs when a part is asked for again, and evaluator versions as described above. Every row of every run holds the submitted evidence. The offering does not delete them. Your project governs access to them, their retention and their deletion.
 
 ## Assumptions
 
@@ -400,18 +405,18 @@ Interfaces used, as they worked on that date:
 
 The error text of a refused evaluator shows that the project called an Azure OpenAI evals interface with `api-version=2025-04-01-preview` behind these routes.
 
-The live check ([`tests/live/test_managed_outcome_consistency.py`](../../tests/live/test_managed_outcome_consistency.py)) passed three times, in three projects. The last time it provisioned its own project and ran the derived evaluator as it is in this commit: 70,736 bytes, SHA-256 `809f7a6c1d02c24e9792a316f22f8534bdc0522fbdf6e623e141c88f86164b9d`. What it showed each time:
+The live check ([`tests/live/test_managed_outcome_consistency.py`](../../tests/live/test_managed_outcome_consistency.py)) passed three times, in three projects. The last time it provisioned its own project and ran the derived evaluator as it was then: 70,736 bytes, SHA-256 `809f7a6c1d02c24e9792a316f22f8534bdc0522fbdf6e623e141c88f86164b9d`. What it showed each time:
 
 - **A sweep scored outcome consistency in Foundry.** Eight synthetic Attempts on the fixture's to-do service, four successes and one failure at one Task and three failures at the other. Foundry returned `0.6799999999999999`, where the hand-calculated value is 0.68. The scorecard attributed it to `foundry_managed` as `unverified`. Foundry labelled it `pass` against its threshold of 0.5. The sweep took 43 to 52 seconds, registration and the run included.
 - **Registration was idempotent and made as the signed-in identity.** Registering twice more left one version with the derived code. Foundry recorded the signed-in user as its creator.
-- **An unavailable measurement was an explicit failure.** With one Attempt at each Task the run ended as failed with `UserError: All examples failed due to invalid user input; please check the individual sample outputs for details.` and no output item. The sweep raised `ManagedScoringFailure`, as it did at that time. It now returns a partial scorecard: see [failed and partial runs](#failed-and-partial-runs-observed-on-2026-11-27).
+- **An unavailable measurement was an explicit failure.** With one Attempt at each Task the run ended as failed with `UserError: All examples failed due to invalid user input; please check the individual sample outputs for details.` and no output item. The sweep raised `ManagedScoringFailure`, as it did at that time. An unavailable measurement now comes back as one: see [returning a result that is not a plain value](#returning-a-result-that-is-not-a-plain-value-observed-on-2026-11-27).
 
 A fourth run did not get as far as the check. The project it had just created answered its first request with HTTP 404 `Project not found`, the provisioning stopped and the resource group was torn down. The provisioning now waits for the project to answer, and the run after that passed.
 
 The code-evaluator sandbox:
 
 - **It ran Python 3.12.3.** Read with the `platform` module. `import sys` is refused.
-- **Accepted modules:** `__future__`, `bisect`, `collections`, `dataclasses` (with `kw_only`), `enum`, `fractions`, `hashlib`, `itertools`, `json`, `math`, `platform`, `re`, `typing`. That covers everything the canonical definitions and the Evidence model import.
+- **Accepted modules:** `__future__`, `bisect`, `collections`, `dataclasses` (with `kw_only`), `enum`, `fractions`, `hashlib`, `itertools`, `json`, `math`, `platform`, `re`, `typing`. That covered everything the canonical definitions and the Evidence model import. More were accepted [later](#returning-a-result-that-is-not-a-plain-value-observed-on-2026-11-27).
 - **Refused modules:** `sys`. Decision ticket #12 observed `socket` refused on 2026-11-23.
 - **Refused calls:** `compile`, `eval`, `exec`, `globals` and `__import__`. The check goes by the name that is called, so `re.compile(...)` was refused as `use of builtin 'compile()'`. The same text in a comment or a string was accepted. A refused source fails the run before anything executes, with `invalid_grader`.
 - **The Evidence model did not fit as it was.** Its confidence patterns used `re.compile`. They are now matched with `re.fullmatch` and `re.findall` on the pattern text, which the sandbox accepted.
@@ -438,22 +443,81 @@ Observed in Sweden Central in one more disposable Foundry project with no model 
 
 - **An evaluator that raises on the only item fails the run.** The run ended as `failed` with `UserError: All examples failed due to invalid user input; please check the individual sample outputs for details.`, `result_counts` of zero and no output item. Seen in a probe and in every sweep that ran the evaluator that raises, but one: once the run of that same evaluator ended as `failed` with `SystemError: Evaluation system error: (InternalError) AOAI evaluation run ... failed with status failed`, also with no output item. The sweep goes by the status of the run and reports whichever error the run carries.
 - **It takes the other evaluators of the run with it.** A run with two criteria and one item, where one evaluator returned a number and the other raised, ended the same way: `failed`, no output item, and no result for the evaluator that had nothing wrong with it. This is why each metric has a run of its own.
-- **An evaluator that raises on one of two items leaves the run `completed`.** The item it raised on was `completed` with a result in the status `error`, a `null` score, label and pass flag, and the error on the result's own `sample.error`: `ProviderGradingError: An error occurred during grading (provider run ...; item 1)`. The item's own `sample.error` was `null`. `result_counts.errored` was 1. The other item had its score. The same held with a second evaluator in the run, which kept both of its results. The offering submits one item per run, so it does not get such a run. It reads the error on a result all the same.
+- **An evaluator that raises on one of two items leaves the run `completed`.** The item it raised on was `completed` with a result in the status `error`, a `null` score, label and pass flag, and the error on the result's own `sample.error`: `ProviderGradingError: An error occurred during grading (provider run ...; item 1)`. The item's own `sample.error` was `null`. `result_counts.errored` was 1. The other item had its score. The same held with a second evaluator in the run, which kept both of its results. The offering then submitted one item per run. It now submits one row for each part of a result, and asks again for a part whose row comes back like this.
 - **Runs made at the same time all ended.** Five runs started back to back all ended within 133 seconds of the first being made. Twelve runs of the evaluator that returns a number, started back to back, all ended as `completed` within 201 seconds of the first being made, of which making the twelve took 135 seconds with a new token for every request. No request was refused. Twelve derived evaluators with real evidence were not tried.
 
-The live check ([`tests/live/test_managed_scoring_failures.py`](../../tests/live/test_managed_scoring_failures.py)) passed against that project, with the derived evaluator of this commit (SHA-256 `809f7a6c1d02c24e9792a316f22f8534bdc0522fbdf6e623e141c88f86164b9d`). It makes a managed run fail without touching the canonical definition: a test-only evaluator that raises is registered under a name of its own, and the project is told to run it where the sweep names the derived one. What it showed:
+The live check ([`tests/live/test_managed_scoring_failures.py`](../../tests/live/test_managed_scoring_failures.py)) passed against that project, with the derived evaluator as it was then (SHA-256 `809f7a6c1d02c24e9792a316f22f8534bdc0522fbdf6e623e141c88f86164b9d`). It makes a managed run fail without touching the canonical definition: a test-only evaluator that raises is registered under a name of its own, and the project is told to run it where the sweep names the derived one. What it showed:
 
 - **A failed managed run left a partial scorecard.** Eight synthetic Attempts, as in the check above. The run ended as `failed` with the `UserError` above. The scorecard was `partial`, outcome consistency had no state and no value, `missing` named it with that error, all eight task outcomes were kept, and resource consistency, scored in this process from the same Attempts, kept its value. The scorecard, its report and the evidence were delivered to a directory.
 - **A rescore on request stood beside the failure.** Rescoring the delivered scorecard gave `0.6799999999999999`, attributed to `customer_process`, from evidence with the digest that was submitted to the project. The managed failure and the partial status were unchanged.
 - **A rescore stood beside an unverified value.** With the derived evaluator left to run, Foundry returned `0.6799999999999999` and the rescore gave `0.6799999999999999`. This is one comparison of one value. It is not a fidelity rule, and the managed value stays unverified.
 - **Of two managed runs of one sweep, one failed and the other kept its result.** For this check only, a second Evaluator was put on the managed path and the test-only evaluator was run in its place. Its run ended as `failed`, once with the `UserError` and once with the `SystemError` above. The run of outcome consistency, made at the same time, returned `0.6799999999999999` both times, and the scorecard kept it.
-- **The earlier live check still passed** against the same project, with its last case changed: an unavailable measurement now leaves a partial scorecard where the sweep used to raise.
+- **The earlier live check still passed** against the same project, with its last case changed: an unavailable measurement then left a partial scorecard where the sweep used to raise. It now [comes back as one](#returning-a-result-that-is-not-a-plain-value-observed-on-2026-11-27).
 - **Timing.** The three checks took 109 seconds together against a project that already existed, and 215 seconds together with the three of the earlier live check.
 - **Teardown.** The resource group created for this work, `rg-are-50-0ee7446d`, was deleted with everything registered in it, and a separate `az group exists` returned `false`. The soft-deleted Foundry account was purged.
 
+### Returning a result that is not a plain value, observed on 2026-11-27
+
+Observed in Sweden Central in one more disposable Foundry project with no model deployment, with Azure CLI 2.93.0, signed in as a user, and with the same interfaces as above: `api-version=v1` with the header `Foundry-Features: Evaluations=V1Preview` to register, and the `/openai/v1/evals` routes for evaluations, runs and output items. Each item was seen once unless it says otherwise. The probes used test-only code evaluators registered in that project for the purpose.
+
+**What a code evaluator can return.** Only a number. Microsoft documents a float between 0.0 and 1.0; nothing else is documented for code evaluators.
+
+| The evaluator returned | What came back |
+| --- | --- |
+| A float | The score. `reason` is `null`. No other field holds anything the evaluator computed |
+| A dict: `score` and `reason`; `result` and `reason`; `result`, `result_reason` and `result_result`; `score`, `label`, `reason`, `passed`, `status` and `properties` | Run `failed`, `UserError: All examples failed due to invalid user input; please check the individual sample outputs for details.`, no output item. All four |
+| A string holding a number, a string holding JSON, a tuple, a list, `True`, `None` | The same failure, each |
+| A float, after `print` of a marker text | The score. The printed text was nowhere in the output item or the run |
+| A float, with two metrics declared in the evaluator definition | One score, as with one metric. Returning a dict with a key for each metric failed the run as above |
+| `True`, with the metric declared as `boolean` | The same failure |
+| `3`, with the metric declared as `ordinal` from 0 to 5 | Run `failed`, `SystemError: ... pass_threshold must be between 0.0 and 1.0` |
+| NaN, infinity | Run `failed`, `SystemError: Evaluation system error: (InternalError) AOAI evaluation run ... failed with status failed`, no output item. Each |
+| `-3.5`, with a declared range of 0 to 1 | `-3.5`, in a completed run. The declared range is not enforced |
+| The integer `10**400`, which no double holds | Run `completed`, one item, its result in the status `error` with `ProviderGradingError` |
+
+- **The evaluator is not given anything but the submitted row.** `sample` was an empty dict, and `item` held the submitted fields and nothing else. Initialization parameters of the criterion did not reach it.
+- **A criterion cannot hand the evaluator another field under the same name.** A flat data schema with a `data_mapping` worked for one criterion. Several criteria of one run that map the same name from different fields were refused when the run was made: `Saved code grader 'part-1' maps 'part' from ${data.part_1} while grader 'part-0' maps it from ${data.part_0}; every grader receives the same uploaded item, so a mapped name has one source across the graders of a run.` A literal in a mapping was refused with HTTP 400. So the parts of a result cannot be asked for by several criteria over one row, which would have submitted the evidence once.
+
+**Numbers.** An evaluator returned 44 numbers, 34 of them in one run.
+
+- **Every finite double but one came back as the same double**: 21 of the 22 that were tried, among them `0.1`, `1/3`, `0.6799999999999999`, `0.49999999999999994`, `0.8300000000000001`, `5e-324`, `1.7976931348623157e308` and `1e22`. The one is negative zero, which came back as `0`, without its sign.
+- **They are printed in another notation.** A whole number has no fraction (`1.0` as `1`, `float(2**53)` as `9007199254740992`), and large and small ones have an exponent (`1E+22`, `1E-07`, `5E-324`).
+- **Integers up to 2^53 came back exactly**, all 14 that were tried, among them `2**48 - 1` and `2**53 - 1`.
+- **An integer is turned into a double.** `2**53 + 1` came back as `9007199254740992`, and `10**30 + 7` as `1E+30`. Seven integers above 2^53 were tried, and each came back as the double nearest to it.
+
+**Rows.**
+
+- **Each row is graded in a fresh interpreter.** A module-level counter was 1 on each of 20 rows.
+- **About two seconds a row with a trivial evaluator, one row after another**, in runs that were made alone or beside a few others: 6 rows in 29 to 40 seconds, 21 rows in 68, 60 rows in 134, 100 rows in 243. A run of 1,000 rows had not ended after 25 minutes and was cancelled. With the derived evaluator: 2 rows and then 45 rows in 164 and 203 seconds, registration included.
+- **The size limit is on the run, not on a row.** Ten rows of 100,000 characters ran. Thirty such rows, and three rows of 1,000,000 characters, were refused with HTTP 413 when the run was made. The body of that answer names the subscription identifier.
+- **The byte channel worked.** A test-only evaluator returned 119 bytes, a digest and a deflated text, as 20 numbers of up to six bytes, and all 20 came back unchanged. The sandbox's `zlib` deflated that text to the same bytes as this machine's.
+- **Accepted modules, in addition to the list above:** `zlib`, `base64`, `binascii`, `struct`, `gzip`, `bz2`, `lzma`, `array`, `decimal`, `string`, `functools`, `operator`, `statistics`, `textwrap`, `copy`, `numbers`, `abc`, `datetime`, `time`, `random`, `heapq`. The derived evaluator uses `zlib` and `base64` of these.
+
+**Rows whose evaluator raises, and rows that are not graded.**
+
+- **Every row raises: the run fails**, with the `UserError` above and no output item. Seen with one row and with two.
+- **One row of several raises: the run is `completed` and returns every item.** Seen five times, with 3 and 6 rows and the raising row first, in the middle and last. The item of the raising row has a result in the status `error` with `ProviderGradingError`, as recorded above. The exception text is not returned.
+- **A row whose evaluator did not raise was returned as an error, twice.** In a probe with the rows `ok`, `raise`, `ok`, the first row came back as an error beside the one that raised. In a sweep with the derived evaluator, one of the 44 rows of the second run came back as an error, and none of the 44 raises: `ProviderGradingError: An error occurred during grading (provider run ...; item 19)`. The sweep of that time reported no result for the metric. It now asks again for such a part.
+
+**The live check** ([`tests/live/test_managed_outcome_consistency.py`](../../tests/live/test_managed_outcome_consistency.py)) passed against that project, with the derived evaluator of this commit: 79,599 bytes, SHA-256 `6f2b6af38023da79ac849f12cd24f088c533837a73fa8c4c88e1e21ccd64acb5`. It was run twice. The first time one of its four cases failed, on the row that was not graded. What it showed:
+
+- **An unavailable measurement came back with its reason and counts.** Two synthetic Attempts, one at each of two Tasks. No run failed. The first run returned `-1` as the plain value and `259` as the size. The second returned 44 parts. The scorecard was `complete` and showed `unavailable`, the reason `no Task has at least two Attempts with a task outcome`, and the two excluded Tasks and the two excluded Attempts by identity, as the customer-process path shows them. The marker was not in the scorecard. Seen once in full, and once up to the row that was not graded.
+- **A value came back with its counts and details.** Eight synthetic Attempts, as in the checks above. The plain value was `0.6799999999999999`, the encoded result 266 bytes in 45 parts, and the scorecard showed the counts, the per-Task details and the eight Attempts the value rests on. Seen twice.
+- **A run that mixes an available and an unavailable result returned every item.** One evaluation was handed two sets of evidence in the same runs: five Attempts at one Task, and one Attempt at one Task. The first run had four rows and returned `0.36` and `228` for the one, `-1` and `248` for the other. The second run had 80 rows, 38 for the one result and 42 for the other, and returned all 80 as `completed`. Read back, the one result was `available` with `0.36`, the other `unavailable` with its reason and its excluded Attempt. Seen twice.
+- **Registration was idempotent**, as before. Seen twice.
+- **The check of failed runs and of the rescore still passed** ([`tests/live/test_managed_scoring_failures.py`](../../tests/live/test_managed_scoring_failures.py)), with this commit's two runs for a metric, once.
+- **Timing.** The four cases took 582 and 672 seconds against a project that already existed.
+- **Teardown.** The resource group created for this work, `rg-are-48-a35ff320`, was deleted with everything registered in it, and a separate `az group exists` returned `false`. The soft-deleted Foundry account was purged.
+
 ## Not verified
 
-- **Fidelity of the returned value.** No probe compared the number computed inside the evaluator with the number received. Every managed value stays unverified.
+- **Fidelity of the returned value.** A probe returned 22 doubles and received 21 of them unchanged, and negative zero without its sign. The live check compared one plain value, `0.36`, with the value in its encoded result, twice, and they were equal. That is a small sample and not a fidelity rule. Every managed result stays unverified.
+- **Asking again for a part that was not graded**, against a live project. The row that was not graded did not recur after the sweep learned to ask again. It was exercised against the fake project only.
+- **How often Foundry does not grade a row.** Seen twice, in about thirty runs with more than one row.
+- **A second run of more than 100 rows,** and a result near the size limit of a run. The largest second run of a sweep had 45 rows, the largest of the live check 80, and the largest probe 100.
+- **Rows of one run graded by different builds of the sandbox**, which could deflate the same result differently.
+- **A metric that is not applicable.** The encoded result carries any state an Evaluator can return. Outcome consistency returns only `available` and `unavailable`, so no other state was returned through it.
+- **An Evaluator other than outcome consistency in Foundry.** Resource consistency was derived and scored through the same encoding against the fake project, in the tests of failed runs. It was not run in a live project.
 - **Sign-in as a service principal or a federated workload identity**, and a token function built on `azure-identity`. Only a user signed in to the Azure CLI was used.
 - **Which role is needed.** The identity had Foundry User on the account and Foundry Project Manager on the project. Neither was tried alone.
 - **Token renewal.** A new token is asked for every five minutes and once more after an HTTP 401. No run was long enough to need it.
@@ -461,7 +525,7 @@ The live check ([`tests/live/test_managed_scoring_failures.py`](../../tests/live
 - **Twelve derived evaluators, each in a run of its own.** Twelve runs at once were seen only with a test-only evaluator and a one-word item. Whether a project limits how many runs it accepts at once is not known. A run that is refused leaves its metric without a result and the others as they are.
 - **Evidence near the size limit.**
 - **A managed run that does not end in time.** The cancellation of such a run was exercised against the fake project only.
-- **A completed run whose only item has a result in the status `error`.** Seen only in a run with two items.
+- **A completed run whose only item has a result in the status `error`.** Seen only in runs with several items, and once with an integer that no double holds.
 - **A request that the live project refuses after the Attempts were made**, such as a rate limit. Exercised against the fake project only.
 - **Two pipelines registering at the same moment.** Both could register a version with the same code. Either is the derived code, so the result would be the same, but the project would hold a duplicate.
 - **What the Foundry portal shows** for the evaluator, the run or its result.
