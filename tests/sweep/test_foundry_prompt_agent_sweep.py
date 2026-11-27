@@ -63,6 +63,7 @@ def without_a_response(invocation, http_status, error):
     """What is recorded of an invocation the fake project answered without a response object."""
     return {
         "agent_target": "foundry_prompt_agent",
+        "entry_point": "customer_code",
         "protocol": "responses",
         "api_version": "v1",
         "composed_input": None,
@@ -150,6 +151,7 @@ def test_each_attempt_keeps_the_response_identifiers_the_usage_and_the_ordered_t
 
     assert scorecard["attempts"][0]["invocation"] == {
         "agent_target": "foundry_prompt_agent",
+        "entry_point": "customer_code",
         "protocol": "responses",
         "api_version": "v1",
         "composed_input": None,
@@ -302,6 +304,35 @@ def test_a_tool_fault_that_fails_the_invocation_is_an_execution_failure_and_not_
     assert outcome_consistency["evidence"] == {"attempt_ids": ["todo/baseline/attempt-1", "todo/baseline/attempt-2"]}
 
 
+def test_the_usage_the_project_returned_is_reported_per_attempt_and_a_refused_invocation_has_none(todo_service):
+    # Each baseline Attempt makes five tool calls, for which the fake project reports 670 tokens.
+    # Under the fault the project answers HTTP 400 with no response and no usage, as observed live.
+    # Known: 670 + 670 = 1340 tokens, a partial sum.
+    scorecard = sweep(todo_service, ["completes"] * 4, attempts=2, variation=UPDATE_FAILS)
+
+    usage_reported = scorecard["token_usage"]
+    assert [
+        (entry["attempt_id"], entry["execution_status"], entry["invocation"]["basis"], entry["total_tokens"])
+        for entry in usage_reported["attempts"]
+    ] == [
+        ("todo/baseline/attempt-1", "completed", "reported", 670),
+        ("todo/baseline/attempt-2", "completed", "reported", 670),
+        ("todo/update-fails/attempt-1", "failed", "missing", None),
+        ("todo/update-fails/attempt-2", "failed", "missing", None),
+    ]
+    assert usage_reported["attempts"][0]["invocation"]["response_id"] == "resp_fake_1"
+    # The refused request is still identified, so that what it used can be looked up on the platform.
+    assert usage_reported["attempts"][2]["invocation"] == {
+        "basis": "missing",
+        "total_tokens": None,
+        "reason": NO_RESPONSE,
+        "response_id": None,
+        "request_ids": {"x-request-id": "req_fake_3", "apim-request-id": "apim_fake_3"},
+    }
+    assert (usage_reported["sweep"]["coverage"], usage_reported["sweep"]["total_tokens"]) == ("partial", 1340)
+    assert usage_reported["sweep"]["uses_missing"] == 2
+
+
 def test_a_response_that_was_delivered_but_did_not_complete_is_an_execution_failure(todo_service):
     # The second response arrives with HTTP 200 and the status failed, after one tool call.
     # Two Attempts complete the Task: p = 2/2, value 1. As a task failure it would be (2 * 2/3 - 1)^2 = 0.111...
@@ -318,6 +349,7 @@ def test_a_response_that_was_delivered_but_did_not_complete_is_an_execution_fail
         "task_outcome": None,
         "invocation": {
             "agent_target": "foundry_prompt_agent",
+            "entry_point": "customer_code",
             "protocol": "responses",
             "api_version": "v1",
             "composed_input": None,

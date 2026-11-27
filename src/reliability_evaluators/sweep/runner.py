@@ -31,6 +31,7 @@ from ..scorecard import (
     ArtifactLocation,
     CutShort,
     MissingResult,
+    PreparationUsage,
     ScoredMetric,
     build_scorecard,
     criteria_by_metric,
@@ -55,6 +56,7 @@ def run_sweep(
     metrics: Sequence[str | ConfiguredEvaluator],
     action_evidence: ActionEvidenceDeclaration | None = None,
     acceptance_criteria: Sequence[AcceptanceCriterion] = (),
+    preparation_usage: Sequence[PreparationUsage] = (),
     max_concurrent_attempts: int = 1,
     cancellation: Callable[[], bool] | None = None,
     clock: Callable[[], float] = perf_counter,
@@ -142,16 +144,28 @@ def run_sweep(
     Attempt is then recorded without a task outcome, which is not a task failure, and the
     outcome can be supplied later with `recalculate`.
 
+    After the Attempts and the scoring, the scorecard reports under `token_usage` what was
+    measured of their token usage: per Attempt, per Evaluator and for the sweep. An Attempt's
+    usage is what the agent target recorded as the `token_usage` of its invocation and of the
+    confidence request that followed it. Usage that was not reported is missing with a
+    reason and is never zero, and Attempts that failed, were cancelled or were retried are
+    included. It is metadata: no metric and no acceptance assessment reads it, there is no
+    estimate beforehand, and nothing is stopped because of it. `preparation_usage` is what
+    the customer reports for a variation they generated with a model, such as the prompt
+    variants of an experiment. The sweep generates none, so it reports that usage only when
+    it is declared here.
+
     A declaration that cannot be run is rejected before any Attempt is made. A task-success
     rule that returns anything else than a sourced, binary TaskOutcome stops the sweep. So does a
     violation assessor that does not return sourced violation assessments of the operational
     constraints its Task declares, and an action recording that is not a sequence of ActionEvent.
 
-    With `artifact_dir`, the attempt-level evidence, the scorecard and the human-readable
-    report rendered from it are also written to that directory. The caller chooses it in the
-    run or artifact context of the platform it runs on. The sweep then either delivers all
-    three or raises ReportingFailure: whatever stops it, a rejected declaration included, is
-    raised as that, and the evidence collected until then is kept at the location.
+    With `artifact_dir`, the attempt-level evidence, the scorecard, and the CI job summary
+    and the human-readable report rendered from it are also written to that directory. The
+    caller chooses it in the run or artifact context of the platform it runs on, and its
+    pipeline publishes the summary. The sweep then either delivers all four or raises
+    ReportingFailure: whatever stops it, a rejected declaration included, is raised as that,
+    and the evidence collected until then is kept at the location.
     """
     location = None if artifact_dir is None else ArtifactLocation(artifact_dir)
     attempts: list[Attempt] = []
@@ -164,6 +178,7 @@ def run_sweep(
             metrics=metrics,
             action_evidence=action_evidence,
             acceptance_criteria=acceptance_criteria,
+            preparation_usage=preparation_usage,
             max_concurrent_attempts=max_concurrent_attempts,
             cancellation=cancellation,
             clock=clock,
@@ -191,6 +206,7 @@ def _sweep(
     metrics: Sequence[str | ConfiguredEvaluator],
     action_evidence: ActionEvidenceDeclaration | None,
     acceptance_criteria: Sequence[AcceptanceCriterion],
+    preparation_usage: Sequence[PreparationUsage],
     max_concurrent_attempts: int,
     cancellation: Callable[[], bool] | None,
     clock: Callable[[], float],
@@ -206,6 +222,7 @@ def _sweep(
     _require_distinct_tasks([*tasks, *(experiment.task for experiment in experiments)])
     # Called for its check: a second criterion for one metric is rejected here, not after the Attempts.
     criteria_by_metric(acceptance_criteria)
+    _require_prepared_variations(preparation_usage, experiments)
     if type(max_concurrent_attempts) is not int or max_concurrent_attempts < 1:
         raise ValueError(f"max_concurrent_attempts is a whole number, 1 or more, got {max_concurrent_attempts!r}")
     cancelled = Cancellation(cancellation)
@@ -295,6 +312,7 @@ def _sweep(
                         definition=evaluator.evaluator.definition,
                         execution_error=managed_result.error,
                         managed_scoring={**managed_result.provenance, "error": managed_result.error},
+                        reported_usage=managed_result.reported_usage,
                         **attributed,
                     )
                 )
@@ -308,6 +326,7 @@ def _sweep(
                     fidelity=Fidelity.UNVERIFIED,
                     limitation=managed_result.limitation,
                     managed_scoring=managed_result.provenance,
+                    reported_usage=managed_result.reported_usage,
                     **attributed,
                 )
             )
@@ -326,6 +345,47 @@ def _sweep(
         executions=[execution.record for _, executions in made for execution in executions],
         max_concurrent_attempts=max_concurrent_attempts,
         acceptance_criteria=acceptance_criteria,
+        preparation_usage=[_in_every_set(preparation, len(planned)) for preparation in preparation_usage],
+    )
+
+
+def _require_prepared_variations(preparation_usage: Sequence[PreparationUsage], experiments: Sequence[Experiment]) -> None:
+    """Reject preparation usage that cannot be attributed: it names experiments that declare a variation."""
+    declared = {experiment.experiment_id: experiment for experiment in experiments}
+    seen: set[str] = set()
+    for preparation in preparation_usage:
+        if not isinstance(preparation, PreparationUsage):
+            raise ValueError(f"preparation usage is declared as PreparationUsage, got {preparation!r}")
+        if preparation.preparation_id in seen:
+            raise ValueError(f"more than one preparation is declared as {preparation.preparation_id!r}")
+        seen.add(preparation.preparation_id)
+        for experiment_id in preparation.experiment_ids:
+            if experiment_id not in declared:
+                raise ValueError(
+                    f"the preparation {preparation.preparation_id!r} names the experiment {experiment_id!r}, "
+                    "which is not declared"
+                )
+            if declared[experiment_id].variation is None:
+                raise ValueError(
+                    f"the preparation {preparation.preparation_id!r} is of the variation of an experiment, and "
+                    f"experiment {experiment_id!r} declares no variation"
+                )
+
+
+def _again(set_number: int) -> str:
+    """What the identities of a later set of Attempts carry. The first set is identified as in a sweep with one set."""
+    return "" if set_number == 1 else f"/set-{set_number}"
+
+
+def _in_every_set(preparation: PreparationUsage, sets: int) -> PreparationUsage:
+    """The preparation, naming its experiments as each set of Attempts identifies them: one preparation serves all."""
+    return replace(
+        preparation,
+        experiment_ids=[
+            f"{experiment_id}{_again(set_number)}"
+            for set_number in range(1, sets + 1)
+            for experiment_id in preparation.experiment_ids
+        ],
     )
 
 
@@ -453,7 +513,7 @@ def _plan(tasks: Sequence[Task], experiments: Sequence[Experiment], set_number: 
     The first set is identified as it is in a sweep with one set. A later set carries its
     number in the identity of its Attempts and of its experiments, which are run again.
     """
-    again = "" if set_number == 1 else f"/set-{set_number}"
+    again = _again(set_number)
     return _PlannedAttempts(
         attempts_at_tasks=tuple(
             (task, f"{task.task_id}{again}/attempt-{number}")
@@ -650,7 +710,7 @@ def _invoke_agent(
         # What the agent target recorded of the invocation stays on the Attempt, however it ended.
         recorded = error.invocation if isinstance(error, InvocationFailed) else None
         if isinstance(error, TimeoutError):
-            return not_completed(ExecutionStatus.TIMED_OUT, why)
+            return not_completed(ExecutionStatus.TIMED_OUT, why, recorded)
         # The sweep cannot interrupt an invocation. It measures, so that the limit holds
         # whether or not the agent target stopped at it.
         if limit is not None and clock() - started > limit:
@@ -710,7 +770,8 @@ def _with_confidence(
         return replace(attempt, confidence=ConfidenceUnavailable(reason=ATTEMPT_NOT_COMPLETED))
     if cancellation.requested():
         return replace(attempt, confidence=ConfidenceUnavailable(reason=SWEEP_CANCELLED))
-    return replace(attempt, confidence=ask())
+    confidence, recorded = ask()
+    return replace(attempt, confidence=confidence, confidence_invocation=recorded)
 
 
 def _resource_measurements(

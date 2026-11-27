@@ -60,7 +60,14 @@ A metric result that a recalculation has replaced. It is kept, marked as superse
 How the running of an attempt or experiment ended, such as completed, timed out, cancelled or setup failed. It is separate from the task outcome and from the state of a reliability metric: an execution failure keeps its reason and is not a task failure, an unavailable measurement or not applicable.
 
 **Invocation evidence**:
-What an agent target recorded of the invocation of an attempt: the identifiers the platform returned, the token usage it reported and the tool calls it exposed. It is kept as returned, for a failed invocation too, and it never decides a task outcome.
+What an agent target recorded of the invocation of an attempt: the identifiers the platform returned, the token usage it reported and the tool calls it exposed. It is kept as returned, for a failed invocation too, and it never decides a task outcome. What a target recorded of the confidence request that followed an attempt is kept the same way, apart from the invocation.
+
+**Token usage**:
+The model tokens that were measured, after the run, for the attempts of an evaluator sweep, their confidence follow-ups, the scoring of its evaluators and the preparation a customer declares. It is reported per attempt, per evaluator and for the sweep, as metadata: it is not a reliability metric and no acceptance criterion reads it. Usage that was not reported is missing with a reason, never zero.
+_Avoid_: Cost, budget, estimate
+
+**Entry point**:
+Where the request that invokes the agent for an attempt is sent from: customer code, in the customer's own process, or Foundry cloud evaluation, in an evaluation run of the customer's Foundry project. Each attempt records its entry point in its invocation evidence. It is independent of the scoring path, and on either one the evaluator sweep owns repetition, grouping and the customer controls.
 
 **Confidence rating**:
 The evaluated agent's estimate, given after an attempt, of its confidence in the task outcome.

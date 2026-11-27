@@ -168,7 +168,7 @@ def test_a_managed_run_whose_evaluator_fails_leaves_a_partial_scorecard_and_can_
     assert (resource_consistency["state"], resource_consistency["value"]) == ("available", 1.0)
     assert resource_consistency["scoring_path"] == "customer_process"
     # The partial scorecard was delivered, with its report and its evidence.
-    assert sorted(path.name for path in tmp_path.iterdir()) == ["evidence.json", "report.html", "scorecard.json"]
+    assert sorted(path.name for path in tmp_path.iterdir()) == ["evidence.json", "report.html", "scorecard.json", "summary.md"]
     delivered = json.loads((tmp_path / "scorecard.json").read_text(encoding="utf-8"))
     assert delivered == json.loads(to_json(scorecard))
     assert "customer_process_rescore" not in metric(delivered)

@@ -227,6 +227,20 @@ Other reasons a rating can be unavailable:
 
 A number is never clamped, guessed, chosen from several, or lifted out of a sentence. The agent is asked once: an answer that cannot be used is not asked for again. A further observation needs a further Attempt.
 
+### What the request used
+
+The confidence request is a request of its own, so what it used is reported apart from the Attempt's invocation. A target that knows it returns it with the answer, in the form it records an invocation in:
+
+```python
+return ConfidenceResponse(
+    attempt_id=request.attempt.attempt_id,
+    output=answer,
+    invocation={"response_id": response_id, "token_usage": {"total_tokens": 120}},
+)
+```
+
+The sweep keeps it on the Attempt as `confidence_invocation`. It is `null` when no request was sent. It is no part of the confidence evidence and does not change how the answer is read. See [token usage](../token_usage/readme.md#confidence-follow-ups).
+
 ### What a missing rating does not do
 
 - It does not change the Attempt's execution status or task outcome. The Attempt is still a success or a failure for every other metric.

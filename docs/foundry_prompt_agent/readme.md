@@ -96,6 +96,7 @@ Every Attempt in the scorecard has an `invocation` entry with what the platform 
 | Field | Contents |
 | --- | --- |
 | `agent_target`, `protocol`, `api_version` | `foundry_prompt_agent`, `responses`, `v1` |
+| `entry_point` | `customer_code`: the request was sent from your process. The [cloud evaluation target](../foundry_cloud_evaluation/readme.md) records `foundry_cloud_evaluation` |
 | `composed_input` | What the agent was sent, when `compose_input` composed it. `null` when the agent was sent the prompt as it is |
 | `http_status` | The HTTP status of the answer |
 | `request_ids` | The `x-request-id` and `apim-request-id` headers of the answer |
@@ -112,7 +113,7 @@ An Attempt whose invocation failed keeps the same entry with whatever the platfo
 
 A tool call is an output item of the response whose type ends in `_call`, paired by `call_id` with the item of the type `<that type>_output`. For an OpenAPI tool these are `openapi_call` and `openapi_call_output`, and the name is `<tool name>_<operationId>`, such as `todos_readTodo`. The arguments are decoded from the JSON text the protocol gives them as. The output is kept as the text the platform gave. Only `openapi_call` was observed live: other tool types follow the same rule without having been observed. `tool_calls` is `null` when the answer has no response, which is not the same as an empty list.
 
-The token usage is recorded, not reported: a token usage report is a separate piece of work. The usage is also not given to the sweep as a resource measurement, because it has not been established that it covers every model call of an Attempt.
+The token usage is recorded here as the platform reported it, and the scorecard reports it from here: per Attempt, per Evaluator and for the sweep, see [token usage](../token_usage/readme.md). The usage is not given to the sweep as a resource measurement, because it has not been established that it covers every model call of an Attempt.
 
 `invocation` is part of the attempt-level evidence, so it is in `evidence.json` and in the human-readable report, and a [recalculation](../sweep/late-and-corrected-outcomes.md) keeps it.
 
@@ -182,7 +183,7 @@ The target declares that it does not support an isolated follow-up. Whether a Fo
 ## Limits
 
 - One request per Attempt, not streamed. A streamed response is not read.
-- Attempts are invoked from your process only. Foundry cloud evaluation as the entry point is not covered here.
+- This target invokes the agent from your process only. To invoke it through Foundry cloud evaluation, use the [cloud evaluation target](../foundry_cloud_evaluation/readme.md), which also lists what differs between the two entry points.
 - The target does not look the agent up. It does not check that the agent is a prompt agent, and it reports no agent configuration for you to declare.
 - A conversation is never continued. The target has no way to link an invocation to an earlier response.
 
@@ -198,7 +199,7 @@ The interface as it worked on that date:
 
 ### The live check
 
-`tests/live/test_foundry_prompt_agent_live.py` runs one sweep from this source against that agent, scoring outcome consistency and fault robustness. The experiment declares continuing state, with five Attempts under the baseline and five under a fault on the update tool. The prompt names one state of the to-do service, and the agent is asked to do the whole Task in every Attempt. It ran twice on one fixture, with the target and the check as they are here, and passed both times with the same results. The customer-process rescore of a Foundry-managed result was merged into the sweep after that. The check does not use it and was not run again.
+`tests/live/test_foundry_prompt_agent_live.py` runs one sweep from this source against that agent, scoring outcome consistency and fault robustness. The experiment declares continuing state, with five Attempts under the baseline and five under a fault on the update tool. The prompt names one state of the to-do service, and the agent is asked to do the whole Task in every Attempt. It ran twice on one fixture, with the target and the check as they are here, and passed both times with the same results. Two things were added after that, and the check was not run again: the customer-process rescore of a Foundry-managed result, which the check does not use, and the `entry_point` of the invocation evidence, a constant the target adds to what it records.
 
 - **Outcome consistency was 0.36 in the scorecard and 0.36 calculated independently.** The check decides each task outcome itself, from the events and the final state the service had recorded when the Attempt ended, which the verify control reads. The first baseline Attempt left the service with exactly the five operations of the Task and succeeded. Each later one added five more and failed the strict task-success rule. p = 1/5, (2 × 0.2 − 1)² = 0.36. The scorecard used the same five Attempts and had the same five task outcomes.
 - **A new conversation did not reset the service.** Every Attempt was a response of its own. The service held 5, 10, 15, 20 and 25 operations after the five baseline Attempts. Had each new conversation been a reset, every Attempt would have succeeded and the value would have been 1.
@@ -247,4 +248,4 @@ Each was deleted with the fixture's `teardown`, the second by the provisioning t
 - Authentication in CI or with `azure-identity`.
 - Tool types other than OpenAPI, a second version of the agent, and which roles are really required.
 - What the platform does with an invocation whose caller stopped waiting, beyond the observations above.
-- More than one Attempt at a time, the confidence follow-up, and Foundry cloud evaluation as the entry point.
+- More than one Attempt at a time and the confidence follow-up. Foundry cloud evaluation as the entry point has its own target and its own [live observations](../foundry_cloud_evaluation/readme.md#observed-live).
