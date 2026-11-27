@@ -5,9 +5,10 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from fractions import Fraction
-from typing import Any
+from typing import Any, Mapping
 
 from .errors import EvidenceError
+from .experiment import json_data
 
 # A number written in plain decimal digits. Nothing else is read as a rating.
 # The patterns are kept as text and matched with the functions of `re`: the Foundry
@@ -24,12 +25,16 @@ class ConfidenceRating:
     `rating` is the number as the agent wrote it, on the scale 0 to 100. It stays text so
     that its recorded precision is kept: "87.50" is not turned into 87.5.
     `original_response` is the whole answer the rating was read from.
+    `invocation` is what the agent target recorded of the confidence request: the identifiers
+    the platform returned and the token usage it reported. None when it recorded nothing.
     """
 
     rating: str
     original_response: str
+    invocation: Mapping[str, Any] | None = None
 
     def __post_init__(self) -> None:
+        object.__setattr__(self, "invocation", _recorded_invocation(self.invocation))
         if not isinstance(self.rating, str):
             raise EvidenceError(
                 f"a confidence rating is recorded as the agent wrote it, as text. Got {self.rating!r}"
@@ -61,6 +66,7 @@ class ConfidenceRating:
             "normalized": self.normalized,
             "original_response": self.original_response,
             "unavailable_reason": None,
+            "invocation": self.invocation,
         }
 
 
@@ -69,12 +75,15 @@ class ConfidenceUnavailable:
     """Why an Attempt has no confidence rating. It is never replaced by a number.
 
     `original_response` is what the agent answered, when it answered at all.
+    `invocation` is what the agent target recorded of the confidence request, when one was sent.
     """
 
     reason: str
     original_response: str | None = None
+    invocation: Mapping[str, Any] | None = None
 
     def __post_init__(self) -> None:
+        object.__setattr__(self, "invocation", _recorded_invocation(self.invocation))
         if not isinstance(self.reason, str) or not self.reason.strip():
             raise EvidenceError("an unavailable confidence rating records its reason")
         if self.original_response is not None and not isinstance(self.original_response, str):
@@ -86,7 +95,17 @@ class ConfidenceUnavailable:
             "normalized": None,
             "original_response": self.original_response,
             "unavailable_reason": self.reason,
+            "invocation": self.invocation,
         }
+
+
+def _recorded_invocation(invocation: Any) -> Any:
+    """What an agent target recorded of a confidence request, as JSON-compatible data, or None."""
+    if invocation is None:
+        return None
+    if not isinstance(invocation, Mapping):
+        raise EvidenceError(f"what an agent target records of a confidence request is a mapping. Got {invocation!r}")
+    return json_data(invocation, "the invocation of a confidence request")
 
 
 EMPTY_RESPONSE = "the confidence response is empty"

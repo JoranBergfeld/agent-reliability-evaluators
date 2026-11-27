@@ -173,10 +173,11 @@ def _confidence(recorded: Any) -> ConfidenceRating | ConfidenceUnavailable | Non
         return None
     # The normalized rating is not read: it follows from the rating, and a record whose
     # normalized rating is another number is not written back unchanged.
-    fields = _fields("confidence evidence", recorded, "rating", "original_response", "unavailable_reason")
+    fields = _fields("confidence evidence", recorded, "rating", "original_response", "unavailable_reason", "invocation")
+    kept = {"original_response": fields["original_response"], "invocation": fields["invocation"]}
     if fields["rating"] is None:
-        return ConfidenceUnavailable(reason=fields["unavailable_reason"], original_response=fields["original_response"])
-    return ConfidenceRating(rating=fields["rating"], original_response=fields["original_response"])
+        return ConfidenceUnavailable(reason=fields["unavailable_reason"], **kept)
+    return ConfidenceRating(rating=fields["rating"], **kept)
 
 
 def _violation_assessment(recorded: Any) -> ViolationAssessment:

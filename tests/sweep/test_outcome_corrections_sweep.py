@@ -578,13 +578,13 @@ def condition_of_kind(kind):
         (with_attempt(reviewed_by="J. Jansen"), "'close/attempt-3'.*reviewed_by"),
         (
             with_attempt(
-                confidence={"rating": "150", "normalized": 1.5, "original_response": "150", "unavailable_reason": None}
+                confidence={"rating": "150", "normalized": 1.5, "original_response": "150", "unavailable_reason": None, "invocation": None}
             ),
             "'close/attempt-3'.*outside 0 to 100",
         ),
         (
             with_attempt(
-                confidence={"rating": "75", "normalized": 0.5, "original_response": "75", "unavailable_reason": None}
+                confidence={"rating": "75", "normalized": 0.5, "original_response": "75", "unavailable_reason": None, "invocation": None}
             ),
             "'close/attempt-3'.*confidence",
         ),

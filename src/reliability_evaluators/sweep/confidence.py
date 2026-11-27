@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+from dataclasses import replace
+
 from ..agent_target import (
     AgentResponse,
     AgentTarget,
     AttemptRequest,
     ConfidenceRequest,
     ConfidenceResponse,
+    InvocationFailed,
     IsolatedFollowUp,
 )
 from ..evidence import ConfidenceRating, ConfidenceUnavailable, read_confidence_response
@@ -63,11 +66,15 @@ def elicit_confidence(
     try:
         answer = agent_target.elicit_confidence(request)
     except Exception as error:
-        return ConfidenceUnavailable(reason=f"the confidence request failed: {type(error).__name__}: {error}")
+        return ConfidenceUnavailable(
+            reason=f"the confidence request failed: {type(error).__name__}: {error}",
+            # What the agent target recorded of the request stays on the Attempt, however it ended.
+            invocation=error.invocation if isinstance(error, InvocationFailed) else None,
+        )
     if not isinstance(answer, ConfidenceResponse) or not isinstance(answer.output, str):
         return ConfidenceUnavailable(reason=NO_RESPONSE)
     if answer.attempt_id != attempt.attempt_id:
         return ConfidenceUnavailable(
             reason=f"the confidence response belongs to Attempt {answer.attempt_id!r}, not to this Attempt"
         )
-    return read_confidence_response(answer.output)
+    return replace(read_confidence_response(answer.output), invocation=answer.invocation)

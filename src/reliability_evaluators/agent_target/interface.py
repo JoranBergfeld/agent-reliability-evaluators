@@ -45,7 +45,8 @@ class InvocationFailed(Exception):
     """An invocation that failed, with what the agent target recorded of it.
 
     An agent target may raise any exception from `invoke`. Raising this one keeps
-    `invocation` on the Attempt, in the form `AgentResponse.invocation` has.
+    `invocation` on the Attempt, in the form `AgentResponse.invocation` has. Raised from
+    `elicit_confidence`, it keeps `invocation` on the Attempt's confidence evidence.
     """
 
     def __init__(self, message: str, *, invocation: Mapping[str, Any] | None = None):
@@ -84,10 +85,15 @@ class ConfidenceRequest:
 
 @dataclass(frozen=True, kw_only=True)
 class ConfidenceResponse:
-    """What the agent answered to a confidence request, and the Attempt the answer belongs to."""
+    """What the agent answered to a confidence request, and the Attempt the answer belongs to.
+
+    `invocation` is what the agent target recorded of the request, as JSON-compatible data
+    in the form `AgentResponse.invocation` has. It is kept on the Attempt's confidence evidence as given.
+    """
 
     attempt_id: str
     output: str
+    invocation: Mapping[str, Any] | None = None
 
 
 class AgentTarget(Protocol):

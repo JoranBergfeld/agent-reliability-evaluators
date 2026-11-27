@@ -627,6 +627,7 @@ NOT_ASKED = {
     "normalized": None,
     "original_response": None,
     "unavailable_reason": "the Attempt did not complete, so no confidence request was sent",
+    "invocation": None,
 }
 
 
@@ -672,6 +673,7 @@ def test_no_confidence_request_is_sent_once_the_sweep_was_cancelled():
     assert in_flight["confidence"] == {
         **NOT_ASKED,
         "unavailable_reason": "the sweep was cancelled, so no confidence request was sent",
+        "invocation": None,
     }
 
 

@@ -323,6 +323,7 @@ def test_a_rating_keeps_the_precision_it_was_written_at():
         "normalized": 0.875,
         "original_response": "087.500",
         "unavailable_reason": None,
+        "invocation": None,
     }
 
 
@@ -335,6 +336,7 @@ def test_an_unavailable_rating_carries_its_reason_and_no_number():
         "normalized": None,
         "original_response": "High.",
         "unavailable_reason": "no number in the confidence response",
+        "invocation": None,
     }
 
 
