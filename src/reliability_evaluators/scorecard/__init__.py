@@ -5,7 +5,7 @@ rendered from it, and both are delivered with the evidence to a location the cal
 """
 
 from .acceptance import AcceptanceCriterion, CustomerAssessment, criteria_by_metric
-from .assemble import SCHEMA_VERSION, PlannedAttempts, ScorecardStatus, ScoredMetric, build_scorecard, to_json
+from .assemble import SCHEMA_VERSION, ExecutionRecord, ScorecardStatus, ScoredMetric, build_scorecard, to_json
 from .delivery import ArtifactLocation, ReportingFailure
 from .report import render_report
 
@@ -14,7 +14,7 @@ __all__ = [
     "AcceptanceCriterion",
     "ArtifactLocation",
     "CustomerAssessment",
-    "PlannedAttempts",
+    "ExecutionRecord",
     "ReportingFailure",
     "ScorecardStatus",
     "ScoredMetric",

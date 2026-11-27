@@ -165,6 +165,7 @@ The metric's entry in the scorecard carries:
 | Field | Content |
 | --- | --- |
 | `state`, `value`, `reason` | `available` with a value, or `unavailable` with a reason and no value |
+| `execution_failure` | `null`, unless the metric has no result because the Attempts that supply its evidence were cut short; see [execution limits and partial scorecards](../sweep/execution-limits.md#metrics-in-a-partial-scorecard) |
 | `definition` | version, what it measures, the calculation, the fidelity conventions, the scale and the interpretation |
 | `scoring_path`, `fidelity` | `customer_process` and `authoritative` for a value scored in your own process |
 | `counts` | Tasks and Attempts: total, valid (the denominator used), missing and excluded with reasons and identities |
@@ -172,6 +173,7 @@ The metric's entry in the scorecard carries:
 | `details.per_task` | for each eligible Task: the number of Attempts, each resource type used with its unit, measurement boundary, mean and CV, each resource type excluded with its reason and the Attempts concerned, and the Task value |
 | `details.excluded_tasks` | for each excluded Task: its reason and, where resource types were examined, why each was excluded |
 | `evidence.attempt_ids` | the Attempts the value rests on, which are listed under `attempts` in the same scorecard |
+| `attempts_used` | every Attempt this Evaluator was given, whatever became of it, and the other metrics scored from any of the same Attempts: see [several Evaluators in one sweep](../sweep/several-evaluators.md) |
 | `acceptance` | the assessment of your acceptance criterion for this metric, or `null` when you declared none: see [acceptance criteria](../acceptance_criteria/readme.md) |
 
 Each Attempt under `attempts` carries its `resource_measurements`, each with `resource_type`, `value`, `unit`, `boundary` and `reliably_sourced`.

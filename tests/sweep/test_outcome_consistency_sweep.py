@@ -173,6 +173,7 @@ def test_there_is_no_combined_score_and_no_built_in_threshold():
         "counts",
         "details",
         "evidence",
+        "attempts_used",
         "acceptance",
     }
 
@@ -265,7 +266,7 @@ def test_a_task_success_rule_that_decides_a_fractional_outcome_is_rejected():
         (lambda: [one_task(attempts=0)], ["outcome_consistency"], "at least one Attempt"),
         (lambda: [one_task(task_id="")], ["outcome_consistency"], "task_id"),
         (lambda: [one_task()], ["overall_reliability"], "not a reliability metric"),
-        (lambda: [one_task()], ["calibration"], "no Evaluator"),
+        (lambda: [one_task()], ["fault_robustness"], "no Evaluator"),
     ],
 )
 def test_a_declaration_the_sweep_cannot_run_is_rejected(tasks, metrics, problem):

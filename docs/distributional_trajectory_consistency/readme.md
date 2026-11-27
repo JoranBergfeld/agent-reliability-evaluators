@@ -205,6 +205,7 @@ The metric's entry in the scorecard carries:
 | `details.tool_names_without_action_type` | tool names that were recorded but are not in the mapping |
 | `details.per_task` | Attempts, pairs, mean divergence and Task value of each eligible Task |
 | `evidence.attempt_ids` | the Attempts the value rests on, which are listed under `attempts` in the same scorecard |
+| `attempts_used` | every Attempt this Evaluator was given, whatever became of it, and the other metrics scored from any of the same Attempts: see [several Evaluators in one sweep](../sweep/several-evaluators.md) |
 
 Each Attempt under `attempts` carries its `action_evidence`: the source and the events in order, each with tool name, arguments, result and error. It is `null` for an Attempt that was not recorded.
 

@@ -9,9 +9,15 @@ import json
 
 import pytest
 
-from reliability_evaluators.evidence import OperationalConstraint, TaskOutcome, ViolationAssessment
+from reliability_evaluators.evidence import ActionEvent, OperationalConstraint, TaskOutcome, ViolationAssessment
 from reliability_evaluators.scorecard import AcceptanceCriterion, CustomerAssessment
-from reliability_evaluators.sweep import ExecutionLimits, Task, run_sweep
+from reliability_evaluators.sweep import (
+    ActionEvidenceDeclaration,
+    ConfiguredEvaluator,
+    ExecutionLimits,
+    Task,
+    run_sweep,
+)
 from tests.fakes import FakeAgentTarget, MeetingAgentTarget, attempt_evidence, cancelling, taking
 
 SOURCE = "final state of the fake service"
@@ -87,6 +93,7 @@ def test_a_sweep_that_collects_everything_it_planned_gives_a_complete_scorecard(
     assert scorecard["tasks_without_experiment"] == [
         {
             "task_id": "close",
+            "attempt_set": 1,
             "limits": {"attempt_timeout_seconds": None, "total_timeout_seconds": None, "max_retries": 0},
             "execution": {
                 "status": "completed",
@@ -174,6 +181,7 @@ def test_a_scorecard_lacking_a_planned_attempt_is_partial_and_names_what_is_miss
             "kind": "attempt_evidence",
             "experiment_id": None,
             "task_id": "close",
+            "attempt_set": 1,
             # Every planned Attempt was made, so nothing stopped the making of them.
             "status": "completed",
             "reason": None,
@@ -314,6 +322,7 @@ def test_a_task_that_reaches_its_total_time_limit_keeps_the_evidence_it_collecte
             "kind": "attempt_evidence",
             "experiment_id": None,
             "task_id": "close",
+            "attempt_set": 1,
             "status": "timed_out",
             "reason": TIME_LIMIT_REACHED,
             "attempts_not_made": 2,
@@ -323,6 +332,50 @@ def test_a_task_that_reaches_its_total_time_limit_keeps_the_evidence_it_collecte
     outcome_consistency = metric(scorecard)
     assert outcome_consistency["state"] == "available"
     assert outcome_consistency["value"] == pytest.approx(5 / 9, abs=1e-12)
+
+
+def recording(evidence_source):
+    """Action evidence in which every Attempt made one update. Each declaration reads with its own recorder."""
+    return ActionEvidenceDeclaration(
+        evidence_source=evidence_source,
+        record=lambda attempt, response: [ActionEvent(tool_name="update_item")],
+        action_types={"update_item": "update"},
+    )
+
+
+def test_each_set_of_attempts_is_made_under_the_limits_of_its_task_anew_and_has_its_own_record():
+    # The two Evaluators read different recordings, so "close" is attempted in two sets of three.
+    # Each Attempt takes 40 seconds and the Attempts of a set may take 60 together, so two are
+    # made in each set. One limit across both sets would leave the second set with none.
+    # Every Attempt made the same one update, so both metrics are 1.
+    scorecard = sweep(
+        {"close": [taking(40, "success")] * 4},
+        attempts={"close": 3},
+        limits={"close": ExecutionLimits(total_timeout_seconds=60)},
+        metrics=[
+            ConfiguredEvaluator(
+                metric_id="distributional_trajectory_consistency", action_evidence=recording("native tool calls")
+            ),
+            ConfiguredEvaluator(
+                metric_id="sequential_trajectory_consistency", action_evidence=recording("service-side effects")
+            ),
+        ],
+    )
+
+    assert [entry["attempt_id"] for entry in scorecard["attempts"]] == [
+        "close/attempt-1",
+        "close/attempt-2",
+        "close/set-2/attempt-1",
+        "close/set-2/attempt-2",
+    ]
+    assert [
+        (entry["task_id"], entry["attempt_set"], entry["execution"]["status"], entry["execution"]["attempts_not_made"])
+        for entry in scorecard["tasks_without_experiment"]
+    ] == [("close", 1, "timed_out", 1), ("close", 2, "timed_out", 1)]
+    assert [(entry["task_id"], entry["attempt_set"]) for entry in scorecard["missing"]] == [("close", 1), ("close", 2)]
+    assert metric(scorecard, "distributional_trajectory_consistency")["value"] == 1
+    assert metric(scorecard, "sequential_trajectory_consistency")["value"] == 1
+    assert scorecard["status"] == "partial"
 
 
 def test_a_retry_is_not_started_after_the_total_time_limit_was_reached():

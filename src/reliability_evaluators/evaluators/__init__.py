@@ -11,12 +11,14 @@ which `confidence_pairs.pair_confidence_with_outcome` builds, counts and explain
 
 from . import (
     brier_based_score,
+    calibration,
     conditional_harm_severity,
     constraint_compliance,
     distributional_trajectory_consistency,
     outcome_consistency,
     resource_consistency,
     sequential_trajectory_consistency,
+    strict_confidence_discrimination,
 )
 from .catalogue import RELIABILITY_METRICS, ReliabilityMetric
 from .registry import EVALUATORS, Evaluator
@@ -46,6 +48,7 @@ __all__ = [
     "Scale",
     "ScoringPath",
     "brier_based_score",
+    "calibration",
     "conditional_harm_severity",
     "constraint_compliance",
     "counted",
@@ -53,4 +56,5 @@ __all__ = [
     "outcome_consistency",
     "resource_consistency",
     "sequential_trajectory_consistency",
+    "strict_confidence_discrimination",
 ]

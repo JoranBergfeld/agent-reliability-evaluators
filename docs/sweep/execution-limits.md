@@ -143,6 +143,7 @@ Without the declaration it records `"mode": "sequential"` and `"max_concurrent_a
     "kind": "attempt_evidence",
     "experiment_id": null,
     "task_id": "close",
+    "attempt_set": 1,
     "status": "timed_out",
     "reason": "the time limit of 600 seconds for all its Attempts was reached",
     "attempts_not_made": 2,
@@ -153,7 +154,7 @@ Without the declaration it records `"mode": "sequential"` and `"max_concurrent_a
 
 | `kind` | What is missing | Fields |
 | --- | --- | --- |
-| `attempt_evidence` | Planned Attempts that were not made or did not complete. | `experiment_id` (`null` for a Task given without an experiment) and `task_id`; `status` and `reason` of the execution, as below; `attempts_not_made`; `attempts_not_completed`, with each Attempt's execution status and error |
+| `attempt_evidence` | Planned Attempts that were not made or did not complete. | `experiment_id` (`null` for a Task given without an experiment), `task_id` and `attempt_set`; `status` and `reason` of the execution, as below; `attempts_not_made`; `attempts_not_completed`, with each Attempt's execution status and error |
 | `metric_result` | The result of a selected metric. | `metric_id`, `reason`, `experiment_ids`, `task_ids` |
 
 A metric that is an unavailable measurement is a result. It does not make a scorecard partial.
@@ -165,7 +166,9 @@ A third status, `reporting_failed`, never appears in a scorecard. It is the stat
 An experiment is what you declared as an `Experiment`. A Task given without one is not an experiment, and the scorecard does not list it as one. Both get the same record of their execution limits and of what became of their planned Attempts:
 
 - `experiments` has one entry per declared experiment: [what it declared](controlled-experiments.md#what-the-scorecard-records), then `limits` and `execution`.
-- `tasks_without_experiment` has one entry per Task given without an experiment: `task_id`, then `limits` and `execution`.
+- `tasks_without_experiment` has one entry per Task given without an experiment: `task_id` and `attempt_set`, then `limits` and `execution`.
+
+`attempt_set` is 1 unless [Evaluators need separate Attempts](several-evaluators.md#when-separate-attempts-are-made). Then every Task and experiment is attempted again in a later set, with an entry of its own: a Task under the same `task_id` and the next `attempt_set`, an experiment under the identity `<experiment>/set-2`. Each set is made under the Task's limits anew.
 
 ```json
 "limits": {"attempt_timeout_seconds": 60, "total_timeout_seconds": 600, "max_retries": 1},
@@ -202,7 +205,7 @@ An experiment is what you declared as an `Experiment`. A Task given without one 
 
 A metric keeps its result whenever its Evaluator can still calculate a value from the evidence that was collected. The Attempts and Tasks it had to leave out are counted in its `counts`, with reasons.
 
-A metric has no result when its Evaluator cannot calculate a value and the Attempts that supply its evidence were cut short. They were cut short when, for an experiment or a Task, not all the planned Attempts that the metric is scored from were made, or not one of them completed. That is an execution failure. It is not an unavailable measurement, it is not "not applicable" and it is not a task failure:
+A metric has no result when its Evaluator cannot calculate a value and the Attempts that supply its evidence were cut short. They were cut short when, for an experiment or a Task, not all the Attempts planned under the conditions the metric is calculated from were made, or not one of them completed. That is an execution failure. It is not an unavailable measurement, it is not "not applicable" and it is not a task failure:
 
 ```json
 {
@@ -230,7 +233,7 @@ A metric has no result when its Evaluator cannot calculate a value and the Attem
 
 An acceptance criterion on a metric without a result is not assessed, and the execution failure is its reason. A metric that kept its result in a partial scorecard is assessed like any other. To require a minimum amount of evidence, put `minimum_counts` in the criterion: see [acceptance criteria](../acceptance_criteria/readme.md).
 
-The Evaluators that exist are scored from the Attempts of Tasks given without an experiment and from Attempts under the baseline of an experiment. Attempts under a variation that were not made make the scorecard partial and do not, on their own, leave a metric without a result.
+The Evaluators that exist are calculated from the Attempts of Tasks given without an experiment and from Attempts under the baseline of an experiment. Attempts under a variation that were not made make the scorecard partial and do not, on their own, leave a metric without a result. When Evaluators need separate Attempts, each is judged by the Attempts of its own set.
 
 ## Choices made here
 

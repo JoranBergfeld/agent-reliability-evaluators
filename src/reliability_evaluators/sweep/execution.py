@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import threading
+from dataclasses import dataclass
 from typing import Callable, Sequence
 
 from ..evidence import Attempt, ConditionRole, ExecutionStatus, ExperimentStatus
-from ..scorecard import PlannedAttempts
+from ..scorecard import ExecutionRecord
 from .declaration import Experiment, Task
 
 # An Attempt whose invocation of the agent ended this way is made again while it has retries left.
@@ -63,14 +64,45 @@ class Budget:
             return True
 
 
-def planned_attempts(
+@dataclass(frozen=True)
+class Execution:
+    """What became of the Attempts planned for a Task in one set of Attempts, in its experiment or without one."""
+
+    record: ExecutionRecord
+    task: Task
+    experiment: Experiment | None
+    # The last execution of each planned Attempt that was made.
+    last: tuple[Attempt, ...]
+
+    def planned_under(self, roles: Sequence[ConditionRole]) -> int:
+        """How many Attempts were planned under conditions that play one of these parts.
+
+        An Attempt at a Task given without an experiment had no variation applied to it,
+        so it counts as a baseline Attempt.
+        """
+        if self.experiment is None:
+            return self.task.attempts * (ConditionRole.BASELINE in roles)
+        return self.task.attempts * sum(role in roles for role, _ in self.experiment.conditions())
+
+    def cut_short_under(self, roles: Sequence[ConditionRole]) -> bool:
+        """Whether the Attempts under these conditions were cut short: not all made, or not one completed."""
+        planned = self.planned_under(roles)
+        made = [attempt for attempt in self.last if (attempt.condition_role or ConditionRole.BASELINE) in roles]
+        return planned > 0 and (
+            len(made) < planned
+            or not any(attempt.execution_status is ExecutionStatus.COMPLETED for attempt in made)
+        )
+
+
+def execution_of(
     task: Task,
     made: Sequence[Sequence[Attempt]],
     budget: Budget,
     *,
     experiment: Experiment | None = None,
     stop_reason: str | None = None,
-) -> PlannedAttempts:
+    attempt_set: int = 1,
+) -> Execution:
     """What became of the Attempts planned for a Task, in its experiment or without one.
 
     `made` has one entry for each planned Attempt that was made: its executions in order,
@@ -78,7 +110,7 @@ def planned_attempts(
     stopped the experiment, if one did.
     """
     planned = task.attempts * (len(experiment.conditions()) if experiment is not None else 1)
-    last = [executions[-1] for executions in made]
+    last = tuple(executions[-1] for executions in made)
     not_made = planned - len(last)
     if budget.stopped is not None:
         status, reason = budget.stopped, budget.reason
@@ -88,11 +120,11 @@ def planned_attempts(
         status, reason = ExperimentStatus.STOPPED, stop_reason
     else:
         status, reason = ExperimentStatus.COMPLETED, None
-    scored = [attempt for attempt in last if attempt.condition_role is not ConditionRole.VARIATION]
-    return PlannedAttempts(
+    record = ExecutionRecord(
         task_id=task.task_id,
         experiment_id=None if experiment is None else experiment.experiment_id,
         declaration={} if experiment is None else experiment.to_dict(),
+        attempt_set=attempt_set,
         limits=task.limits.to_dict(),
         status=status,
         reason=reason,
@@ -103,6 +135,5 @@ def planned_attempts(
         ),
         not_made=not_made,
         retries=sum(len(executions) - 1 for executions in made),
-        cut_short=len(scored) < task.attempts
-        or not any(attempt.execution_status is ExecutionStatus.COMPLETED for attempt in scored),
     )
+    return Execution(record, task, experiment, last)

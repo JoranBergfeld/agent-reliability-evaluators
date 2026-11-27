@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 720 366" width="720" height="366" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13">
+  <title>A tie scores zero: strict confidence discrimination against the conventional AUROC</title>
+  <desc>The grid of the worked example with the second success rated 80 instead of 90. Rows are the successful Attempts, rated 95, 80 and 62.5. Columns are the failed Attempts, rated 80 and 30. Four pairs have the success rated strictly higher and count 1. The pair 80 against 80 is a tie and counts 0. The pair 62.5 against 80 has the failure rated higher and counts 0. Strict confidence discrimination is 4 divided by 6, about 0.667. The conventional AUROC, which is not this metric, counts the tie as one half and gives 4.5 divided by 6, which is 0.75. If every rating were 50, all six pairs would tie: this metric would be 0 and the conventional AUROC 0.5.</desc>
+  <rect width="720" height="366" fill="#ffffff"/>
+
+  <g fill="#616161" font-weight="600">
+    <text x="20" y="64">Successful Attempts</text>
+    <text x="300" y="24">Failed Attempts</text>
+  </g>
+  <g fill="#212121" text-anchor="middle">
+    <text x="395" y="46">close/attempt-3</text>
+    <text x="395" y="64">rated 80</text>
+    <text x="605" y="46">archive/attempt-2</text>
+    <text x="605" y="64">rated 30</text>
+  </g>
+  <line x1="20" y1="76" x2="700" y2="76" stroke="#bdbdbd"/>
+
+  <g fill="#212121">
+    <text x="20" y="113">close/attempt-1</text>
+    <text x="190" y="113">rated 95</text>
+    <text x="20" y="163">close/attempt-2</text>
+    <text x="190" y="163" font-weight="600">rated 80</text>
+    <text x="20" y="213">archive/attempt-1</text>
+    <text x="190" y="213">rated 62.5</text>
+  </g>
+
+  <g fill="#e8f5e9" stroke="#2e7d32" stroke-width="1.5">
+    <rect x="300" y="88" width="190" height="40" rx="4"/>
+    <rect x="510" y="88" width="190" height="40" rx="4"/>
+    <rect x="510" y="138" width="190" height="40" rx="4"/>
+    <rect x="510" y="188" width="190" height="40" rx="4"/>
+  </g>
+  <rect x="300" y="138" width="190" height="40" rx="4" fill="#fff8e1" stroke="#f9a825" stroke-width="2.5"/>
+  <rect x="300" y="188" width="190" height="40" rx="4" fill="#ffebee" stroke="#c62828" stroke-width="1.5"/>
+
+  <g fill="#1b5e20" text-anchor="middle" font-weight="600">
+    <text x="395" y="113">95 &gt; 80: counts 1</text>
+    <text x="605" y="113">95 &gt; 30: counts 1</text>
+    <text x="605" y="163">80 &gt; 30: counts 1</text>
+    <text x="605" y="213">62.5 &gt; 30: counts 1</text>
+  </g>
+  <text x="395" y="163" fill="#8d6e00" text-anchor="middle" font-weight="600">80 = 80: a tie, counts 0</text>
+  <text x="395" y="213" fill="#b71c1c" text-anchor="middle" font-weight="600">62.5 &lt; 80: counts 0</text>
+
+  <line x1="20" y1="244" x2="700" y2="244" stroke="#bdbdbd"/>
+  <text x="20" y="274" fill="#212121" font-weight="600">Strict confidence discrimination</text>
+  <text x="300" y="274" fill="#1565c0" font-weight="600">4 / 6 ≈ 0.667: the tie counts 0</text>
+  <text x="20" y="300" fill="#757575">Conventional AUROC, not this metric</text>
+  <text x="300" y="300" fill="#757575">(4 + 0.5 × 1) / 6 = 0.75: the tie counts one half</text>
+  <line x1="20" y1="316" x2="700" y2="316" stroke="#bdbdbd"/>
+  <text x="20" y="344" fill="#616161">If every rating were 50, all six pairs would tie: this metric gives 0, the conventional AUROC 0.5.</text>
+</svg>

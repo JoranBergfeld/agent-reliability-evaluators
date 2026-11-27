@@ -4,6 +4,7 @@ from ..evidence import Condition, ObservedCondition, StartingStatePolicy
 from .declaration import (
     ActionEvidenceDeclaration,
     ActionRecorder,
+    ConfiguredEvaluator,
     ControlContext,
     CustomerControls,
     ExecutionLimits,
@@ -18,6 +19,7 @@ __all__ = [
     "ActionEvidenceDeclaration",
     "ActionRecorder",
     "Condition",
+    "ConfiguredEvaluator",
     "ControlContext",
     "CustomerControls",
     "ExecutionLimits",

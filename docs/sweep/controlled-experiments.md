@@ -183,7 +183,7 @@ Every Attempt records its experiment, its starting-state policy, the intended co
 }
 ```
 
-The Attempt identity is `<experiment_id>/<condition_id>/attempt-<number>`.
+The Attempt identity is `<experiment_id>/<condition_id>/attempt-<number>`. When an Evaluator needs Attempts that are made differently from another's, the experiment is run again for it under the identity `<experiment_id>/set-2`: see [several Evaluators in one sweep](several-evaluators.md).
 
 `experiments` lists what each experiment declared and how its execution ended:
 
@@ -219,6 +219,6 @@ The Attempt identity is `<experiment_id>/<condition_id>/attempt-<number>`.
 
 ## Limits in this version
 
-- Attempts under a variation are made and recorded, but no Evaluator uses them yet. The Evaluators that exist score Attempts under the baseline only.
+- Attempts under a variation are made and recorded, but no Evaluator uses them yet. The Evaluators that exist score Attempts under the baseline only, and each metric's `attempts_used` in the scorecard lists the Attempts its Evaluator was given.
 - A Task can be declared in one experiment only, so that Attempts made under different declarations are never mixed in one Task's evidence.
 - If a task-success rule returns something that is not a `TaskOutcome`, the sweep stops with an error and does not invoke `clean_up`.

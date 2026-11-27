@@ -213,6 +213,7 @@ def test_a_timed_out_attempt_of_an_experiment_is_still_verified_and_cleaned_up_a
             "kind": "attempt_evidence",
             "experiment_id": "add-item",
             "task_id": "add",
+            "attempt_set": 1,
             "status": "completed",
             "reason": None,
             "attempts_not_made": 0,

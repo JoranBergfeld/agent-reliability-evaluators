@@ -14,10 +14,9 @@ from ..evidence import (
     ObservedCondition,
     StartingStatePolicy,
 )
-from ..scorecard import PlannedAttempts
 from .confidence import ATTEMPT_NOT_COMPLETED
 from .declaration import ControlContext, CustomerControls, Experiment, Task
-from .execution import RETRYABLE, Budget, planned_attempts
+from .execution import RETRYABLE, Budget, Execution, execution_of
 
 # Completes an Attempt with its confidence evidence. It asks the agent only when a selected
 # metric uses confidence and the Attempt it is given completed.
@@ -44,7 +43,9 @@ def run_experiments(
     ask_confidence: bool,
     budget_for: Callable[[Task], Budget],
     attempts: list[Attempt],
-) -> list[PlannedAttempts]:
+    unrestored: dict[str, str] | None = None,
+    attempt_set: int = 1,
+) -> list[Execution]:
     """Run the experiments in the order declared. Returns what became of the Attempts planned for each.
 
     Each Attempt is added to `attempts` as it is made, so that the caller still has the
@@ -52,15 +53,18 @@ def run_experiments(
 
     An experiment is not started when it may change a test resource that an earlier
     experiment failed to restore. Experiments that share no such resource are unrelated.
+    `unrestored` holds those test resources, each with why it was not restored. A caller
+    that runs experiments more than once in a sweep passes the same one every time.
 
     `ask_confidence` says whether a selected metric uses confidence. An Attempt for which
     the agent was not invoked then records why it has no confidence rating.
 
     `budget_for` gives the budget of a Task: whether a further Attempt or retry of it may
-    start under its execution limits and the cancellation of the sweep.
+    start under its execution limits and the cancellation of the sweep. `attempt_set` is
+    which set of the sweep's Attempts these experiments are run for.
     """
     records = []
-    unrestored: dict[str, str] = {}
+    unrestored = {} if unrestored is None else unrestored
     for experiment in experiments:
         budget = budget_for(experiment.task)
         made: list[list[Attempt]] = []
@@ -79,7 +83,11 @@ def run_experiments(
                             f"{resource!r}: {stop.reason}",
                         )
         # An experiment whose every Attempt was made completed, even if its last clean-up failed.
-        records.append(planned_attempts(experiment.task, made, budget, experiment=experiment, stop_reason=stop_reason))
+        records.append(
+            execution_of(
+                experiment.task, made, budget, experiment=experiment, stop_reason=stop_reason, attempt_set=attempt_set
+            )
+        )
     return records
 
 
