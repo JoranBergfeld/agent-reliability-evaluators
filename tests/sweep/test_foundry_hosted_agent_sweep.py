@@ -357,16 +357,16 @@ def test_an_endpoint_that_cannot_be_reached_is_an_execution_failure(setup):
         pass
     # Nothing listens at the project's endpoint any more.
     scorecard = run_sweep(
-        experiments=[setup.experiment("todo", 2, ALL_TOOLS_WORK, AGENT)],
+        experiments=[setup.experiment("todo", 1, ALL_TOOLS_WORK, AGENT)],
         agent_target=hosted_agent(project, setup),
         metrics=["outcome_consistency"],
     )
 
-    for attempt in scorecard["attempts"]:
-        assert attempt["execution_status"] == "failed"
-        assert attempt["execution_error"].startswith("InvocationFailed: the Foundry project could not be reached: ")
-        assert attempt["task_outcome"] is None
-    assert metric(scorecard)["state"] == "unavailable"
+    (attempt,) = scorecard["attempts"]
+    assert attempt["execution_status"] == "failed"
+    assert attempt["execution_error"].startswith("InvocationFailed: the Foundry project could not be reached: ")
+    assert attempt["task_outcome"] is None
+    assert metric(scorecard)["value"] is None
 
 
 def test_a_hosted_agent_is_not_asked_for_a_confidence_rating(project, setup):
@@ -428,7 +428,7 @@ def test_a_hosted_agent_that_does_not_serve_the_responses_protocol_is_reported_a
         assert attempt["task_outcome"] is None
     assert agent.invocations == []
     assert [evidence["events"] for evidence in setup.evidence.values()] == [[], []]
-    assert metric(scorecard)["state"] == "unavailable"
+    assert metric(scorecard)["value"] is None
 
 
 def test_an_agent_that_is_not_a_hosted_agent_is_reported_as_unsupported_and_not_invoked(setup):

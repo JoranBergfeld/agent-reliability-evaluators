@@ -8,14 +8,23 @@ import pytest
 
 from reliability_evaluators.evidence import OperationalConstraint, SeverityRating, TaskOutcome, ViolationAssessment
 from reliability_evaluators.scorecard import AcceptanceCriterion, render_report
-from reliability_evaluators.sweep import Condition, Experiment, Task, run_sweep
-from tests.fakes import FakeAgentTarget, FakeControls, FakeSelfAssessingTodoAgent, FakeTodoService, todo_list
+from reliability_evaluators.sweep import Condition, ExecutionLimits, Experiment, Task, run_sweep
+from tests.fakes import (
+    FakeAgentTarget,
+    FakeControls,
+    FakeSelfAssessingTodoAgent,
+    FakeTodoAgent,
+    FakeTodoService,
+    cancelling,
+    taking,
+    todo_list,
+)
 from tests.report_reader import Report, assert_faithful_rendering
 
 SOURCE = "final state of the fake service"
 
 
-def sweep(script, source=SOURCE):
+def sweep(script, source=SOURCE, limits=ExecutionLimits()):
     """Run a sweep with one Task per script entry and one Attempt per scripted behaviour."""
     target = FakeAgentTarget(script)
 
@@ -23,10 +32,22 @@ def sweep(script, source=SOURCE):
         return TaskOutcome(success=target.service_state[attempt.attempt_id] == "done", source=source)
 
     tasks = [
-        Task(task_id=task_id, prompt=f"Do {task_id}.", success_rule=item_is_done, attempts=len(behaviours))
+        Task(
+            task_id=task_id,
+            prompt=f"Do {task_id}.",
+            success_rule=item_is_done,
+            attempts=len(behaviours),
+            limits=limits,
+        )
         for task_id, behaviours in script.items()
     ]
-    return run_sweep(tasks=tasks, agent_target=target, metrics=["outcome_consistency"])
+    return run_sweep(
+        tasks=tasks,
+        agent_target=target,
+        metrics=["outcome_consistency"],
+        cancellation=lambda: target.cancel_requested,
+        clock=target.clock,
+    )
 
 
 FOUR_IN_FIVE = ["success", "success", "success", "success", "failure"]
@@ -431,3 +452,88 @@ def test_text_from_the_evidence_is_shown_as_text_and_never_as_markup():
 
     assert report.value("/attempts/0/task_outcome/source") == source
     assert not {"script", "b"} & {tag for tag, _ in report.elements}
+
+
+def test_a_partial_scorecard_is_marked_and_shows_what_is_missing_and_why():
+    # The caller cancels while the second Attempt is in flight, so the third is not made.
+    partial = sweep({"close": ["success", cancelling("failure"), "success"]})
+    complete = sweep({"close": ["success", "failure", "success"]})
+
+    report = assert_faithful_rendering(render_report(partial), partial)
+    of_complete = assert_faithful_rendering(render_report(complete), complete)
+
+    assert (report.value("/status"), of_complete.value("/status")) == ("partial", "complete")
+    assert report.classes["/status"] != of_complete.classes["/status"]
+    assert "Partial:" in report.wording and "Complete:" not in report.wording
+    assert "Complete:" in of_complete.wording and "Partial:" not in of_complete.wording
+    assert report.value("/missing/0/kind") == "attempt_evidence"
+    assert report.value("/missing/0/reason") == "the sweep was cancelled"
+    assert report.value("/missing/0/attempts_not_made") == "1"
+    assert "missing" in report.inside["/missing/0/reason"]
+    assert "What was planned and is not in this scorecard" in report.wording
+    assert of_complete.value("/missing") == "none"
+
+
+def test_an_execution_failure_is_told_apart_from_an_unavailable_measurement():
+    # Every Attempt times out, so the metric has no result. One Attempt that completes is
+    # all that was planned in the other sweep, so there the measurement is unavailable.
+    failed = sweep({"close": [taking(45, "success")] * 2}, limits=ExecutionLimits(attempt_timeout_seconds=30))
+    unavailable = sweep({"close": ["success"]})
+
+    report = assert_faithful_rendering(render_report(failed), failed)
+    of_unavailable = Report(render_report(unavailable))
+
+    assert report.value("/metrics/0/state") == "\N{EM DASH}"
+    assert report.value("/metrics/0/execution_failure/task_ids/0") == "close"
+    assert "Execution failure" in report.article_wording["metric-0"]
+    assert "Unavailable measurement" not in report.article_wording["metric-0"]
+    assert "no description of this state" not in report.article_wording["metric-0"]
+    assert "Unavailable measurement" in of_unavailable.article_wording["metric-0"]
+    assert "Execution failure" not in of_unavailable.article_wording["metric-0"]
+    assert report.article_classes["metric-0"] != of_unavailable.article_classes["metric-0"]
+    # Not marked like a state the report does not know, either.
+    failed["metrics"][1] = {**failed["metrics"][1], "state": "experiment_failed"}
+    unknown = Report(render_report(failed))
+    assert unknown.article_classes["metric-0"] != unknown.article_classes["metric-1"]
+
+
+def test_an_experiment_that_stopped_is_marked_apart_from_one_that_completed():
+    # The clean-up control fails after the first Attempt of "add", so its second is not made.
+    service = FakeTodoService(["add", "archive"])
+    controls = FakeControls(
+        service, failures={("clean_up", "add-item/baseline/attempt-1"): "the list could not be deleted"}
+    )
+
+    def experiment(task_id):
+        return Experiment(
+            experiment_id=f"{task_id}-item",
+            task=Task(
+                task_id=task_id,
+                prompt="Add one item to the list.",
+                success_rule=lambda attempt, response: TaskOutcome(success=True, source=SOURCE),
+                attempts=2,
+            ),
+            agent_configuration={"agent": "todo-agent", "version": "3"},
+            starting_state="fresh",
+            baseline=Condition(condition_id="baseline", description="The to-do service accepts every request."),
+            variation=None,
+            controls=controls,
+            write_capable=True,
+            authorized_resources=[todo_list(task_id)],
+        )
+
+    scorecard = run_sweep(
+        experiments=[experiment("add"), experiment("archive")],
+        agent_target=FakeTodoAgent(service),
+        metrics=["outcome_consistency"],
+    )
+
+    report = assert_faithful_rendering(render_report(scorecard), scorecard)
+
+    stopped, completed = "/experiments/0/execution/status", "/experiments/1/execution/status"
+    assert (report.value(stopped), report.value(completed)) == ("stopped", "completed")
+    assert report.classes[stopped] != report.classes[completed]
+    # The marking is the report's own style for how an execution ended, as for an Attempt.
+    assert '[data-scorecard$="/execution/status"]' in report.styles
+    assert report.value("/experiments/0/execution/reason").startswith("clean_up failed after Attempt")
+    assert report.value("/status") == "partial"

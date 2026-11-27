@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, field, replace
 from typing import Any, Callable, Sequence
 
 from ..evidence import (
     Attempt,
     ConfidenceUnavailable,
     ExecutionStatus,
-    ExperimentStatus,
     LifecyclePoint,
     LifecycleStep,
     ObservedCondition,
@@ -17,15 +16,16 @@ from ..evidence import (
 )
 from .confidence import ATTEMPT_NOT_COMPLETED
 from .declaration import ControlContext, CustomerControls, Experiment, Task
+from .execution import RETRYABLE, Budget, Execution, execution_of
 
 # Completes an Attempt with its confidence evidence. It asks the agent only when a selected
 # metric uses confidence and the Attempt it is given completed.
 ConfidenceFollowUp = Callable[[Attempt], Attempt]
 
-# Invokes the agent for one Attempt of a Task, numbered within its condition and given its
-# identity, and decides its task outcome. Returns the Attempt and its confidence follow-up.
-# The lifecycle knows nothing else about the agent.
-MakeAttempt = Callable[[Task, int, str], tuple[Attempt, ConfidenceFollowUp]]
+# Invokes the agent for one Attempt of a Task, given the Attempt's identity and the identity
+# of the Attempt it retries, if any, and decides its task outcome. Returns the Attempt and
+# its confidence follow-up. The lifecycle knows nothing else about the agent.
+MakeAttempt = Callable[[Task, str, "str | None"], tuple[Attempt, ConfidenceFollowUp]]
 
 
 @dataclass(frozen=True)
@@ -41,10 +41,12 @@ def run_experiments(
     experiments: Sequence[Experiment],
     make_attempt: MakeAttempt,
     ask_confidence: bool,
+    budget_for: Callable[[Task], Budget],
     attempts: list[Attempt],
     unrestored: dict[str, str] | None = None,
-) -> list[dict[str, Any]]:
-    """Run the experiments in the order declared. Returns their scorecard records.
+    attempt_set: int = 1,
+) -> list[Execution]:
+    """Run the experiments in the order declared. Returns what became of the Attempts planned for each.
 
     Each Attempt is added to `attempts` as it is made, so that the caller still has the
     evidence if an experiment raises.
@@ -56,17 +58,21 @@ def run_experiments(
 
     `ask_confidence` says whether a selected metric uses confidence. An Attempt for which
     the agent was not invoked then records why it has no confidence rating.
+
+    `budget_for` gives the budget of a Task: whether a further Attempt or retry of it may
+    start under its execution limits and the cancellation of the sweep. `attempt_set` is
+    which set of the sweep's Attempts these experiments are run for.
     """
     records = []
     unrestored = {} if unrestored is None else unrestored
     for experiment in experiments:
-        planned = len(_planned_attempts(experiment))
-        already_made = len(attempts)
+        budget = budget_for(experiment.task)
+        made: list[list[Attempt]] = []
         stop_reason = next(
             (unrestored[resource] for resource in experiment.authorized_resources if resource in unrestored), None
         )
         if stop_reason is None:
-            stop = _run_experiment(experiment, make_attempt, ask_confidence, attempts)
+            made, stop = _run_experiment(experiment, make_attempt, ask_confidence, budget, attempts)
             if stop is not None:
                 stop_reason = stop.reason
                 if stop.unrestored:
@@ -76,45 +82,72 @@ def run_experiments(
                             f"experiment {experiment.experiment_id!r} did not restore the test resource "
                             f"{resource!r}: {stop.reason}",
                         )
-        made = len(attempts) - already_made
         # An experiment whose every Attempt was made completed, even if its last clean-up failed.
-        stopped = made < planned
         records.append(
-            {
-                **experiment.to_dict(),
-                "execution": {
-                    "status": (ExperimentStatus.STOPPED if stopped else ExperimentStatus.COMPLETED).value,
-                    "reason": stop_reason if stopped else None,
-                    "attempts_planned": planned,
-                    "attempts_recorded": made,
-                },
-            }
+            execution_of(
+                experiment.task, made, budget, experiment=experiment, stop_reason=stop_reason, attempt_set=attempt_set
+            )
         )
     return records
 
 
 def _run_experiment(
-    experiment: Experiment, make_attempt: MakeAttempt, ask_confidence: bool, attempts: list[Attempt]
-) -> _Stop | None:
-    """Make the Attempts of an experiment until they are all made or one stops the experiment.
+    experiment: Experiment,
+    make_attempt: MakeAttempt,
+    ask_confidence: bool,
+    budget: Budget,
+    attempts: list[Attempt],
+) -> tuple[list[list[Attempt]], _Stop | None]:
+    """Make the Attempts of an experiment until they are all made or something stops the experiment.
 
-    Each Attempt is added to `attempts`. Returns why the experiment stopped, if it did.
+    Each Attempt is added to `attempts`. Returns the planned Attempts that were made, each
+    as its executions in order, and why a customer control stopped the experiment, if one did.
+
+    A retry is an Attempt of its own, with the controls its starting-state policy gives
+    every Attempt. Under fresh state it is cleaned up after and prepared for like any
+    other. Under continuing state nothing is prepared again: the retry continues from the
+    state the Attempt it retries left, as the next Attempt would have.
     """
     fresh = experiment.starting_state is StartingStatePolicy.FRESH
-    for context, number in _planned_attempts(experiment):
-        attempt, stop = _run_controlled_attempt(
-            experiment,
-            context,
-            number,
-            make_attempt,
-            ask_confidence,
-            prepares=fresh or number == 1,
-            cleans_up=fresh or number == experiment.task.attempts,
-        )
-        attempts.append(attempt)
-        if stop is not None:
-            return stop
-    return None
+    plan = _planned_attempts(experiment)
+    made: list[list[Attempt]] = []
+    stop = None
+    proceeds = bool(plan) and budget.may_start()
+    while proceeds:
+        context, number = plan[len(made)]
+        executions: list[Attempt] = []
+        made.append(executions)
+        retries = True
+        while retries:
+            retry = len(executions)
+            controlled = _ControlledAttempt(
+                experiment,
+                context if retry == 0 else replace(context, attempt_id=f"{context.attempt_id}/retry-{retry}"),
+            )
+            controlled.make(
+                make_attempt,
+                ask_confidence,
+                prepares=fresh or (number == 1 and retry == 0),
+                retry_of=executions[-1].attempt_id if executions else None,
+            )
+            if fresh:
+                controlled.clean_up()
+            retryable = (
+                controlled.attempt.execution_status in RETRYABLE and retry < experiment.task.limits.max_retries
+            )
+            # What follows this Attempt, if anything does: its retry, or the next planned Attempt.
+            proceeds = controlled.stop is None and (retryable or len(made) < len(plan)) and budget.may_start()
+            retries = retryable and proceeds
+            if not fresh and (not proceeds or (number == experiment.task.attempts and not retries)):
+                # The last Attempt under this condition, or the last one that is made at all.
+                controlled.clean_up()
+                if controlled.stop is not None:
+                    proceeds = retries = False
+            attempt = controlled.recorded(retried=retries)
+            executions.append(attempt)
+            attempts.append(attempt)
+            stop = stop or controlled.stop
+    return made, stop
 
 
 def planned_attempt_ids(experiment: Experiment) -> list[str]:
@@ -142,48 +175,49 @@ def _planned_attempts(experiment: Experiment) -> list[tuple[ControlContext, int]
     ]
 
 
-def _run_controlled_attempt(
-    experiment: Experiment,
-    context: ControlContext,
-    number: int,
-    make_attempt: MakeAttempt,
-    ask_confidence: bool,
-    *,
-    prepares: bool,
-    cleans_up: bool,
-) -> tuple[Attempt, _Stop | None]:
-    """Make one Attempt of an experiment, invoking the customer controls around it.
+@dataclass
+class _ControlledAttempt:
+    """One Attempt of an experiment, and the customer controls invoked around it so far."""
 
-    Returns the Attempt and, when the later Attempts of the experiment are not to be made, why.
-    """
-    task, controls = experiment.task, experiment.controls
-    steps: list[LifecycleStep] = []
-    observed = None
-    setup_error = None
-    stop = None
-    if prepares:
-        setup_error = _invoke_control(LifecyclePoint.PREPARE_STATE, controls, context, steps)[1]
-        if setup_error is not None and experiment.starting_state is StartingStatePolicy.CONTINUING:
-            # The later Attempts would continue from the state that was not prepared.
-            stop = _Stop(
-                f"prepare_state failed before Attempt {context.attempt_id!r}: {setup_error}", unrestored=False
+    experiment: Experiment
+    context: ControlContext
+    attempt: Attempt | None = None
+    observed: ObservedCondition | None = None
+    steps: list[LifecycleStep] = field(default_factory=list)
+    # Why the later Attempts of the experiment are not to be made, when they are not.
+    stop: _Stop | None = None
+
+    def make(
+        self, make_attempt: MakeAttempt, ask_confidence: bool, *, prepares: bool, retry_of: str | None
+    ) -> None:
+        """Set the Attempt up, invoke the agent for it, verify its condition and ask for its confidence."""
+        experiment, context = self.experiment, self.context
+        task, controls = experiment.task, experiment.controls
+        setup_error = None
+        if prepares:
+            setup_error = _invoke_control(LifecyclePoint.PREPARE_STATE, controls, context, self.steps)[1]
+            if setup_error is not None and experiment.starting_state is StartingStatePolicy.CONTINUING:
+                # The later Attempts would continue from the state that was not prepared.
+                self.stop = _Stop(
+                    f"prepare_state failed before Attempt {context.attempt_id!r}: {setup_error}", unrestored=False
+                )
+        if setup_error is None:
+            setup_error = _invoke_control(LifecyclePoint.APPLY_CONDITION, controls, context, self.steps)[1]
+        if setup_error is not None:
+            self.attempt = Attempt(
+                attempt_id=context.attempt_id,
+                task_id=task.task_id,
+                execution_status=ExecutionStatus.SETUP_FAILED,
+                execution_error=f"{self.steps[-1].point.value} failed: {setup_error}",
+                retry_of=retry_of,
+                # The agent was not invoked, so there is nothing to ask it about.
+                confidence=ConfidenceUnavailable(reason=ATTEMPT_NOT_COMPLETED) if ask_confidence else None,
+                operational_constraints=task.operational_constraints,
             )
-    if setup_error is None:
-        setup_error = _invoke_control(LifecyclePoint.APPLY_CONDITION, controls, context, steps)[1]
-    if setup_error is not None:
-        attempt = Attempt(
-            attempt_id=context.attempt_id,
-            task_id=task.task_id,
-            execution_status=ExecutionStatus.SETUP_FAILED,
-            execution_error=f"{steps[-1].point.value} failed: {setup_error}",
-            # The agent was not invoked, so there is nothing to ask it about.
-            confidence=ConfidenceUnavailable(reason=ATTEMPT_NOT_COMPLETED) if ask_confidence else None,
-            operational_constraints=task.operational_constraints,
-        )
-    else:
-        attempt, confidence_follow_up = make_attempt(task, number, context.attempt_id)
-        observed, verify_error = _verify_condition(controls, context, steps)
-        if attempt.execution_status is ExecutionStatus.COMPLETED and (verify_error or not observed.met):
+            return
+        attempt, confidence_follow_up = make_attempt(task, context.attempt_id, retry_of)
+        self.observed, verify_error = _verify_condition(controls, context, self.steps)
+        if attempt.execution_status is ExecutionStatus.COMPLETED and (verify_error or not self.observed.met):
             attempt = replace(
                 attempt,
                 execution_status=ExecutionStatus.CONDITION_NOT_MET,
@@ -195,27 +229,36 @@ def _run_controlled_attempt(
             )
         # After the condition is verified, so that the agent is not asked about an Attempt whose
         # condition was not met. Before clean-up, so that the agent is asked in the state the Attempt left.
-        attempt = confidence_follow_up(attempt)
-    if cleans_up or stop is not None:
-        cleanup_error = _invoke_control(LifecyclePoint.CLEAN_UP, controls, context, steps)[1]
+        self.attempt = confidence_follow_up(attempt)
+
+    def clean_up(self) -> None:
+        cleanup_error = _invoke_control(
+            LifecyclePoint.CLEAN_UP, self.experiment.controls, self.context, self.steps
+        )[1]
         if cleanup_error is not None:
-            stop = _Stop(f"clean_up failed after Attempt {context.attempt_id!r}: {cleanup_error}", unrestored=True)
-            if attempt.execution_status is ExecutionStatus.COMPLETED:
-                attempt = replace(
-                    attempt,
+            self.stop = _Stop(
+                f"clean_up failed after Attempt {self.context.attempt_id!r}: {cleanup_error}", unrestored=True
+            )
+            if self.attempt.execution_status is ExecutionStatus.COMPLETED:
+                self.attempt = replace(
+                    self.attempt,
                     execution_status=ExecutionStatus.CLEANUP_FAILED,
                     execution_error=f"clean_up failed: {cleanup_error}",
                 )
-    attempt = replace(
-        attempt,
-        experiment_id=experiment.experiment_id,
-        starting_state=experiment.starting_state,
-        intended_condition=context.condition,
-        condition_role=context.condition_role,
-        observed_condition=observed,
-        lifecycle=tuple(steps),
-    )
-    return attempt, stop
+
+    def recorded(self, *, retried: bool) -> Attempt:
+        """The Attempt as it is kept in the evidence. `retried` says that it is made again."""
+        return replace(
+            self.attempt,
+            # The Attempt stays in the evidence with why it did not complete. The retry is another Attempt.
+            execution_status=ExecutionStatus.RETRIED if retried else self.attempt.execution_status,
+            experiment_id=self.experiment.experiment_id,
+            starting_state=self.experiment.starting_state,
+            intended_condition=self.context.condition,
+            condition_role=self.context.condition_role,
+            observed_condition=self.observed,
+            lifecycle=tuple(self.steps),
+        )
 
 
 def _verify_condition(
