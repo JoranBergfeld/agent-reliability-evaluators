@@ -173,7 +173,7 @@ This comes from the specification and is not a confirmed decision. It is impleme
 
 ## Observed live
 
-Observed on 2026-11-27 in Sweden Central, in a disposable Foundry project with **no model deployment**, with Azure CLI 2.93.0, signed in as a user. This section records what happened. It is not what the platform documents, and each item was seen once unless it says otherwise.
+Observed on 2026-11-27 in Sweden Central, in three disposable Foundry projects with **no model deployment**, with Azure CLI 2.93.0, signed in as a user. This section records what happened. It is not what the platform documents, and each item was seen once unless it says otherwise.
 
 Interfaces used, as they worked on that date:
 
@@ -188,11 +188,13 @@ Interfaces used, as they worked on that date:
 
 The error text of a refused evaluator shows that the project called an Azure OpenAI evals interface with `api-version=2025-04-01-preview` behind these routes.
 
-The live check ([`tests/live/test_managed_outcome_consistency.py`](../../tests/live/test_managed_outcome_consistency.py)):
+The live check ([`tests/live/test_managed_outcome_consistency.py`](../../tests/live/test_managed_outcome_consistency.py)) passed three times, in three projects. The last time it provisioned its own project and ran the derived evaluator as it is in this commit: 70,736 bytes, SHA-256 `809f7a6c1d02c24e9792a316f22f8534bdc0522fbdf6e623e141c88f86164b9d`. What it showed each time:
 
-- **A sweep scored outcome consistency in Foundry.** Eight synthetic Attempts on the fixture's to-do service, four successes and one failure at one Task and three failures at the other. Foundry returned `0.6799999999999999`, where the hand-calculated value is 0.68. The scorecard attributed it to `foundry_managed` as `unverified`. Foundry labelled it `pass` against its threshold of 0.5. The sweep took 51 seconds, registration and the run included.
+- **A sweep scored outcome consistency in Foundry.** Eight synthetic Attempts on the fixture's to-do service, four successes and one failure at one Task and three failures at the other. Foundry returned `0.6799999999999999`, where the hand-calculated value is 0.68. The scorecard attributed it to `foundry_managed` as `unverified`. Foundry labelled it `pass` against its threshold of 0.5. The sweep took 43 to 52 seconds, registration and the run included.
 - **Registration was idempotent and made as the signed-in identity.** Registering twice more left one version with the derived code. Foundry recorded the signed-in user as its creator.
 - **An unavailable measurement was an explicit failure.** With one Attempt at each Task the run ended as failed with `UserError: All examples failed due to invalid user input; please check the individual sample outputs for details.` and no output item. The sweep raised `ManagedScoringFailure`.
+
+A fourth run did not get as far as the check. The project it had just created answered its first request with HTTP 404 `Project not found`, the provisioning stopped and the resource group was torn down. The provisioning now waits for the project to answer, and the run after that passed.
 
 The code-evaluator sandbox:
 
@@ -202,7 +204,7 @@ The code-evaluator sandbox:
 - **Refused calls:** `compile`, `eval`, `exec`, `globals` and `__import__`. The check goes by the name that is called, so `re.compile(...)` was refused as `use of builtin 'compile()'`. The same text in a comment or a string was accepted. A refused source fails the run before anything executes, with `invalid_grader`.
 - **The Evidence model did not fit as it was.** Its confidence patterns used `re.compile`. They are now matched with `re.fullmatch` and `re.findall` on the pattern text, which the sandbox accepted.
 - **Accepted:** `getattr`, `setattr`, `hasattr`, `type`, `isinstance` and `object.__setattr__`, which frozen dataclasses use.
-- **The derived artifact ran.** It was 51,872 bytes and returned `0.36` for the task outcomes 1, 1, 1, 1, 0.
+- **The derived artifact ran.** On its own it returned `0.36` for the task outcomes 1, 1, 1, 1, 0. It was 51,872 bytes then, before it carried the Evidence model's reader.
 
 Registration and runs:
 
@@ -214,8 +216,9 @@ Registration and runs:
 - **`desirable_direction: "neutral"` was accepted.**
 - **A run was `queued`, then `in_progress`, then `completed`.** Runs with one code evaluator and one item took 16 to 35 seconds.
 - **A whole-number score came back as an integer:** an evaluator that returned `1.0` gave `1`.
-- **The run's `report_url` embeds the subscription identifier**, in encoded form.
-- **Teardown.** The resource groups created for this work were deleted and a separate `az group exists` returned `false` for each. They are named in the pull request that added this page.
+- **The run's `report_url` embeds the subscription identifier**, as base64url text. This was checked against the subscription.
+- **Teardown.** The four resource groups created for this work, `rg-are-46-8d7aa8b7`, `rg-are-46-04bb5845`, `rg-are-46-0af4149d` and `rg-are-46-ab74aa94`, were deleted, and a separate `az group exists` returned `false` for each. The soft-deleted Foundry accounts were purged.
+- **Timing.** A run of the live check that provisions its own project took 23 minutes once and 7 minutes once. Nearly all of it was creating and deleting the Foundry account.
 
 ## Not verified
 
