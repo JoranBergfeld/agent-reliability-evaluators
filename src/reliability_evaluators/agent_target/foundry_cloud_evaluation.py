@@ -67,7 +67,10 @@ class Project(Protocol):
 
 
 class UnsupportedCombination(InvocationFailed):
-    """The agent is not one that has been invoked through cloud evaluation. It was not invoked, and nothing was tried instead."""
+    """The agent is not one that has been invoked through cloud evaluation.
+
+    It was not invoked, and nothing was tried instead.
+    """
 
 
 class RunTimedOut(InvocationFailed, TimeoutError):
@@ -288,7 +291,9 @@ class FoundryCloudEvaluationTarget:
                 # of the Attempt travels with the row, and the output item returns it.
                 "source": {
                     "type": "file_content",
-                    "content": [{"item": {"query": sent, "attempt_id": request.attempt_id, "task_id": request.task_id}}],
+                    "content": [
+                        {"item": {"query": sent, "attempt_id": request.attempt_id, "task_id": request.task_id}}
+                    ],
                 },
                 "input_messages": {
                     "type": "template",
@@ -316,7 +321,8 @@ class FoundryCloudEvaluationTarget:
                     pass
                 raise RunTimedOut(
                     f"the cloud evaluation run {run_id} had not ended within {limit:g} seconds, in status "
-                    f"{status!r}. Its cancellation was requested, which does not stop an agent that was already invoked",
+                    f"{status!r}. Its cancellation was requested, which does not stop an agent that was already "
+                    "invoked",
                     invocation=recorded.invocation(),
                 )
             self._sleep(min(self._poll_interval_seconds, remaining))

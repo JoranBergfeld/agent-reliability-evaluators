@@ -63,10 +63,16 @@ BEHAVIOURS = {
     "does nothing": (),
 }
 TOOL_NAMES = {
-    "prompt": {"read": "todos_readTodo", "create": "todos_createTodo", "delete": "todos_deleteTodo", "update": "todos_updateTodo"},
+    "prompt": {
+        "read": "todos_readTodo",
+        "create": "todos_createTodo",
+        "delete": "todos_deleteTodo",
+        "update": "todos_updateTodo",
+    },
     "hosted": {"read": "read_todo", "create": "create_todo", "delete": "delete_todo", "update": "update_todo"},
 }
 CALL_TYPES = {"prompt": "openapi_call", "hosted": "function_call"}
+USAGE_FIELDS = ("total_tokens", "prompt_tokens", "completion_tokens", "cached_tokens")
 
 
 @dataclass
@@ -169,9 +175,8 @@ class FakeCloudEvaluationProject:
 
     def _agent(self, name, **_):
         if name not in self.agents:
-            raise FoundryRequestError(
-                "GET", f"/agents/{name}", 404, json.dumps({"error": {"code": "not_found", "message": f"Agent {name} was not found."}})
-            )
+            error = {"code": "not_found", "message": f"Agent {name} was not found."}
+            raise FoundryRequestError("GET", f"/agents/{name}", 404, json.dumps({"error": error}))
         return self.agents[name].details(name)
 
     def _create_eval(self, *, body, **_):
@@ -197,6 +202,7 @@ class FakeCloudEvaluationProject:
         errored = 0
         criteria = self.evals[eval_id]["testing_criteria"]
         passed = 0 if self._criterion_fails else len(items)
+        failed = len(items) - passed
         run = {
             "object": "eval.run",
             "id": run_id,
@@ -211,12 +217,12 @@ class FakeCloudEvaluationProject:
             "report_url": f"https://ai.azure.com/nextgen/r/encoded-subscription-identifier/{eval_id}/run/{run_id}",
             "result_counts": {"total": 0, "passed": 0, "failed": 0}
             if error
-            else {"total": len(items), "passed": passed, "failed": len(items) - passed, "errored": errored, "skipped": 0},
+            else {"total": len(items), "passed": passed, "failed": failed, "errored": errored, "skipped": 0},
             "per_model_usage": [] if error else self._per_model_usage(target["name"], items),
             "per_testing_criteria_results": []
             if error
             else [
-                {"testing_criteria": criterion["name"], "passed": passed, "failed": len(items) - passed, "errored": 0, "skipped": 0}
+                {"testing_criteria": criterion["name"], "passed": passed, "failed": failed, "errored": 0, "skipped": 0}
                 for criterion in criteria
             ],
             "error": error,
@@ -240,7 +246,8 @@ class FakeCloudEvaluationProject:
         if run["status"] == "canceled":
             return run
         if self._never_finishes or self._polls[run_id] <= self._polls_until_finished:
-            return {**run, "status": "in_progress", "error": None, "per_model_usage": [], "per_testing_criteria_results": []}
+            unfinished = {"error": None, "per_model_usage": [], "per_testing_criteria_results": []}
+            return {**run, "status": "in_progress", **unfinished}
         return run
 
     def _cancel_run(self, eval_id, run_id, **_):
@@ -321,20 +328,21 @@ class FakeCloudEvaluationProject:
         for position, (operation, method, todo_id, arguments) in enumerate(BEHAVIOURS[behaviour], start=1):
             status, body = self._call_tool(state, method, todo_id, arguments)
             if status >= 400 and agent.kind == "prompt":
-                # Observed live: a tool call of a prompt agent that fails fails the target, and nothing else is returned.
+                # Observed live: a tool call of a prompt agent that fails fails the target, and nothing else
+                # is returned.
                 return self._failed_target(name, row, TOOL_USER_ERROR)
             call_id = f"call_fake_{number}_{position}"
-            call_type = CALL_TYPES[agent.kind]
+            call_type, tool = CALL_TYPES[agent.kind], TOOL_NAMES[agent.kind][operation]
             passed = {**arguments, "attempt_id": state, **({"todo_id": todo_id} if todo_id else {})}
             # A prompt agent's tool output is text. A hosted agent's is the object its tool returned as JSON.
-            returned = json.dumps({"response": json.dumps(body)}) if agent.kind == "prompt" else {"status": status, "body": body}
+            returned = {"status": status, "body": body}
+            if agent.kind == "prompt":
+                returned = json.dumps({"response": json.dumps(body)})
             tool_calls.append(
                 {
                     "run_id": "",
                     "role": "assistant",
-                    "content": [
-                        {"type": call_type, "tool_call_id": call_id, "name": TOOL_NAMES[agent.kind][operation], "arguments": passed}
-                    ],
+                    "content": [{"type": call_type, "tool_call_id": call_id, "name": tool, "arguments": passed}],
                 }
             )
             tool_calls.append(
@@ -346,7 +354,8 @@ class FakeCloudEvaluationProject:
                 }
             )
         calls = len(tool_calls) // 2
-        answer = {"role": "assistant", "content": [{"annotations": [], "text": ANSWER, "type": "output_text", "logprobs": []}]}
+        text = {"annotations": [], "text": ANSWER, "type": "output_text", "logprobs": []}
+        answer = {"role": "assistant", "content": [text]}
         system = [{"role": "system", "content": INSTRUCTIONS}] if agent.kind == "prompt" else []
         prefix = "resp" if agent.kind == "prompt" else "caresp"
         return {
@@ -438,7 +447,7 @@ class FakeCloudEvaluationProject:
             return []
         row = {
             "invocation_count": len(used),
-            **{key: sum(usage[key] for usage in used) for key in ("total_tokens", "prompt_tokens", "completion_tokens", "cached_tokens")},
+            **{key: sum(usage[key] for usage in used) for key in USAGE_FIELDS},
         }
         models = [MODEL_DEPLOYMENT] if self.agents[name].kind == "prompt" else []
         return [{"model_name": model, **row} for model in (*models, "azure_ai_agent_target")]

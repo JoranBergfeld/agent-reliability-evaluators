@@ -19,11 +19,13 @@ from reliability_evaluators.agent_target.foundry_cloud_evaluation import (
     UnsupportedCombination,
     native_tool_calls,
 )
+from reliability_evaluators.evidence import OutcomeCorrection, TaskOutcome
 from reliability_evaluators.managed_scoring import FoundryRequestError
-from reliability_evaluators.scorecard import AcceptanceCriterion
-from reliability_evaluators.sweep import ActionEvidenceDeclaration, ExecutionLimits, Task, run_sweep
+from reliability_evaluators.scorecard import AcceptanceCriterion, render_report, to_json
+from reliability_evaluators.sweep import ActionEvidenceDeclaration, ExecutionLimits, Task, recalculate, run_sweep
 from tests.fake_foundry_cloud_evaluation import TOOL_USER_ERROR, FakeAgent, FakeCloudEvaluationProject
 from tests.fakes import attempt_evidence
+from tests.report_reader import assert_faithful_rendering
 from tests.todo_fixture_sweep import CONDITION_SOURCE, UPDATE_FAILS, TodoFixtureSweep
 
 OUTCOME_SOURCE = "to-do service events and before/after state"
@@ -181,7 +183,9 @@ def test_each_attempt_keeps_the_identifiers_the_usage_and_the_ordered_tool_calls
         "latency_ms": 5000.0,
         "tool_calls": [
             prompt_tool_call(1, 1, "todos_readTodo", {"attempt_id": STATE, "todo_id": "target"}, TARGET),
-            prompt_tool_call(1, 2, "todos_createTodo", {"id": "scratch", "title": "Temporary", "attempt_id": STATE}, SCRATCH),
+            prompt_tool_call(
+                1, 2, "todos_createTodo", {"id": "scratch", "title": "Temporary", "attempt_id": STATE}, SCRATCH
+            ),
             prompt_tool_call(1, 3, "todos_readTodo", {"attempt_id": STATE, "todo_id": "scratch"}, SCRATCH),
             prompt_tool_call(1, 4, "todos_deleteTodo", {"attempt_id": STATE, "todo_id": "scratch"}, SCRATCH),
         ],
@@ -225,6 +229,7 @@ def test_each_attempt_keeps_the_identifiers_the_usage_and_the_ordered_tool_calls
         "todos_deleteTodo",
         "todos_updateTodo",
     ]
+
 
 def test_a_run_and_item_that_report_completed_while_carrying_a_target_error_are_an_execution_failure(todo_service):
     # Two Attempts under the baseline complete the Task: p = 2/2, value 1. Under the fault the update
@@ -356,6 +361,63 @@ def test_a_hosted_agent_whose_tool_fails_still_completes_and_its_task_outcome_co
     assert fault_robustness["value"] == 0
 
 
+def test_what_the_run_exposed_is_in_the_report_and_is_kept_when_the_scorecard_is_recalculated(todo_service):
+    # As run: p = 1/2, (2 * 0.5 - 1)^2 = 0. With the second Attempt corrected to a success: p = 2/2, value 1.
+    scorecard = sweep(todo_service, ["completes", "skips the update"], kind="hosted")
+
+    report = assert_faithful_rendering(render_report(scorecard), scorecard)
+    earlier = json.loads(to_json(scorecard))
+    recalculated = recalculate(
+        earlier_scorecard=earlier,
+        outcome_corrections=[
+            OutcomeCorrection(
+                attempt_id="todo/baseline/attempt-2",
+                task_outcome=TaskOutcome(success=True, source="manual review of the service events"),
+                provenance="synthetic correction",
+            )
+        ],
+    )
+
+    assert report.value("/attempts/0/invocation/entry_point") == "foundry_cloud_evaluation"
+    assert report.value("/attempts/1/invocation/tool_calls/3/name") == "delete_todo"
+    assert report.value("/attempts/0/invocation/platform_diagnostics/results/0/label") == "pass"
+    assert metric(scorecard, "outcome_consistency")["value"] == 0
+    assert metric(recalculated, "outcome_consistency")["value"] == 1
+    assert [attempt["invocation"] for attempt in recalculated["attempts"]] == [
+        attempt["invocation"] for attempt in earlier["attempts"]
+    ]
+    assert recalculated["attempts"][1]["invocation"]["run_id"] == "evalrun_fake_2"
+
+def test_the_token_usage_report_counts_what_the_output_item_reported_and_nothing_twice(todo_service):
+    # The Attempt under the baseline makes five tool calls: the fake project reports 600 + 70 = 670 tokens
+    # for its item, and the same 670 in each of the run's two usage rows. The report counts 670, not 1340.
+    # Under the fault the target fails and the item carries no usage: that is missing, not zero.
+    scorecard = sweep(todo_service, ["completes", "completes"], attempts=1, variation=UPDATE_FAILS)
+
+    usage = scorecard["token_usage"]
+    assert [
+        (entry["attempt_id"], entry["execution_status"], entry["coverage"], entry["total_tokens"])
+        for entry in usage["attempts"]
+    ] == [
+        ("todo/baseline/attempt-1", "completed", "complete", 670),
+        ("todo/update-fails/attempt-1", "failed", "unavailable", None),
+    ]
+    assert usage["attempts"][0]["invocation"] == {
+        "basis": "reported",
+        "total_tokens": 670,
+        "reason": None,
+        "response_id": "resp_fake_1",
+        "request_ids": {},
+    }
+    assert usage["attempts"][1]["invocation"] == {
+        "basis": "missing",
+        "total_tokens": None,
+        "reason": "the output item of the cloud evaluation run carried no usage",
+        "response_id": None,
+        "request_ids": {},
+    }
+    assert (usage["sweep"]["coverage"], usage["sweep"]["total_tokens"]) == ("partial", 670)
+
 def test_the_labels_foundry_gives_an_item_are_platform_diagnostics_and_decide_nothing(todo_service):
     # The fake project labels the criterion as failed on every item. The Attempts completed all the
     # same and their task outcomes come from the service: p = 2/2, value 1. An acceptance criterion
@@ -429,7 +491,9 @@ def test_a_run_that_fails_before_it_invokes_the_agent_is_an_execution_failure(to
             {
                 "code": "ResourceNotFound",
                 "target": "run.data_source.target",
-                "message": "The AzureAIAgentTarget 'todo-prompt' was not found. Verify the name and version are correct.",
+                "message": (
+                    "The AzureAIAgentTarget 'todo-prompt' was not found. Verify the name and version are correct."
+                ),
             }
         ],
         "inner_error": None,
@@ -472,8 +536,10 @@ def test_a_pinned_agent_version_is_the_one_the_run_invokes(todo_service):
     latest = sweep(todo_service, ["completes"], **versions)
     pinned = sweep(todo_service, ["completes"], agent={"agent_version": "1"}, **versions)
 
-    assert latest["attempts"][0]["invocation"]["agent"] == {"id": "todo-prompt:2", "name": "todo-prompt", "version": "2"}
-    assert pinned["attempts"][0]["invocation"]["agent"] == {"id": "todo-prompt:1", "name": "todo-prompt", "version": "1"}
+    assert [scorecard["attempts"][0]["invocation"]["agent"] for scorecard in (latest, pinned)] == [
+        {"id": "todo-prompt:2", "name": "todo-prompt", "version": "2"},
+        {"id": "todo-prompt:1", "name": "todo-prompt", "version": "1"},
+    ]
 
 NO_RUN = "no cloud evaluation run is known to have been made, so no usage was reported"
 RESULT_NOT_READ = "the result of the cloud evaluation run was not read, so no usage is known"
@@ -778,7 +844,8 @@ def test_every_attempt_and_every_retry_is_a_run_of_its_own_with_one_row(todo_ser
         ("eval_fake_1", "evalrun_fake_2"),
         ("eval_fake_1", "evalrun_fake_3"),
     ]
-    assert [attempt["invocation"]["platform_diagnostics"]["result_counts"]["total"] for attempt in attempts] == [0, 1, 1]
+    counted = [attempt["invocation"]["platform_diagnostics"]["result_counts"]["total"] for attempt in attempts]
+    assert counted == [0, 1, 1]
     assert [attempt["invocation"]["metadata"] for attempt in attempts[1:]] == [
         {"attempt_id": "todo/baseline/attempt-1/retry-1", "task_id": "todo"},
         {"attempt_id": "todo/baseline/attempt-2", "task_id": "todo"},
