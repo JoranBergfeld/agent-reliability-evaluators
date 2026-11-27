@@ -5,6 +5,7 @@ Foundry project that is scripted to fail. Every assertion is on the machine-read
 scorecard. Expected values are calculated by hand.
 """
 
+import random
 import re
 
 import pytest
@@ -29,6 +30,12 @@ MANAGED = ConfiguredEvaluator(metric_id="outcome_consistency", scoring_path="fou
 RUN_FAILED = (
     "the Foundry-managed run evalrun_1 of eval_1 ended as failed: UserError: All examples failed due to "
     "invalid user input; please check the individual sample outputs for details"
+)
+# A row is not graded either when its call takes too long, and the failure cannot tell which it was.
+TOOK_TOO_LONG = (
+    "Foundry does not grade a row whose call takes too long: no call of 60 seconds or more was graded when "
+    "observed, and every call of up to 50 seconds was. Every row calculates the whole metric from all the "
+    "evidence that was submitted"
 )
 
 
@@ -96,6 +103,16 @@ def test_the_missing_result_is_named_with_its_execution_error():
     assert (failure["experiment_ids"], failure["task_ids"]) == ([], [])
     assert scorecard["missing"] == [{"kind": "metric_result", "metric_id": "outcome_consistency", **failure}]
     assert outcome_consistency["managed_scoring"]["error"].startswith(RUN_FAILED)
+
+
+def test_a_failed_run_names_what_makes_foundry_grade_no_row_of_it():
+    scorecard = sweep(TWO_TASKS, FakeFoundryProject(alter_item=one_outcome_flipped))
+
+    assert metric(scorecard)["managed_scoring"]["error"] == (
+        f"{RUN_FAILED}. A run in which no row is graded fails as a whole and returns no result. The managed "
+        "evaluator raises on every row when the evidence it received is not the evidence that was submitted. "
+        f"It does not raise for an unavailable measurement. {TOOK_TOO_LONG}"
+    )
 
 
 def test_a_result_that_was_not_recovered_is_not_an_unavailable_measurement_a_zero_or_a_task_failure():
@@ -249,7 +266,7 @@ GRADING_ERROR = {
             FakeFoundryProject(result_error=GRADING_ERROR),
             "output item '1' of run evalrun_3 of eval_1 has a result for 'outcome_consistency' in status 'error': "
             f"{GRADING_ERROR}. Foundry was asked 3 times for what did not come back, and did not grade 2 of the "
-            "rows of the last run",
+            f"rows of the last run. {TOOK_TOO_LONG}",
         ),
         (
             FakeFoundryProject(alter_score=only("value", lambda score: 1.1)),
@@ -344,9 +361,9 @@ def test_a_result_too_large_to_come_back_in_one_run_is_a_failure_and_no_part_of_
 
     managed_scoring = metric(scorecard)["managed_scoring"]
     assert re.fullmatch(
-        r"the run for the encoded result would submit \d+ characters in \d+ rows, each with the grouped evidence, "
-        r"more than the 1900000 that one managed run was observed to accept\. It was not submitted, and nothing "
-        r"was truncated",
+        r"the run for the encoded result would be a request of \d+ bytes in \d+ rows, each with the grouped "
+        r"evidence\. That is more than the 2000000 bytes this version submits in one managed run: Foundry refused "
+        r"a run of 2096246 bytes when observed\. It was not submitted, and nothing was truncated",
         managed_scoring["error"],
     )
     # The first run returned the size of the result. The run for its parts was never made.
@@ -355,6 +372,29 @@ def test_a_result_too_large_to_come_back_in_one_run_is_a_failure_and_no_part_of_
     assert (metric(scorecard)["state"], metric(scorecard)["value"]) == (None, None)
     assert scorecard["status"] == "partial"
     assert len(scorecard["attempts"]) == 750
+
+
+def test_evidence_too_large_to_be_submitted_at_all_is_a_failure_before_any_run_is_made():
+    # Three thousand Tasks whose identities are 600 characters that have nothing in common, so they do
+    # not deflate away: the two rows of the first run would already be larger than one run accepts.
+    unalike = random.Random(49)
+    script = {"".join(unalike.choices("0123456789abcdef", k=600)): ["success"] for _ in range(3000)}
+    foundry = FakeFoundryProject()
+
+    scorecard = sweep(script, foundry)
+
+    managed_scoring = metric(scorecard)["managed_scoring"]
+    assert re.fullmatch(
+        r"the run for the value and size would be a request of \d+ bytes in 2 rows, each with the grouped "
+        r"evidence\. That is more than the 2000000 bytes this version submits in one managed run: .*",
+        managed_scoring["error"],
+    )
+    assert foundry.runs == {} and foundry.submitted_items == []
+    assert managed_scoring["run_id"] is None
+    assert (metric(scorecard)["state"], metric(scorecard)["value"]) == (None, None)
+    assert scorecard["status"] == "partial"
+    # The evidence is kept, whatever became of its scoring.
+    assert len(scorecard["attempts"]) == 3000
 
 
 def test_a_part_that_foundry_never_grades_is_asked_for_three_times_and_then_leaves_no_result():
@@ -371,7 +411,7 @@ def test_a_part_that_foundry_never_grades_is_asked_for_three_times_and_then_leav
     assert outcome_consistency["managed_scoring"]["error"] == (
         "output item '1' of run evalrun_4 of eval_1 has a result for 'outcome_consistency' in status 'error': "
         f"{GRADING_ERROR}. Foundry was asked 3 times for what did not come back, and did not grade 1 of the "
-        "rows of the last run"
+        f"rows of the last run. {TOOK_TOO_LONG}"
     )
     assert [item["result_part"] for item in foundry.submitted_items].count("7") == 3
     assert list(foundry.runs) == ["evalrun_1", "evalrun_2", "evalrun_3", "evalrun_4"]

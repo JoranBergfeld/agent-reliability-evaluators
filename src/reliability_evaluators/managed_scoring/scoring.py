@@ -13,6 +13,7 @@ reason, its counts and its details, and the value as the Evaluator computed it.
 
 from __future__ import annotations
 
+import json
 import time
 from dataclasses import dataclass, field, replace
 from typing import Any, Callable, Iterable, Mapping, Protocol, Sequence
@@ -26,11 +27,14 @@ from .foundry import FoundryRequestError
 # Registering an evaluator is a preview feature of the project API and has to be opted into.
 EVALUATORS_API = "api-version=v1"
 PREVIEW_FEATURE = {"Foundry-Features": "Evaluations=V1Preview"}
-# The rows of one run are submitted inline, and the limit is on all of them together: one
-# row of 1,900,000 characters ran and one of 2,100,000 was rejected (decision ticket #12),
-# and three rows of 1,000,000 were rejected where ten of 100,000 ran. Every row carries the
-# evidence, so a run that would be larger than what ran is refused, and nothing is truncated.
-SUBMITTED_RUN_LIMIT_CHARACTERS = 1_900_000
+# The rows of one run are submitted inline, and the limit is on the request that makes the
+# run, with all its rows together. Foundry accepted a request of 2,096,245 bytes and refused
+# one of 2,096,246 with HTTP 413 when observed, counted on the request written without
+# whitespace, whether it held one row or three hundred. Every row carries the evidence, so
+# a run whose request would be larger than the limit below is not made, and nothing is
+# truncated. The limit is under what was observed, because what Foundry counts is not documented.
+SUBMITTED_RUN_LIMIT_BYTES = 2_000_000
+OBSERVED_REFUSED_RUN_BYTES = 2_096_246
 OUTPUT_ITEM_PAGE = 100
 # Foundry was seen to return one row of a run as an error, where the evaluator had not raised and
 # every other row was graded. A part of a result is therefore asked for up to this many times.
@@ -52,10 +56,17 @@ PLATFORM_DIAGNOSTICS_MEANING = (
     "Foundry adds a threshold and a pass or fail label to every result. They are platform defaults, "
     "not the customer's acceptance criterion and not an assessment by the Evaluator."
 )
-RAISED_IN_FOUNDRY = (
-    "A run in which the managed evaluator raises on every row fails as a whole and returns no result. "
-    "The evaluator raises when the evidence it received is not the evidence that was submitted. It does "
-    "not raise for an unavailable measurement"
+# Microsoft documents 120 seconds for one call of a code evaluator. What was observed is less, and a
+# row that takes too long comes back as a row that was not graded, with nothing that tells the two apart.
+CALL_TOOK_TOO_LONG = (
+    "Foundry does not grade a row whose call takes too long: no call of 60 seconds or more was graded when "
+    "observed, and every call of up to 50 seconds was. Every row calculates the whole metric from all the "
+    "evidence that was submitted"
+)
+NO_ROW_GRADED = (
+    "A run in which no row is graded fails as a whole and returns no result. The managed evaluator raises on "
+    "every row when the evidence it received is not the evidence that was submitted. It does not raise for an "
+    f"unavailable measurement. {CALL_TOOK_TOO_LONG}"
 )
 
 
@@ -274,7 +285,7 @@ class FoundryManagedScoring:
             if attempt == PART_ATTEMPTS:
                 raise ManagedScoringFailure(
                     f"{next(iter(not_graded.values()))}. Foundry was asked {PART_ATTEMPTS} times for what did not "
-                    f"come back, and did not grade {len(not_graded)} of the rows of the last run"
+                    f"come back, and did not grade {len(not_graded)} of the rows of the last run. {CALL_TOOK_TOO_LONG}"
                 )
             self._start(run, asked_for, list(not_graded))
         return answers
@@ -328,21 +339,19 @@ class FoundryManagedScoring:
         """
         run.parts = list(parts)
         rows = [{**run.item, grader.RESULT_PART: part} for part in parts]
-        submitted = sum(len(field) + len(text) for row in rows for field, text in row.items())
-        if submitted > SUBMITTED_RUN_LIMIT_CHARACTERS:
+        request = {
+            "name": f"Reliability Evaluators: {run.metric_id}, {asked_for}",
+            "data_source": {"type": "jsonl", "source": {"type": "file_content", "content": [{"item": row} for row in rows]}},
+        }
+        submitted = len(json.dumps(request, allow_nan=False, separators=(",", ":")).encode("utf-8"))
+        if submitted > SUBMITTED_RUN_LIMIT_BYTES:
             raise ManagedScoringFailure(
-                f"the run for the {asked_for} would submit {submitted} characters in {len(rows)} rows, each with "
-                f"the grouped evidence, more than the {SUBMITTED_RUN_LIMIT_CHARACTERS} that one managed run was "
-                "observed to accept. It was not submitted, and nothing was truncated"
+                f"the run for the {asked_for} would be a request of {submitted} bytes in {len(rows)} rows, each "
+                f"with the grouped evidence. That is more than the {SUBMITTED_RUN_LIMIT_BYTES} bytes this version "
+                f"submits in one managed run: Foundry refused a run of {OBSERVED_REFUSED_RUN_BYTES} bytes when "
+                "observed. It was not submitted, and nothing was truncated"
             )
-        run.run = self.project.request(
-            "POST",
-            f"/openai/v1/evals/{run.eval_id}/runs",
-            {
-                "name": f"Reliability Evaluators: {run.metric_id}, {asked_for}",
-                "data_source": {"type": "jsonl", "source": {"type": "file_content", "content": [{"item": row} for row in rows]}},
-            },
-        )
+        run.run = self.project.request("POST", f"/openai/v1/evals/{run.eval_id}/runs", request)
         run.deadline = time.monotonic() + self.run_timeout_seconds
 
     def _wait(self, run: _ManagedRun) -> None:
@@ -364,7 +373,7 @@ class FoundryManagedScoring:
             reported = f"{error.get('code')}: {error.get('message')}".rstrip(". ")
             raise ManagedScoringFailure(
                 f"the Foundry-managed run {run_id} of {eval_id} ended as {run.run['status']}: {reported}. "
-                f"{RAISED_IN_FOUNDRY}"
+                f"{NO_ROW_GRADED}"
             )
 
     def _cancel(self, run_path: str) -> None:
