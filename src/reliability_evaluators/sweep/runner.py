@@ -6,8 +6,16 @@ from typing import Any, Sequence
 
 from ..agent_target import AgentResponse, AgentTarget, AttemptRequest
 from ..evaluators import EVALUATORS, RELIABILITY_METRICS, Evaluator, Fidelity, ScoringPath
-from ..evidence import ActionEvidence, Attempt, EvidenceError, ExecutionStatus, TaskOutcome, group_by_task
-from ..scorecard import ScoredMetric, build_scorecard
+from ..evidence import (
+    ActionEvidence,
+    Attempt,
+    EvidenceError,
+    ExecutionStatus,
+    TaskOutcome,
+    ViolationAssessment,
+    group_by_task,
+)
+from ..scorecard import AcceptanceCriterion, ScoredMetric, build_scorecard, criteria_by_metric
 from .declaration import ActionEvidenceDeclaration, Task
 
 
@@ -17,6 +25,7 @@ def run_sweep(
     agent_target: AgentTarget,
     metrics: Sequence[str],
     action_evidence: ActionEvidenceDeclaration | None = None,
+    acceptance_criteria: Sequence[AcceptanceCriterion] = (),
 ) -> dict[str, Any]:
     """Make the declared Attempts, score the selected metrics, and return the scorecard.
 
@@ -28,15 +37,22 @@ def run_sweep(
     what action type each tool name is. The trajectory metrics need it, and every metric
     that needs it is scored from the same Attempts.
 
+    `acceptance_criteria` are the customer's own, at most one per metric. Each is reported
+    with its metric as met, not met, or not assessed with a reason. Without one, a metric
+    has no acceptance verdict.
+
     A declaration that cannot be run is rejected before any Attempt is made. A task-success
-    rule that does not return a sourced, binary TaskOutcome stops the sweep, and so does an
-    action recording that is not a sequence of ActionEvent.
+    rule that does not return a sourced, binary TaskOutcome stops the sweep. So does a
+    violation assessor that does not return sourced violation assessments of the operational
+    constraints its Task declares, and an action recording that is not a sequence of ActionEvent.
     """
     evaluators = [_evaluator(metric_id) for metric_id in metrics]
     declared = {"action_types": None if action_evidence is None else action_evidence.mapping}
     for evaluator in evaluators:
         _require_declarations(evaluator, declared)
     _require_distinct_tasks(tasks)
+    # Called for its check: a second criterion for one metric is rejected here, not after the Attempts.
+    criteria_by_metric(acceptance_criteria)
     attempts = [
         _run_attempt(task, number, agent_target, action_evidence)
         for task in tasks
@@ -51,7 +67,7 @@ def run_sweep(
         )
         for evaluator in evaluators
     ]
-    return build_scorecard(metrics=scored, attempts=attempts)
+    return build_scorecard(metrics=scored, attempts=attempts, acceptance_criteria=acceptance_criteria)
 
 
 def _evaluator(metric_id: str) -> Evaluator:
@@ -93,6 +109,7 @@ def _run_attempt(
             task_id=task.task_id,
             execution_status=ExecutionStatus.FAILED,
             execution_error=f"{type(error).__name__}: {error}",
+            operational_constraints=task.operational_constraints,
         )
     outcome = task.success_rule(request, response)
     if not isinstance(outcome, TaskOutcome):
@@ -105,8 +122,28 @@ def _run_attempt(
         task_id=task.task_id,
         execution_status=ExecutionStatus.COMPLETED,
         task_outcome=outcome,
+        operational_constraints=task.operational_constraints,
+        violation_assessments=_assess_violations(task, request, response),
         action_evidence=None if action_evidence is None else _recorded_actions(action_evidence, request, response),
     )
+
+
+def _assess_violations(
+    task: Task, request: AttemptRequest, response: AgentResponse
+) -> Sequence[ViolationAssessment]:
+    if task.violation_assessor is None:
+        return ()
+    assessments = task.violation_assessor(request, response)
+    if (
+        not isinstance(assessments, Sequence)
+        or isinstance(assessments, str)
+        or not all(isinstance(assessment, ViolationAssessment) for assessment in assessments)
+    ):
+        raise EvidenceError(
+            f"the violation assessor of Task {task.task_id!r} must return a sequence of ViolationAssessment, "
+            f"each with its evidence and source, got {assessments!r}"
+        )
+    return assessments
 
 
 def _recorded_actions(

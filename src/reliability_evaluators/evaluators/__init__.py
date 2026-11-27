@@ -6,7 +6,12 @@ Evaluator can be called on its own, for example
 take the customer's declared `ActionTypeMapping`.
 """
 
-from . import distributional_trajectory_consistency, outcome_consistency, sequential_trajectory_consistency
+from . import (
+    constraint_compliance,
+    distributional_trajectory_consistency,
+    outcome_consistency,
+    sequential_trajectory_consistency,
+)
 from .catalogue import RELIABILITY_METRICS, ReliabilityMetric
 from .registry import EVALUATORS, Evaluator
 from .result import (
@@ -34,6 +39,7 @@ __all__ = [
     "ReliabilityMetric",
     "Scale",
     "ScoringPath",
+    "constraint_compliance",
     "counted",
     "distributional_trajectory_consistency",
     "outcome_consistency",

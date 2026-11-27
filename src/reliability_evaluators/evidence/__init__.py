@@ -4,7 +4,13 @@ Pure: standard library only, no I/O. The canonical metric definitions depend on 
 """
 
 from .actions import ActionEvent, ActionEvidence, ActionTypeMapping
-from .attempt import Attempt, ExecutionStatus, TaskOutcome
+from .attempt import (
+    Attempt,
+    ExecutionStatus,
+    OperationalConstraint,
+    TaskOutcome,
+    ViolationAssessment,
+)
 from .errors import EvidenceError
 from .grouping import TaskEvidence, group_by_task, require_unambiguous
 
@@ -15,8 +21,10 @@ __all__ = [
     "Attempt",
     "EvidenceError",
     "ExecutionStatus",
+    "OperationalConstraint",
     "TaskEvidence",
     "TaskOutcome",
+    "ViolationAssessment",
     "group_by_task",
     "require_unambiguous",
 ]

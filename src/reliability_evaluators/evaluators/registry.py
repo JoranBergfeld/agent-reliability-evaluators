@@ -5,7 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable
 
-from . import distributional_trajectory_consistency, outcome_consistency, sequential_trajectory_consistency
+from . import (
+    constraint_compliance,
+    distributional_trajectory_consistency,
+    outcome_consistency,
+    sequential_trajectory_consistency,
+)
 from .result import MetricDefinition, MetricResult
 
 
@@ -36,5 +41,6 @@ EVALUATORS: dict[str, Evaluator] = {
             sequential_trajectory_consistency.evaluate,
             declarations=("action_types",),
         ),
+        Evaluator(constraint_compliance.DEFINITION, constraint_compliance.evaluate),
     )
 }
