@@ -6,7 +6,7 @@ Vocabulary is defined in [`GLOSSARY.md`](GLOSSARY.md). Decisions that are hard t
 
 ## What exists today
 
-Seven metrics, end to end, scored in your own process:
+Nine metrics, end to end, scored in your own process:
 
 | Metric | Documentation |
 | --- | --- |
@@ -14,19 +14,21 @@ Seven metrics, end to end, scored in your own process:
 | Distributional trajectory consistency | [`docs/distributional_trajectory_consistency/readme.md`](docs/distributional_trajectory_consistency/readme.md) |
 | Sequential trajectory consistency | [`docs/sequential_trajectory_consistency/readme.md`](docs/sequential_trajectory_consistency/readme.md) |
 | Resource consistency | [`docs/resource_consistency/readme.md`](docs/resource_consistency/readme.md) |
+| Calibration | [`docs/calibration/readme.md`](docs/calibration/readme.md) |
+| Strict confidence discrimination | [`docs/strict_confidence_discrimination/readme.md`](docs/strict_confidence_discrimination/readme.md) |
 | Brier-based score | [`docs/brier_based_score/readme.md`](docs/brier_based_score/readme.md) |
 | Constraint compliance | [`docs/constraint_compliance/readme.md`](docs/constraint_compliance/readme.md) |
 | Conditional harm severity | [`docs/conditional_harm_severity/readme.md`](docs/conditional_harm_severity/readme.md) |
 
 You can declare your own acceptance criteria per metric, and the scorecard reports each as met, not met, or not assessed with a reason: see [`docs/acceptance_criteria/readme.md`](docs/acceptance_criteria/readme.md).
 
-When a selected metric uses confidence, the sweep asks the agent for a confidence rating in a separate request after each Attempt. How that works, and when a rating is unavailable, is described in the [Brier-based score documentation](docs/brier_based_score/readme.md#how-the-confidence-rating-is-collected).
+When a selected metric uses confidence, the sweep asks the agent for a confidence rating in a separate request after each Attempt. How that works, and when a rating is unavailable, is described in the [Brier-based score documentation](docs/brier_based_score/readme.md#how-the-confidence-rating-is-collected). Calibration, strict confidence discrimination and the Brier-based score are calculated from the same ratings and reported as three separate results.
 
 The Evaluator sweep can also run controlled experiments, with your own controls for preparing state, applying a condition, verifying what occurred and cleaning up: see [`docs/sweep/controlled-experiments.md`](docs/sweep/controlled-experiments.md).
 
 Several metrics can be selected in one sweep. Evaluators share Attempts only where that is valid, and the scorecard shows which Attempts each one used: see [`docs/sweep/several-evaluators.md`](docs/sweep/several-evaluators.md).
 
-The other five metrics have no Evaluator yet. Every scorecard lists all twelve, and a metric that was not selected appears as not configured. No Foundry agent target and no Foundry-managed scoring exists yet; the agent target is an interface that you implement.
+The other three metrics have no Evaluator yet. Every scorecard lists all twelve, and a metric that was not selected appears as not configured. No Foundry agent target and no Foundry-managed scoring exists yet; the agent target is an interface that you implement.
 
 A task outcome can be supplied or corrected after the run. Recalculating from the earlier scorecard, which you supply, gives a new scorecard that uses the corrected outcome and marks the earlier result as superseded: see [`docs/sweep/late-and-corrected-outcomes.md`](docs/sweep/late-and-corrected-outcomes.md).
 
