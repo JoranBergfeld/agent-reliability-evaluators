@@ -11,7 +11,7 @@ import pytest
 from reliability_evaluators.evidence import EvidenceError, OperationalConstraint, TaskOutcome, ViolationAssessment
 from reliability_evaluators.scorecard import to_json
 from reliability_evaluators.sweep import Task, run_sweep
-from tests.fakes import FakeAgentTarget
+from tests.fakes import FakeAgentTarget, attempt_evidence
 
 LEAVE_UNRELATED = OperationalConstraint(
     constraint_id="leave-unrelated", description="Do not change or delete the item 'unrelated'."
@@ -127,7 +127,8 @@ def test_the_scorecard_discloses_the_constraint_set_and_links_each_violation_to_
     }
     assert constraint_compliance["evidence"] == {"attempt_ids": ["close/attempt-1", "close/attempt-2"]}
     assert json.loads(to_json(scorecard)) == scorecard
-    assert scorecard["attempts"][1] == {
+    attempt = attempt_evidence(scorecard["attempts"][1], "operational_constraints", "violation_assessments")
+    assert attempt == {
         "attempt_id": "close/attempt-2",
         "task_id": "close",
         "execution_status": "completed",

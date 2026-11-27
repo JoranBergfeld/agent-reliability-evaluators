@@ -6,17 +6,25 @@ Vocabulary is defined in [`GLOSSARY.md`](GLOSSARY.md). Decisions that are hard t
 
 ## What exists today
 
-Three metrics, end to end, scored in your own process:
+Seven metrics, end to end, scored in your own process:
 
 | Metric | Documentation |
 | --- | --- |
 | Outcome consistency | [`docs/outcome_consistency/readme.md`](docs/outcome_consistency/readme.md) |
+| Distributional trajectory consistency | [`docs/distributional_trajectory_consistency/readme.md`](docs/distributional_trajectory_consistency/readme.md) |
+| Sequential trajectory consistency | [`docs/sequential_trajectory_consistency/readme.md`](docs/sequential_trajectory_consistency/readme.md) |
+| Resource consistency | [`docs/resource_consistency/readme.md`](docs/resource_consistency/readme.md) |
+| Brier-based score | [`docs/brier_based_score/readme.md`](docs/brier_based_score/readme.md) |
 | Constraint compliance | [`docs/constraint_compliance/readme.md`](docs/constraint_compliance/readme.md) |
 | Conditional harm severity | [`docs/conditional_harm_severity/readme.md`](docs/conditional_harm_severity/readme.md) |
 
 You can declare your own acceptance criteria per metric, and the scorecard reports each as met, not met, or not assessed with a reason: see [`docs/acceptance_criteria/readme.md`](docs/acceptance_criteria/readme.md).
 
-The other nine metrics are listed in every scorecard as not configured. No Foundry agent target and no Foundry-managed scoring exists yet; the agent target is an interface that you implement.
+When a selected metric uses confidence, the sweep asks the agent for a confidence rating in a separate request after each Attempt. How that works, and when a rating is unavailable, is described in the [Brier-based score documentation](docs/brier_based_score/readme.md#how-the-confidence-rating-is-collected).
+
+The Evaluator sweep can also run controlled experiments, with your own controls for preparing state, applying a condition, verifying what occurred and cleaning up: see [`docs/sweep/controlled-experiments.md`](docs/sweep/controlled-experiments.md).
+
+The other five metrics have no Evaluator yet. Every scorecard lists all twelve, and a metric that was not selected appears as not configured. No Foundry agent target and no Foundry-managed scoring exists yet; the agent target is an interface that you implement.
 
 ## Using it in your project
 
@@ -44,7 +52,7 @@ scorecard = run_sweep(
 print(to_json(scorecard))
 ```
 
-An Evaluator can also be called on its own, without a sweep: see the metric's documentation.
+An Evaluator can also be called on its own, without a sweep: see the metric's documentation. The two trajectory metrics also need a declared source of action evidence and an action-type mapping, which have no default.
 
 ## Where things are
 
@@ -52,10 +60,10 @@ The copyable source has one directory per module of the specification.
 
 | Module | Path | Contents |
 | --- | --- | --- |
-| Evaluators | `src/reliability_evaluators/evaluators/` | The canonical metric definitions, one file per metric, the metric result contract (`result.py`), the catalogue of the twelve metrics (`catalogue.py`) and the registry of Evaluators that exist (`registry.py`). |
-| Evidence model | `src/reliability_evaluators/evidence/` | The Attempt record, its validation, and the grouping of Attempts by Task. |
-| Evaluator sweep | `src/reliability_evaluators/sweep/` | What a customer declares (`declaration.py`) and the public entry point `run_sweep` (`runner.py`). |
-| Agent target | `src/reliability_evaluators/agent_target/` | The interface the sweep invokes an agent through. |
+| Evaluators | `src/reliability_evaluators/evaluators/` | The canonical metric definitions, one file per metric, the metric result contract (`result.py`), the catalogue of the twelve metrics (`catalogue.py`), the registry of Evaluators that exist (`registry.py`) and the confidence/outcome pairs the predictability metrics share (`confidence_pairs.py`). |
+| Evidence model | `src/reliability_evaluators/evidence/` | The Attempt record with its task outcome, ordered action evidence (`actions.py`), resource measurements, confidence evidence (`confidence.py`) and what it records about its experiment (`experiment.py`), its validation, and the grouping of Attempts by Task. |
+| Evaluator sweep | `src/reliability_evaluators/sweep/` | What a customer declares (`declaration.py`), the public entry point `run_sweep` (`runner.py`), the customer controls invoked around each Attempt of an experiment (`lifecycle.py`) and the confidence-only request that follows an Attempt (`confidence.py`). |
+| Agent target | `src/reliability_evaluators/agent_target/` | The interface the sweep invokes an agent through, for an Attempt and for the confidence follow-up, with the target's declaration of whether that follow-up is isolated. |
 | Scorecard | `src/reliability_evaluators/scorecard/` | Assembly of the machine-readable scorecard (JSON), and the assessment of customer acceptance criteria (`acceptance.py`). |
 | Foundry-managed scoring | not built yet | |
 
@@ -78,7 +86,7 @@ The default test run excludes tests marked `live`. Live checks need a disposable
 Tests are written at three seams only:
 
 - **Evaluator seam** (`tests/evaluators/`): an Evaluator's public interface, called with grouped Attempt evidence.
-- **Evaluator sweep seam** (`tests/sweep/`): `run_sweep` with the fake agent target in `tests/fakes.py`, asserting on the machine-readable scorecard only.
+- **Evaluator sweep seam** (`tests/sweep/`): `run_sweep` with the fake agent targets and the fake customer controls in `tests/fakes.py`, asserting on the machine-readable scorecard only.
 - **Live Foundry verification**: opt-in, marked `live`.
 
 Expected values are calculated by hand, never by the code under test.

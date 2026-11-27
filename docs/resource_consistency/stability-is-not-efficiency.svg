@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 300" width="640" height="300" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13">
+  <title>Stability is not efficiency</title>
+  <desc>An agent that takes 60 seconds on each of four Attempts has a coefficient of variation of 0 and a Task value of 1. An agent that takes 2, 6, 2 and 6 seconds is fifteen times faster on average, has a coefficient of variation of 0.5 and a Task value of 0.6065.</desc>
+  <rect width="640" height="300" fill="#ffffff"/>
+
+  <!-- Bars: 2 px per second, on a baseline at y = 200. -->
+  <line x1="40" y1="200" x2="300" y2="200" stroke="#616161"/>
+  <line x1="340" y1="200" x2="600" y2="200" stroke="#616161"/>
+
+  <text x="170" y="30" text-anchor="middle" fill="#212121" font-weight="600">Slow on every Attempt</text>
+  <g fill="#1565c0">
+    <rect x="70" y="80" width="36" height="120"/>
+    <rect x="124" y="80" width="36" height="120"/>
+    <rect x="178" y="80" width="36" height="120"/>
+    <rect x="232" y="80" width="36" height="120"/>
+  </g>
+  <g text-anchor="middle" fill="#212121">
+    <text x="88" y="72">60 s</text>
+    <text x="142" y="72">60 s</text>
+    <text x="196" y="72">60 s</text>
+    <text x="250" y="72">60 s</text>
+    <text x="170" y="226">mean 60 s, standard deviation 0</text>
+    <text x="170" y="248">CV 0</text>
+    <text x="170" y="276" fill="#1565c0" font-weight="600">Task value exp(−0) = 1</text>
+  </g>
+
+  <text x="470" y="30" text-anchor="middle" fill="#212121" font-weight="600">Fast, but uneven</text>
+  <g fill="#ef6c00">
+    <rect x="370" y="196" width="36" height="4"/>
+    <rect x="424" y="188" width="36" height="12"/>
+    <rect x="478" y="196" width="36" height="4"/>
+    <rect x="532" y="188" width="36" height="12"/>
+  </g>
+  <g text-anchor="middle" fill="#212121">
+    <text x="388" y="182">2 s</text>
+    <text x="442" y="182">6 s</text>
+    <text x="496" y="182">2 s</text>
+    <text x="550" y="182">6 s</text>
+    <text x="470" y="226">mean 4 s, standard deviation 2 s</text>
+    <text x="470" y="248">CV 2 / 4 = 0.5</text>
+    <text x="470" y="276" fill="#ef6c00" font-weight="600">Task value exp(−0.5) = 0.6065</text>
+  </g>
+</svg>
