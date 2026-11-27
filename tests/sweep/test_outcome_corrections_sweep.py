@@ -7,6 +7,7 @@ scorecard or on the reported failure. Expected values are calculated by hand.
 """
 
 import json
+import math
 
 import pytest
 
@@ -40,14 +41,16 @@ def supplied(scorecard):
     return json.loads(to_json(scorecard))
 
 
-def sweep(script, metrics=("outcome_consistency",), ratings=None, not_known_yet=()):
+def sweep(script, metrics=("outcome_consistency",), ratings=None, not_known_yet=(), seconds=()):
     """Run a sweep with one Task per script entry and one Attempt per scripted behaviour.
 
     `ratings` gives the fake agent's answer to the confidence request of each Attempt, by
     Attempt identity. `not_known_yet` names the Attempts whose task outcome the
-    task-success rule cannot decide during the sweep.
+    task-success rule cannot decide during the sweep. `seconds` gives how long each Attempt
+    of every Task takes.
     """
-    target = FakeAgentTarget(script, confidence=ratings)
+    resources = {task_id: [{"seconds": taken} for taken in seconds] for task_id in script}
+    target = FakeAgentTarget(script, resources, confidence=ratings)
 
     def item_is_done(attempt, response):
         if attempt.attempt_id in not_known_yet:
@@ -64,7 +67,7 @@ def sweep(script, metrics=("outcome_consistency",), ratings=None, not_known_yet=
         )
         for task_id, behaviours in script.items()
     ]
-    return supplied(run_sweep(tasks=tasks, agent_target=target, metrics=metrics))
+    return supplied(run_sweep(tasks=tasks, agent_target=target, metrics=metrics, clock=target.clock))
 
 
 def corrected(attempt_id, success, source=REVIEW, provenance=PROVENANCE):
@@ -564,3 +567,51 @@ def test_supplied_evidence_that_does_not_reproduce_the_earlier_result_fails_the_
         f"result of 'outcome_consistency', which differs in: {differs_in}$",
     ):
         recalculate(earlier_scorecard=earlier, outcome_corrections=[corrected("close/attempt-4", success=True)])
+
+
+def test_a_metric_that_needs_a_declaration_is_not_recalculated_without_it():
+    earlier, declared = sweep_with_every_kind_of_evidence()
+
+    with pytest.raises(
+        RecalculationFailed,
+        match="recalculation failed: the trajectory metrics need a declared ActionTypeMapping",
+    ):
+        recalculate(earlier_scorecard=earlier, outcome_corrections=[corrected("close/attempt-3", success=True)])
+
+
+def test_a_declaration_other_than_the_one_the_earlier_result_was_calculated_with_fails_the_recalculation():
+    earlier, declared = sweep_with_every_kind_of_evidence()
+    another = ActionEvidenceDeclaration(
+        evidence_source="service-side effects",
+        record=declared.record,
+        action_types={"get_item": "read", "update_item": "read"},
+    )
+
+    with pytest.raises(
+        RecalculationFailed,
+        match="it does not reproduce the earlier result of 'distributional_trajectory_consistency'",
+    ):
+        recalculate(
+            earlier_scorecard=earlier,
+            outcome_corrections=[corrected("close/attempt-3", success=True)],
+            action_evidence=another,
+        )
+
+
+def test_an_earlier_value_that_differs_only_in_its_last_binary_digit_is_the_same_result():
+    # Elapsed times of 1 and 3 seconds: mean 2, population standard deviation 1, CV 0.5.
+    # Resource consistency is exp(-0.5), whose last digit depends on the platform's
+    # mathematical library. The earlier result may have been calculated on another platform.
+    earlier = sweep({"close": HALF}, metrics=["outcome_consistency", "resource_consistency"], seconds=[1.0, 3.0, 1.0, 3.0])
+    calculated_here = metric(earlier, "resource_consistency")["value"]
+    assert calculated_here == pytest.approx(0.6065306597126334, abs=1e-12)
+    elsewhere = math.nextafter(calculated_here, 1.0)
+    metric(earlier, "resource_consistency")["value"] = elsewhere
+
+    recalculated = recalculate(
+        earlier_scorecard=earlier, outcome_corrections=[corrected("close/attempt-3", success=True)]
+    )
+
+    assert metric(recalculated, "outcome_consistency")["value"] == 0.25
+    (superseded,) = recalculated["superseded_results"]
+    assert metric(superseded, "resource_consistency")["value"] == elsewhere

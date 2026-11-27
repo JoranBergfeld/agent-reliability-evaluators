@@ -2,9 +2,9 @@
 
 from __future__ import annotations
 
-import json
 from contextlib import contextmanager
 from copy import deepcopy
+from math import isclose
 from typing import Any, Iterator, Mapping, Sequence
 
 from ..evaluators import EVALUATORS, RELIABILITY_METRICS, Evaluator, Fidelity, MetricState, ScoringPath
@@ -147,9 +147,7 @@ def _require_reproduced(earlier_metrics: Sequence[Mapping[str, Any]], rescored: 
     for scored in rescored:
         calculated = scored.result.to_dict()
         entry = earlier[calculated["metric_id"]]
-        differing = [
-            part for part in calculated if part not in entry or _as_json(calculated[part]) != _as_json(entry[part])
-        ]
+        differing = [part for part in calculated if part not in entry or not _same(calculated[part], entry[part])]
         if differing:
             raise EvidenceError(
                 f"it does not reproduce the earlier result of {calculated['metric_id']!r}, "
@@ -157,8 +155,24 @@ def _require_reproduced(earlier_metrics: Sequence[Mapping[str, Any]], rescored: 
             )
 
 
-def _as_json(value: Any) -> Any:
-    return json.loads(json.dumps(value, allow_nan=False))
+def _same(calculated: Any, earlier: Any) -> bool:
+    """Whether a part of a result calculated now is the part the earlier scorecard has.
+
+    Numbers are the same when they agree to nine significant digits: the earlier result may
+    have been calculated on a platform whose mathematical library rounds the last digit of
+    an exponential or a logarithm the other way.
+    """
+    if isinstance(calculated, Mapping) and isinstance(earlier, Mapping):
+        return calculated.keys() == earlier.keys() and all(_same(calculated[key], earlier[key]) for key in calculated)
+    if isinstance(calculated, (list, tuple)) and isinstance(earlier, (list, tuple)):
+        return len(calculated) == len(earlier) and all(map(_same, calculated, earlier))
+    if _is_number(calculated) and _is_number(earlier):
+        return isclose(calculated, earlier, rel_tol=1e-9, abs_tol=1e-12)
+    return type(calculated) is type(earlier) and calculated == earlier
+
+
+def _is_number(value: Any) -> bool:
+    return type(value) in (int, float)
 
 
 def _correction_records(
