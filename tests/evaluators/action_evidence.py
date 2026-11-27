@@ -48,3 +48,16 @@ def attempts(task_id, sequences, outcomes=None):
         )
         for number, (tool_names, outcome) in enumerate(zip(sequences, outcomes), start=1)
     ]
+
+
+# The worked example of both trajectory readmes, as tool names.
+WORKED_EXAMPLE = {
+    "close": [["get_item", "update_item"], ["list_items", "update_item"], ["update_item", "get_item"]],
+    "archive": [["get_item", "update_item"], ["update_item", "delete_item"]],
+    "reorder": [
+        ["get_item", "create_item", "update_item", "delete_item"],
+        ["get_item", "update_item", "delete_item", "create_item"],
+    ],
+    "tidy": [["get_item", "update_item"], []],
+    "once": [["get_item", "update_item"], RECORDED_NOTHING],
+}

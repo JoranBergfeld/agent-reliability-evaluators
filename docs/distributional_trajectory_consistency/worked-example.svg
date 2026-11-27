@@ -1,0 +1,78 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 700 350" width="700" height="350" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13">
+  <title>Worked example: five Tasks, three of them eligible</title>
+  <desc>close has three Attempts that are each half read and half update, and scores 1. archive has one Attempt that is half read and half update and one that is half update and half delete, with divergence 0.5, and scores 0.5. reorder has two Attempts with the same four action types in equal shares, and scores 1. tidy has an Attempt that took no action and is excluded. once has an Attempt that was not recorded and is excluded. The mean of the three eligible Task values is 0.8333.</desc>
+  <defs>
+    <g id="read-update">
+      <rect width="45" height="18" fill="#1565c0"/>
+      <rect x="45" width="45" height="18" fill="#ef6c00"/>
+    </g>
+    <g id="update-delete">
+      <rect width="45" height="18" fill="#ef6c00"/>
+      <rect x="45" width="45" height="18" fill="#c62828"/>
+    </g>
+    <g id="all-four">
+      <rect width="22.5" height="18" fill="#1565c0"/>
+      <rect x="22.5" width="22.5" height="18" fill="#2e7d32"/>
+      <rect x="45" width="22.5" height="18" fill="#ef6c00"/>
+      <rect x="67.5" width="22.5" height="18" fill="#c62828"/>
+    </g>
+  </defs>
+  <rect width="700" height="350" fill="#ffffff"/>
+  <g fill="#616161" font-weight="600">
+    <text x="20" y="30">Task</text>
+    <text x="110" y="30">Action mix of each Attempt</text>
+    <text x="430" y="30">Mean divergence</text>
+    <text x="570" y="30">Task value</text>
+  </g>
+  <line x1="20" y1="42" x2="680" y2="42" stroke="#bdbdbd"/>
+
+  <g fill="#212121">
+    <text x="20" y="75">close</text>
+    <use href="#read-update" x="110" y="61"/>
+    <use href="#read-update" x="210" y="61"/>
+    <use href="#read-update" x="310" y="61"/>
+    <text x="430" y="75">(0 + 0 + 0) / 3 = 0</text>
+    <text x="570" y="75">1 − 0 = 1</text>
+
+    <text x="20" y="115">archive</text>
+    <use href="#read-update" x="110" y="101"/>
+    <use href="#update-delete" x="210" y="101"/>
+    <text x="430" y="115">0.5</text>
+    <text x="570" y="115">1 − 0.5 = 0.5</text>
+
+    <text x="20" y="155">reorder</text>
+    <use href="#all-four" x="110" y="141"/>
+    <use href="#all-four" x="210" y="141"/>
+    <text x="430" y="155">0</text>
+    <text x="570" y="155">1 − 0 = 1</text>
+  </g>
+
+  <g fill="#9e9e9e">
+    <text x="20" y="195">tidy</text>
+    <use href="#read-update" x="110" y="181" opacity="0.45"/>
+    <rect x="210.5" y="181.5" width="89" height="17" fill="#ffffff" stroke="#9e9e9e"/>
+    <text x="255" y="194" font-size="11" text-anchor="middle">no actions</text>
+    <text x="430" y="195">excluded: an Attempt took no action</text>
+
+    <text x="20" y="235">once</text>
+    <use href="#read-update" x="110" y="221" opacity="0.45"/>
+    <rect x="210.5" y="221.5" width="89" height="17" fill="#ffffff" stroke="#9e9e9e" stroke-dasharray="4 3"/>
+    <text x="255" y="234" font-size="11" text-anchor="middle">not recorded</text>
+    <text x="430" y="235">excluded: fewer than two recordings</text>
+  </g>
+
+  <line x1="20" y1="256" x2="680" y2="256" stroke="#bdbdbd"/>
+  <g font-size="12" fill="#212121">
+    <rect x="110" y="268" width="14" height="14" fill="#1565c0"/>
+    <text x="130" y="280">read</text>
+    <rect x="180" y="268" width="14" height="14" fill="#2e7d32"/>
+    <text x="200" y="280">create</text>
+    <rect x="260" y="268" width="14" height="14" fill="#ef6c00"/>
+    <text x="280" y="280">update</text>
+    <rect x="345" y="268" width="14" height="14" fill="#c62828"/>
+    <text x="365" y="280">delete</text>
+  </g>
+  <text x="20" y="310" fill="#212121" font-weight="600">Distributional trajectory consistency</text>
+  <text x="430" y="310" fill="#1565c0" font-weight="600">(1 + 0.5 + 1) / 3 = 0.8333</text>
+  <text x="20" y="336" fill="#616161">Three eligible Tasks, each weighted equally. Order is ignored: the Attempts of close and reorder differ only in order.</text>
+</svg>

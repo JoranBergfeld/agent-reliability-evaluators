@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 340" width="640" height="340" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13">
+  <title>Jensen-Shannon divergence of one pair of Attempts</title>
+  <desc>Attempt 1 is half read and half update. Attempt 2 is half update and half delete. Their midpoint M is a quarter read, half update and a quarter delete. Each Attempt diverges from M by one half, so the Jensen-Shannon divergence is 0.5 and the consistency of the pair is 0.5.</desc>
+  <rect width="640" height="340" fill="#ffffff"/>
+
+  <g font-size="12" fill="#212121">
+    <rect x="250" y="16" width="14" height="14" fill="#1565c0"/>
+    <text x="270" y="28">read</text>
+    <rect x="330" y="16" width="14" height="14" fill="#ef6c00"/>
+    <text x="350" y="28">update</text>
+    <rect x="425" y="16" width="14" height="14" fill="#c62828"/>
+    <text x="445" y="28">delete</text>
+  </g>
+
+  <g fill="#212121">
+    <text x="20" y="66" font-weight="600">P: Attempt 1</text>
+    <text x="20" y="82" font-size="11" fill="#616161">get_item, update_item</text>
+    <text x="20" y="118" font-weight="600">Q: Attempt 2</text>
+    <text x="20" y="134" font-size="11" fill="#616161">update_item, delete_item</text>
+    <text x="20" y="170" font-weight="600">M: midpoint</text>
+    <text x="20" y="186" font-size="11" fill="#616161">(P + Q) / 2</text>
+  </g>
+
+  <rect x="250" y="52" width="180" height="30" fill="#1565c0"/>
+  <rect x="430" y="52" width="180" height="30" fill="#ef6c00"/>
+
+  <rect x="250" y="104" width="180" height="30" fill="#ef6c00"/>
+  <rect x="430" y="104" width="180" height="30" fill="#c62828"/>
+
+  <rect x="250" y="156" width="90" height="30" fill="#1565c0"/>
+  <rect x="340" y="156" width="180" height="30" fill="#ef6c00"/>
+  <rect x="520" y="156" width="90" height="30" fill="#c62828"/>
+
+  <g fill="#ffffff" font-weight="600" text-anchor="middle">
+    <text x="340" y="72">1/2</text>
+    <text x="520" y="72">1/2</text>
+    <text x="340" y="124">1/2</text>
+    <text x="520" y="124">1/2</text>
+    <text x="295" y="176">1/4</text>
+    <text x="430" y="176">1/2</text>
+    <text x="565" y="176">1/4</text>
+  </g>
+
+  <line x1="20" y1="206" x2="620" y2="206" stroke="#bdbdbd"/>
+  <g fill="#212121">
+    <text x="20" y="234">P from M:  1/2 × log2(2) + 1/2 × log2(1) = 1/2</text>
+    <text x="20" y="258">Q from M:  1/2 × log2(1) + 1/2 × log2(2) = 1/2</text>
+  </g>
+  <text x="20" y="290" fill="#212121" font-weight="600">Jensen-Shannon divergence</text>
+  <text x="250" y="290" fill="#1565c0" font-weight="600">(1/2 + 1/2) / 2 = 0.5</text>
+  <text x="20" y="320" fill="#616161">Consistency of this pair: 1 − 0.5 = 0.5. The square root of the divergence, 0.7071, is not used.</text>
+</svg>

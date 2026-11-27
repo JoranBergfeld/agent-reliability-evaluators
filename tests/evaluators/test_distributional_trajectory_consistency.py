@@ -13,7 +13,7 @@ import pytest
 
 from reliability_evaluators.evaluators import distributional_trajectory_consistency
 from reliability_evaluators.evidence import group_by_task
-from tests.evaluators.action_evidence import ACTION_TYPES, RECORDED_NOTHING, attempts
+from tests.evaluators.action_evidence import ACTION_TYPES, RECORDED_NOTHING, WORKED_EXAMPLE, attempts
 
 READ_UPDATE = ["get_item", "update_item"]
 UPDATE_READ = ["update_item", "get_item"]
@@ -241,3 +241,25 @@ def test_the_evaluator_does_not_run_without_a_declared_action_type_mapping():
 
     with pytest.raises(ValueError, match="no default"):
         distributional_trajectory_consistency.evaluate(group_by_task(evidence), None)
+
+
+def test_the_worked_example_of_the_readme():
+    # close: three Attempts, each half read and half update; value 1. archive: divergence 1/2; value 1/2.
+    # reorder: both Attempts a quarter each of four action types; value 1.
+    # tidy: undefined, an Attempt took no action. once: excluded, one recording.
+    # (1 + 1/2 + 1) / 3 = 5/6 = 0.833333...
+    result = evaluate(WORKED_EXAMPLE)
+
+    assert result.value == pytest.approx(5 / 6, abs=1e-12)
+    assert [(task["task_id"], task["pairs"]) for task in result.details["per_task"]] == [
+        ("close", 3),
+        ("archive", 1),
+        ("reorder", 1),
+    ]
+    assert result.counts["attempt_pairs"].valid == 5
+    assert result.counts["tasks"].valid == 3
+    assert [(entry.reason, entry.ids) for entry in result.counts["tasks"].excluded] == [
+        ("an Attempt with a confirmed empty action sequence", ("tidy",)),
+        ("fewer than two Attempts with a usable action recording", ("once",)),
+    ]
+    assert len(result.attempt_ids) == 7

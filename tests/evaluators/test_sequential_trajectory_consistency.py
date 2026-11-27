@@ -17,7 +17,7 @@ from reliability_evaluators.evidence import (
     ExecutionStatus,
     group_by_task,
 )
-from tests.evaluators.action_evidence import ACTION_TYPES, RECORDED_NOTHING, attempts, recording
+from tests.evaluators.action_evidence import ACTION_TYPES, RECORDED_NOTHING, WORKED_EXAMPLE, attempts, recording
 
 READ_THEN_UPDATE = ["get_item", "update_item"]
 UPDATE_THEN_READ = ["update_item", "get_item"]
@@ -382,3 +382,22 @@ def test_action_evidence_that_cannot_be_accepted_as_given_is_rejected(build, pro
 def test_an_action_type_mapping_that_declares_nothing_usable_is_rejected(declared, problem):
     with pytest.raises(ValueError, match=problem):
         ActionTypeMapping(**declared)
+
+
+def test_the_worked_example_of_the_readme():
+    # close: pairs 0, 1, 1; mean 2/3; value 1/3. archive: 2 / 2 = 1; value 0.
+    # reorder: 2 / 4; value 1/2. tidy: empty against non-empty, 1; value 0. once: excluded.
+    # (1/3 + 0 + 1/2 + 0) / 4 = 5/24 = 0.208333...
+    result = evaluate(WORKED_EXAMPLE)
+
+    assert result.value == pytest.approx(5 / 24, abs=1e-12)
+    assert [(task["task_id"], task["pairs"]) for task in result.details["per_task"]] == [
+        ("close", 3),
+        ("archive", 1),
+        ("reorder", 1),
+        ("tidy", 1),
+    ]
+    assert result.counts["attempt_pairs"].valid == 6
+    assert result.counts["tasks"].valid == 4
+    assert [entry.ids for entry in result.counts["tasks"].excluded] == [("once",)]
+    assert len(result.attempt_ids) == 9
