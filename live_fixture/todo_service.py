@@ -41,6 +41,44 @@ class TodoService:
         """Discard the Attempt's state and events. Later agent calls for it are rejected."""
         self._admin("DELETE", attempt_id)
 
+    def openapi(self):
+        """The OpenAPI document that offers the four tools to a prompt agent. There is no list operation."""
+        attempt = {"name": "attempt_id", "in": "path", "required": True, "schema": {"type": "string"}}
+        item = {"name": "todo_id", "in": "path", "required": True, "schema": {"type": "string"}}
+
+        def operation(name, description, parameters, properties=None, required=()):
+            result = {"operationId": name, "description": description, "parameters": parameters,
+                      "responses": {"200": {"description": "Result"}}}
+            if properties:
+                schema = {"type": "object", "properties": properties}
+                # Observed live: an empty "required" list makes every tool call fail in Foundry.
+                if required:
+                    schema["required"] = list(required)
+                result["requestBody"] = {"required": True, "content": {"application/json": {"schema": schema}}}
+            return result
+
+        text, flag = {"type": "string"}, {"type": "boolean"}
+        return {
+            "openapi": "3.0.1",
+            "info": {"title": "Synthetic to-do service", "version": "1.0"},
+            "servers": [{"url": self.url}],
+            "components": {"securitySchemes": {
+                "apiKey": {"type": "apiKey", "in": "header", "name": "x-api-key"}}},
+            "security": [{"apiKey": []}],
+            "paths": {
+                "/attempts/{attempt_id}/todos": {
+                    "post": operation("createTodo", "Create a to-do item with a new id and a title",
+                                      [attempt], {"id": text, "title": text}, ("id", "title")),
+                },
+                "/attempts/{attempt_id}/todos/{todo_id}": {
+                    "get": operation("readTodo", "Read one to-do item", [attempt, item]),
+                    "patch": operation("updateTodo", "Update a to-do item's done flag, title, or both",
+                                       [attempt, item], {"done": flag, "title": text}),
+                    "delete": operation("deleteTodo", "Delete one to-do item", [attempt, item]),
+                },
+            },
+        }
+
     def _admin(self, method, attempt_id, body=None):
         request = urllib.request.Request(
             f"{self.url}/admin/attempts/{attempt_id}",
