@@ -1,4 +1,8 @@
-"""Evaluator sweep: coordinates the Attempts the Evaluators need and returns the scorecard."""
+"""Evaluator sweep: coordinates the Attempts the Evaluators need and returns the scorecard.
+
+`recalculate` scores the evidence of an earlier scorecard again, with task outcomes that
+were supplied or corrected after the run.
+"""
 
 from ..evidence import Condition, ObservedCondition, StartingStatePolicy
 from .declaration import (

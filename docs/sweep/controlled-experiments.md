@@ -198,4 +198,4 @@ The Attempt identity is `<experiment_id>/<condition_id>/attempt-<number>`. When 
 
 - Attempts under a variation are made and recorded, but no Evaluator uses them yet. The Evaluators that exist score Attempts under the baseline only, and each metric's `attempts_used` in the scorecard lists the Attempts its Evaluator was given.
 - A Task can be declared in one experiment only, so that Attempts made under different declarations are never mixed in one Task's evidence.
-- If a task-success rule returns something that is not a `TaskOutcome`, the sweep stops with an error and does not invoke `clean_up`.
+- If a task-success rule returns something that is neither a `TaskOutcome` nor [`NO_TASK_OUTCOME_YET`](late-and-corrected-outcomes.md#leaving-an-outcome-open-during-the-sweep), the sweep stops with an error and does not invoke `clean_up`.

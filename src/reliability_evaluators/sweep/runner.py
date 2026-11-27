@@ -84,8 +84,12 @@ def run_sweep(
     never runs backwards. An agent target that reports its own elapsed time is recorded
     instead. Every other resource measurement comes from the agent target.
 
+    A task-success rule that cannot decide during the sweep returns NO_TASK_OUTCOME_YET. The
+    Attempt is then recorded without a task outcome, which is not a task failure, and the
+    outcome can be supplied later with `recalculate`.
+
     A declaration that cannot be run is rejected before any Attempt is made. A task-success
-    rule that does not return a sourced, binary TaskOutcome stops the sweep. So does a
+    rule that returns anything else than a sourced, binary TaskOutcome stops the sweep. So does a
     violation assessor that does not return sourced violation assessments of the operational
     constraints its Task declares, and an action recording that is not a sequence of ActionEvent.
 

@@ -1,6 +1,9 @@
 """Evidence model: the Attempt record, what it records about its experiment, its validation,
 and the grouping Evaluators are called with.
 
+Also task outcomes supplied or corrected after the run, and the reading of evidence that a
+customer supplies again.
+
 Pure: standard library only, no I/O. The canonical metric definitions depend on it.
 """
 

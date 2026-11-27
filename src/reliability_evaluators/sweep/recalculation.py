@@ -1,4 +1,9 @@
-"""Recalculation of an earlier scorecard with task outcomes supplied or corrected after the run."""
+"""Recalculation of an earlier scorecard with task outcomes supplied or corrected after the run.
+
+The offering keeps no evidence store. The customer supplies the earlier scorecard, which
+holds the attempt-level evidence, from the platform that kept it. Nothing here makes an
+Attempt, invokes an agent, reads a file or calls a platform: an earlier run is not modified.
+"""
 
 from __future__ import annotations
 
@@ -29,7 +34,10 @@ _READ = {"schema_version", _METRICS, _EXPERIMENTS, _ATTEMPTS, _SUPERSEDED_RESULT
 
 
 class RecalculationFailed(Exception):
-    """The recalculation did not produce a scorecard. The earlier result stands as it was."""
+    """The recalculation did not produce a scorecard, so nothing was superseded.
+
+    The earlier scorecard stands as it was. The message says what stopped the recalculation.
+    """
 
 
 def recalculate(
@@ -40,11 +48,45 @@ def recalculate(
     action_evidence: ActionEvidenceDeclaration | None = None,
     acceptance_criteria: Sequence[AcceptanceCriterion] = (),
 ) -> dict[str, Any]:
-    """Score the evidence of an earlier scorecard again, with the corrected task outcomes."""
+    """Score the evidence of an earlier scorecard again, with task outcomes supplied or corrected since.
+
+    `earlier_scorecard` is the scorecard of the earlier sweep or recalculation, as the data
+    of its JSON. It holds the attempt-level evidence, so nothing else is needed: the
+    offering keeps no evidence store, and the customer supplies it from their platform.
+    It is read and not changed.
+
+    `outcome_corrections` gives, by Attempt identity, the task outcome of each Attempt that
+    is supplied late or corrected, with its source and its provenance.
+
+    The result is a new scorecard. Every metric the earlier scorecard scored is scored
+    again by the same Evaluator, in this process, from the Attempts its Evaluator was given
+    before. A correction changes the task outcome of the Attempt it names and nothing else:
+    the confidence rating, the action evidence, the resource measurements, the violation
+    assessments and what the Attempt records about its experiment stay as they were. So a
+    metric that is not calculated from task outcomes keeps its result. Each corrected
+    Attempt keeps the record that was replaced, in `superseded_task_outcomes`, with the
+    provenance of the correction. The earlier results are kept in `superseded_results`,
+    marked as superseded, with the corrections that replaced them.
+
+    `metrics`, `action_evidence` and `acceptance_criteria` are declared again as for the
+    sweep, because the earlier scorecard cannot hold the customer's code. `action_evidence`
+    is needed when a trajectory metric was scored, and `metrics` only for an Evaluator
+    that was configured with declarations of its own. A metric that the earlier scorecard
+    did not score cannot be added. Acceptance criteria are assessed on the new results.
+
+    Raises RecalculationFailed, and returns no scorecard, when the recalculation cannot be
+    done as asked. That includes: evidence that does not validate, or that does not give
+    the earlier results when it is scored as it is; a correction for an Attempt that is not
+    in the evidence, that matches more than one Attempt, or whose execution did not
+    complete; two corrections for one Attempt; no correction at all; a missing declaration;
+    and an acceptance criterion of the earlier scorecard that is not declared again.
+    """
     try:
         return _recalculate(earlier_scorecard, outcome_corrections, metrics, action_evidence, acceptance_criteria)
     except Exception as error:
-        raise RecalculationFailed(f"recalculation failed: {error}") from error
+        # A ValueError is one of this package's own refusals and reads as a sentence.
+        reason = str(error) if isinstance(error, ValueError) else f"{type(error).__name__}: {error}"
+        raise RecalculationFailed(f"recalculation failed: {reason}") from error
 
 
 def _recalculate(
