@@ -143,6 +143,7 @@ def test_the_scorecard_discloses_the_constraint_set_and_links_each_violation_to_
                 "violated": True,
                 "evidence": "the item 'unrelated' is deleted after the Attempt",
                 "source": CHECK,
+                "severity": None,
             }
         ],
     }

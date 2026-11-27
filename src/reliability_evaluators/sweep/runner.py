@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import replace
 from functools import partial
 from time import perf_counter
@@ -22,7 +23,7 @@ from ..evidence import (
     ViolationAssessment,
     group_by_task,
 )
-from ..scorecard import AcceptanceCriterion, ScoredMetric, build_scorecard, criteria_by_metric
+from ..scorecard import AcceptanceCriterion, ArtifactLocation, ScoredMetric, build_scorecard, criteria_by_metric
 from .confidence import ATTEMPT_NOT_COMPLETED, elicit_confidence
 from .declaration import ActionEvidenceDeclaration, Experiment, Task
 from .lifecycle import ConfidenceFollowUp, planned_attempt_ids, run_experiments
@@ -42,6 +43,7 @@ def run_sweep(
     action_evidence: ActionEvidenceDeclaration | None = None,
     acceptance_criteria: Sequence[AcceptanceCriterion] = (),
     clock: Callable[[], float] = perf_counter,
+    artifact_dir: str | os.PathLike[str] | None = None,
 ) -> dict[str, Any]:
     """Make the declared Attempts, score the selected metrics, and return the scorecard.
 
@@ -77,6 +79,52 @@ def run_sweep(
     rule that does not return a sourced, binary TaskOutcome stops the sweep. So does a
     violation assessor that does not return sourced violation assessments of the operational
     constraints its Task declares, and an action recording that is not a sequence of ActionEvent.
+
+    With `artifact_dir`, the attempt-level evidence, the scorecard and the human-readable
+    report rendered from it are also written to that directory. The caller chooses it in the
+    run or artifact context of the platform it runs on. The sweep then either delivers all
+    three or raises ReportingFailure: whatever stops it, a rejected declaration included, is
+    raised as that, and the evidence collected until then is kept at the location.
+    """
+    location = None if artifact_dir is None else ArtifactLocation(artifact_dir)
+    attempts: list[Attempt] = []
+    try:
+        scorecard = _sweep(
+            attempts,
+            tasks=tasks,
+            experiments=experiments,
+            agent_target=agent_target,
+            metrics=metrics,
+            action_evidence=action_evidence,
+            acceptance_criteria=acceptance_criteria,
+            clock=clock,
+        )
+    except Exception as error:
+        if location is None:
+            raise
+        raise location.failed(
+            "the Evaluator sweep stopped before it produced a scorecard",
+            error,
+            evidence=[attempt.to_dict() for attempt in attempts],
+        ) from error
+    if location is not None:
+        location.deliver(scorecard)
+    return scorecard
+
+
+def _sweep(
+    attempts: list[Attempt],
+    *,
+    tasks: Sequence[Task],
+    experiments: Sequence[Experiment],
+    agent_target: AgentTarget,
+    metrics: Sequence[str],
+    action_evidence: ActionEvidenceDeclaration | None,
+    acceptance_criteria: Sequence[AcceptanceCriterion],
+    clock: Callable[[], float],
+) -> dict[str, Any]:
+    """Make the Attempts and score them. Each Attempt is added to `attempts` as it is made,
+    so that `run_sweep` still has the evidence if this stops.
     """
     evaluators = [_evaluator(metric_id) for metric_id in metrics]
     declared = {"action_types": None if action_evidence is None else action_evidence.mapping}
@@ -87,19 +135,17 @@ def run_sweep(
     # Called for its check: a second criterion for one metric is rejected here, not after the Attempts.
     criteria_by_metric(acceptance_criteria)
     ask_confidence = any(evaluator.needs_confidence for evaluator in evaluators)
-    attempts = [
-        _run_attempt(task, number, agent_target, action_evidence, ask_confidence, clock)
-        for task in tasks
-        for number in range(1, task.attempts + 1)
-    ]
-    experiment_attempts, experiment_records = run_experiments(
+    for task in tasks:
+        for number in range(1, task.attempts + 1):
+            attempts.append(_run_attempt(task, number, agent_target, action_evidence, ask_confidence, clock))
+    experiment_records = run_experiments(
         experiments,
         lambda task, number, attempt_id: _invoke_agent(
             task, number, agent_target, action_evidence, ask_confidence, clock, attempt_id=attempt_id
         ),
         ask_confidence,
+        attempts,
     )
-    attempts.extend(experiment_attempts)
     # The Evaluators that exist score Attempts under the baseline. Attempts under a variation
     # are kept in the scorecard and are not mixed in.
     evidence = group_by_task(
