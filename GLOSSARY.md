@@ -33,6 +33,10 @@ A task attempted under a baseline condition and at most one intended variation, 
 **Experimental condition**:
 The circumstances an attempt is made under: the baseline, or the one intended variation from it. The intended condition is what the experiment declared. The observed condition is what a customer control showed to have occurred. A label is not an observed condition.
 
+**Prompt variant**:
+A wording of a task's instruction that the customer supplies or approves as equivalent to the task's own, kept as its exact text with its source. It is judged against the same task-success definition. The offering generates none.
+_Avoid_: Paraphrase, generated variant
+
 **Starting-state policy**:
 The declared rule for the state an attempt starts from: fresh, where the state is prepared before every attempt, or continuing, where each attempt deliberately starts from the state the previous one left.
 

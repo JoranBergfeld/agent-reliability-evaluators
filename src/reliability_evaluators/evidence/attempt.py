@@ -10,7 +10,15 @@ from typing import Any
 from .actions import ActionEvidence
 from .confidence import ConfidenceRating, ConfidenceUnavailable
 from .errors import EvidenceError
-from .experiment import Condition, ConditionRole, LifecycleStep, ObservedCondition, StartingStatePolicy
+from .experiment import (
+    Condition,
+    ConditionRole,
+    LifecycleStep,
+    ObservedCondition,
+    PromptVariant,
+    StartingStatePolicy,
+    VariationKind,
+)
 from .platform_evidence import PlatformEvidence
 
 
@@ -299,6 +307,9 @@ class Attempt:
     # The condition the experiment intended for this Attempt, and its part in the experiment.
     intended_condition: Condition | None = None
     condition_role: ConditionRole | None = None
+    # The prompt variant whose text the agent was given as its instruction. None: it was given
+    # the Task's own instruction.
+    prompt_variant: PromptVariant | None = None
     # What the verify control observed. None: nothing was observed.
     observed_condition: ObservedCondition | None = None
     # The customer controls invoked for this Attempt, in order.
@@ -370,6 +381,25 @@ class Attempt:
             raise EvidenceError(
                 f"an observed condition is an ObservedCondition with its source, not a label. "
                 f"Got {self.observed_condition!r}"
+            )
+        self._require_prompt_variant_under_a_prompt_variation()
+
+    def _require_prompt_variant_under_a_prompt_variation(self) -> None:
+        variant = self.prompt_variant
+        if variant is None:
+            return
+        if not isinstance(variant, PromptVariant):
+            raise EvidenceError(
+                f"a prompt variant is a PromptVariant with its exact text and its source. Got {variant!r}"
+            )
+        if (
+            self.condition_role is not ConditionRole.VARIATION
+            or self.intended_condition.kind is not VariationKind.PROMPT
+        ):
+            raise EvidenceError(
+                f"Attempt {self.attempt_id!r} records the prompt variant {variant.variant_id!r}, and it was not "
+                "made under a prompt variation. A reworded instruction is never mixed with the baseline or "
+                "with another kind of variation"
             )
 
     def _require_superseded_task_outcomes(self) -> None:
@@ -459,6 +489,7 @@ class Attempt:
             "experiment_id": self.experiment_id,
             "starting_state": None if self.starting_state is None else self.starting_state.value,
             "intended_condition": self._intended_condition(),
+            "prompt_variant": None if self.prompt_variant is None else self.prompt_variant.to_dict(),
             "observed_condition": None if self.observed_condition is None else self.observed_condition.to_dict(),
             "lifecycle": [step.to_dict() for step in self.lifecycle],
         }

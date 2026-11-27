@@ -34,6 +34,10 @@ class VariationKind(str, Enum):
 
     # A tool of the agent fails.
     FAULT = "fault"
+    # The same tools and data are presented to the agent in an equivalent, different way.
+    ENVIRONMENT = "environment"
+    # The instruction of the Task is given to the agent in an equivalent, different wording.
+    PROMPT = "prompt"
 
 
 def json_data(value: Any, what: str) -> Any:
@@ -48,10 +52,13 @@ def json_data(value: Any, what: str) -> Any:
 class Condition:
     """An experimental condition: the baseline, or the one variation from it.
 
-    `parameters` is what the customer controls need to apply and verify it.
+    `parameters` is what the customer controls need to apply and verify it. For an
+    environment variation they are the transformation that presents the tools and data
+    differently, so they cannot be empty.
 
     `kind` is declared for a variation and says what it changes, such as "fault". The
     baseline has none. A variation without a kind is compared with the baseline by no metric.
+    A condition has one kind at most, so two kinds of variation are never one condition.
     """
 
     condition_id: str
@@ -78,6 +85,11 @@ class Condition:
         object.__setattr__(
             self, "parameters", json_data(self.parameters, f"the parameters of condition {self.condition_id!r}")
         )
+        if self.kind is VariationKind.ENVIRONMENT and not self.parameters:
+            raise EvidenceError(
+                f"{self.condition_id!r} is an environment variation, so its parameters record the transformation "
+                "that presents the tools and data differently. It declares none"
+            )
 
     def to_dict(self) -> dict[str, Any]:
         # The kind is recorded for a variation that declares one. The baseline has none.
@@ -87,6 +99,31 @@ class Condition:
             "description": self.description,
             "parameters": self.parameters,
         }
+
+
+@dataclass(frozen=True, kw_only=True)
+class PromptVariant:
+    """A wording of a Task's instruction that the customer supplies or approves as equivalent to the Task's own.
+
+    `text` is the exact wording the agent is given. `source` says where the wording comes
+    from and who holds it to be equivalent, such as the team that wrote it. Nothing here
+    generates a variant, changes its text or checks that it is equivalent.
+    """
+
+    variant_id: str
+    text: str
+    source: str
+
+    def __post_init__(self) -> None:
+        for name in ("variant_id", "text", "source"):
+            value = getattr(self, name)
+            if not isinstance(value, str) or not value.strip():
+                raise EvidenceError(
+                    f"a prompt variant is identified, and records its exact text and its source: {name} is {value!r}"
+                )
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"variant_id": self.variant_id, "text": self.text, "source": self.source}
 
 
 @dataclass(frozen=True, kw_only=True)

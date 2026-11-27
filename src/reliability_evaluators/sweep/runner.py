@@ -10,7 +10,7 @@ from time import perf_counter
 from typing import Any, Callable, Sequence
 
 from ..agent_target import AgentResponse, AgentTarget, AttemptRequest, InvocationError
-from ..evaluators import EVALUATORS, RELIABILITY_METRICS, Evaluator, Fidelity, MetricResult, ScoringPath
+from ..evaluators import EVALUATORS, Evaluator, Fidelity, MetricResult, ScoringPath
 from ..evidence import (
     ActionEvidence,
     Attempt,
@@ -97,6 +97,12 @@ def run_sweep(
     robustness, is calculated from the Attempts of the experiments whose variation declares
     that kind, under both conditions. At least one experiment has to declare it. Every
     other metric is calculated from Attempts under the baseline only.
+
+    The sweep generates no variation. The customer's apply control puts a fault or another
+    presentation of the tools and data in place. Under a prompt variation the agent target
+    is given the exact text of each prompt variant the experiment declares, as the prompt
+    of the Attempt, `task.attempts` times per variant. Each such Attempt records the variant
+    it ran under and is judged by the task-success rule of its Task.
 
     `action_evidence` declares where the actions of every Attempt are recorded from and
     what action type each tool name is. The trajectory metrics need it, and it applies to
@@ -375,10 +381,9 @@ def _select(
 
 
 def _evaluator(metric_id: str) -> Evaluator:
+    # Every one of the twelve reliability metrics has an Evaluator.
     if metric_id in EVALUATORS:
         return EVALUATORS[metric_id]
-    if any(metric.metric_id == metric_id for metric in RELIABILITY_METRICS):
-        raise ValueError(f"{metric_id!r} has no Evaluator in this version")
     raise ValueError(f"{metric_id!r} is not a reliability metric")
 
 

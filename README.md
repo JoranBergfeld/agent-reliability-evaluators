@@ -6,7 +6,7 @@ Vocabulary is defined in [`GLOSSARY.md`](GLOSSARY.md). Decisions that are hard t
 
 ## What exists today
 
-Ten metrics, end to end, scored in your own process:
+All twelve metrics, end to end, scored in your own process:
 
 | Metric | Documentation |
 | --- | --- |
@@ -15,6 +15,8 @@ Ten metrics, end to end, scored in your own process:
 | Sequential trajectory consistency | [`docs/sequential_trajectory_consistency/readme.md`](docs/sequential_trajectory_consistency/readme.md) |
 | Resource consistency | [`docs/resource_consistency/readme.md`](docs/resource_consistency/readme.md) |
 | Fault robustness | [`docs/fault_robustness/readme.md`](docs/fault_robustness/readme.md) |
+| Environment robustness | [`docs/environment_robustness/readme.md`](docs/environment_robustness/readme.md) |
+| Prompt robustness | [`docs/prompt_robustness/readme.md`](docs/prompt_robustness/readme.md) |
 | Calibration | [`docs/calibration/readme.md`](docs/calibration/readme.md) |
 | Strict confidence discrimination | [`docs/strict_confidence_discrimination/readme.md`](docs/strict_confidence_discrimination/readme.md) |
 | Brier-based score | [`docs/brier_based_score/readme.md`](docs/brier_based_score/readme.md) |
@@ -25,11 +27,11 @@ You can declare your own acceptance criteria per metric, and the scorecard repor
 
 When a selected metric uses confidence, the sweep asks the agent for a confidence rating in a separate request after each Attempt. How that works, and when a rating is unavailable, is described in the [Brier-based score documentation](docs/brier_based_score/readme.md#how-the-confidence-rating-is-collected). Calibration, strict confidence discrimination and the Brier-based score are calculated from the same ratings and reported as three separate results.
 
-The Evaluator sweep can also run controlled experiments, with your own controls for preparing state, applying a condition, verifying what occurred and cleaning up: see [`docs/sweep/controlled-experiments.md`](docs/sweep/controlled-experiments.md). Fault robustness needs one: it compares Attempts under the baseline with Attempts under a fault that your controls apply and verify.
+The Evaluator sweep can also run controlled experiments, with your own controls for preparing state, applying a condition, verifying what occurred and cleaning up: see [`docs/sweep/controlled-experiments.md`](docs/sweep/controlled-experiments.md). The three robustness metrics each need one, with a variation of their own kind. Fault robustness and environment robustness compare Attempts under the baseline with Attempts under a fault, or under an equivalent presentation of the same tools and data, that your controls apply and verify. Prompt robustness compares them with Attempts under the prompt variants that you supply or approve. The offering generates no variation.
 
 Several metrics can be selected in one sweep. Evaluators share Attempts only where that is valid, and the scorecard shows which Attempts each one used: see [`docs/sweep/several-evaluators.md`](docs/sweep/several-evaluators.md).
 
-The other two metrics have no Evaluator yet. Every scorecard lists all twelve, and a metric that was not selected appears as not configured.
+Every scorecard lists all twelve, and a metric that was not selected appears as not configured.
 
 The sweep can invoke a Foundry prompt agent from your own code or CI, under your own identity and with nothing but the standard library: see [`docs/agent_target/foundry-prompt-agent.md`](docs/agent_target/foundry-prompt-agent.md). Each Attempt keeps the response identifiers, the token usage and the ordered tool calls the project returned. That target declares no isolated confidence follow-up, so the three predictability metrics are unavailable on it. For any other agent, the agent target is an interface that you implement. No Foundry hosted agent target and no Foundry-managed scoring exists yet.
 
@@ -66,7 +68,7 @@ print(to_json(scorecard))
 
 `artifact_dir` is a directory you choose in the run or artifact context of your CI platform. With it, the sweep delivers all three files or raises `ReportingFailure`.
 
-An Evaluator can also be called on its own, without a sweep: see the metric's documentation. The two trajectory metrics also need a declared source of action evidence and an action-type mapping, which have no default. Fault robustness needs an experiment that declares a fault.
+An Evaluator can also be called on its own, without a sweep: see the metric's documentation. The two trajectory metrics also need a declared source of action evidence and an action-type mapping, which have no default. Each robustness metric needs an experiment that declares a variation of its kind: a fault, an environment variation, or a prompt variation with its prompt variants.
 
 Attempt counts and execution limits are yours to set per Task, in an experiment or without one. Timeouts, cancellations and retries stay visible and are never scored as task failures, concurrency is opt-in, and a sweep that stops early still returns a scorecard that says it is partial: see [`docs/sweep/execution-limits.md`](docs/sweep/execution-limits.md).
 
@@ -77,7 +79,7 @@ The copyable source has one directory per module of the specification.
 | Module | Path | Contents |
 | --- | --- | --- |
 | Evaluators | `src/reliability_evaluators/evaluators/` | The canonical metric definitions, one file per metric, the metric result contract (`result.py`), the catalogue of the twelve metrics (`catalogue.py`), the registry of Evaluators that exist (`registry.py`), the confidence/outcome pairs the predictability metrics share (`confidence_pairs.py`) and the capped ratio of accuracies the robustness metrics share (`_robustness.py`). |
-| Evidence model | `src/reliability_evaluators/evidence/` | The Attempt record with its task outcome, ordered action evidence (`actions.py`), resource measurements, confidence evidence (`confidence.py`), what the platform returned about its invocation (`platform_evidence.py`) and what it records about its experiment (`experiment.py`), its validation, and the grouping of Attempts by Task. Task outcomes supplied or corrected after the run (`corrections.py`), and the strict reading of evidence that a customer supplies again (`reading.py`). |
+| Evidence model | `src/reliability_evaluators/evidence/` | The Attempt record with its task outcome, ordered action evidence (`actions.py`), resource measurements, confidence evidence (`confidence.py`), what the platform returned about its invocation (`platform_evidence.py`) and what it records about its experiment, including the prompt variant it ran under (`experiment.py`), its validation, and the grouping of Attempts by Task. Task outcomes supplied or corrected after the run (`corrections.py`), and the strict reading of evidence that a customer supplies again (`reading.py`). |
 | Evaluator sweep | `src/reliability_evaluators/sweep/` | What a customer declares, execution limits included (`declaration.py`), the public entry point `run_sweep` (`runner.py`), the customer controls invoked around each Attempt of an experiment (`lifecycle.py`), the limits and the cancellation at work (`execution.py`), the confidence-only request that follows an Attempt (`confidence.py`) the rule for which Evaluators share Attempts (`reuse.py`), and the public entry point `recalculate` for an earlier scorecard with late or corrected task outcomes (`recalculation.py`). |
 | Agent target | `src/reliability_evaluators/agent_target/` | The interface the sweep invokes an agent through, for an Attempt and for the confidence follow-up, with the target's declaration of whether that follow-up is isolated (`interface.py`). The Foundry prompt agent target (`foundry_prompt_agent.py`), and what every Foundry agent target shares: the project, the caller's token and the reading of a Responses reply (`foundry.py`). |
 | Scorecard | `src/reliability_evaluators/scorecard/` | Assembly of the machine-readable scorecard (JSON, `assemble.py`), the assessment of customer acceptance criteria (`acceptance.py`), the human-readable report rendered from the scorecard (self-contained HTML, `report.py`), and their delivery with the evidence to a directory the caller chooses, with the reporting failure (`delivery.py`). |

@@ -12,6 +12,9 @@ from ..evidence import ActionEvent, PlatformEvidence, ResourceMeasurement
 class AttemptRequest:
     """What the agent is asked to do for one Attempt.
 
+    `prompt` is given to the agent exactly as it is. Under a prompt variation it is the
+    exact text of a prompt variant, so an agent target adds nothing to it and rewrites nothing.
+
     `timeout_seconds` is the time limit the customer declared for the Attempt, or None.
     """
 
