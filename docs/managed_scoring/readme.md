@@ -93,7 +93,7 @@ The canonical definitions and the Evidence model therefore have to stay inside t
 
 ### Adding another Evaluator
 
-Declare the Attempt evidence it is calculated from in `MANAGED_ATTEMPT_EVIDENCE` in [`artifact.py`](../../src/reliability_evaluators/managed_scoring/artifact.py), by the field names of the Attempt record. The same derivation then produces its artifact, and the same reader reads its evidence. Then run its Evaluator-seam vectors against the derived artifact, as the outcome consistency test does. That test is what shows the declared evidence is enough. Its result comes back through the same encoding, whatever units its counts are in and whatever its details hold, as long as they are JSON data. Only outcome consistency has been derived and proven. An Evaluator that also takes a customer declaration, such as the action types of the trajectory metrics, needs that declaration transported too, which nothing does yet.
+Declare the Attempt evidence it is calculated from in `MANAGED_ATTEMPT_EVIDENCE` in [`artifact.py`](../../src/reliability_evaluators/managed_scoring/artifact.py), by the field names of the Attempt record. The same derivation then produces its artifact, and the same reader reads its evidence. Then run its Evaluator-seam vectors against the derived artifact, as the outcome consistency test does. That test is what shows the declared evidence is enough. Its result comes back through the same encoding, whatever units its counts are in and whatever its details hold, as long as they are JSON data. [The fidelity check](#the-fidelity-check) applies to it as to any result: its value is compared on both channels, and whatever else it reports, further numbers in its details included, comes back in the encoded result only. Only outcome consistency has been derived and proven. An Evaluator that also takes a customer declaration, such as the action types of the trajectory metrics, needs that declaration transported too, which nothing does yet.
 
 ## Registration
 
@@ -654,7 +654,7 @@ The eight encoded results were 219 to 303 bytes and came back in 345 parts. Each
 - **5 of the 345 part rows of the derived evaluator were not graded**, in one of four runs. Asked for again, all five were graded.
 - **Timing.** The 843 rows of the probe took 472 seconds when every row was graded, and 846 seconds with the 148 asked for again. Runs that are started back to back are graded side by side.
 
-**Teardown.** TEARDOWN_PLACEHOLDER
+**Teardown.** The resource group created for this work, `rg-are-47-aab3b317`, was deleted with everything registered in it, and a separate `az group exists` returned `false`. The soft-deleted Foundry account was purged.
 
 ## Not verified
 
