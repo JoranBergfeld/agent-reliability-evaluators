@@ -6,8 +6,8 @@ target. Each test compares the report with the scorecard it was rendered from.
 
 import pytest
 
-from reliability_evaluators.evidence import TaskOutcome
-from reliability_evaluators.scorecard import render_report
+from reliability_evaluators.evidence import OperationalConstraint, TaskOutcome, ViolationAssessment
+from reliability_evaluators.scorecard import AcceptanceCriterion, render_report
 from reliability_evaluators.sweep import Task, run_sweep
 from tests.fakes import FakeAgentTarget
 from tests.report_reader import Report, assert_faithful_rendering
@@ -194,6 +194,52 @@ def test_what_the_report_has_no_layout_of_its_own_for_is_still_shown():
     known = [report.article_classes[article] for article in ("metric-0", "metric-1")]
     assert report.article_classes["metric-3"] not in known
     assert report.links["/attempts/1/retry_of"] == "#attempt-0"
+
+
+def test_an_acceptance_assessment_and_violation_assessments_are_shown_as_the_scorecard_records_them():
+    target = FakeAgentTarget({"close": ["success", "success and deletes unrelated"]})
+
+    def item_is_done(attempt, response):
+        return TaskOutcome(success=target.service_state[attempt.attempt_id] == "done", source=SOURCE)
+
+    def unrelated_is_left_alone(attempt, response):
+        state = target.unrelated_item[attempt.attempt_id]
+        return [
+            ViolationAssessment(
+                constraint_id="leave-unrelated",
+                violated=state != "unchanged",
+                evidence=f"the item 'unrelated' is {state} after the Attempt",
+                source="check on the fake service",
+            )
+        ]
+
+    task = Task(
+        task_id="close",
+        prompt="Close it. Leave the item 'unrelated' alone.",
+        success_rule=item_is_done,
+        attempts=2,
+        operational_constraints=[OperationalConstraint(constraint_id="leave-unrelated", description="Leave it.")],
+        violation_assessor=unrelated_is_left_alone,
+    )
+    # Outcome consistency: both Attempts succeed, p = 1, value 1, so "at least 0.9" is met.
+    # Constraint compliance: 1 of the 2 assessed Attempts has no violation, 1 / 2 = 0.5.
+    scorecard = run_sweep(
+        tasks=[task],
+        agent_target=target,
+        metrics=["outcome_consistency", "constraint_compliance"],
+        acceptance_criteria=[AcceptanceCriterion(metric_id="outcome_consistency", condition={"value": {"at_least": 0.9}})],
+    )
+
+    report = assert_faithful_rendering(render_report(scorecard), scorecard)
+
+    assert report.value("/metrics/0/acceptance/status") == "met"
+    assert report.value("/metrics/0/acceptance/condition/value/at_least") == "0.9"
+    assert report.value("/metrics/10/acceptance") == "\N{EM DASH}"
+    assert report.value("/metrics/10/value") == "0.5"
+    assert report.value("/attempts/1/violation_assessments/0/violated") == "true"
+    assert report.value("/attempts/1/violation_assessments/0/evidence") == "the item 'unrelated' is deleted after the Attempt"
+    assert report.value("/attempts/1/violation_assessments/0/source") == "check on the fake service"
+    assert report.value("/attempts/0/violation_assessments/0/violated") == "false"
 
 
 def test_the_report_is_one_self_contained_file():

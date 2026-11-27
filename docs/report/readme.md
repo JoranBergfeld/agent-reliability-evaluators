@@ -33,7 +33,7 @@ Without `artifact_dir` nothing is written. `render_report(scorecard)` in `reliab
 
 The report is one HTML file. It opens from disk or from a CI artifact view, with no server, no scripts and no external resources.
 
-- **Each metric on its own.** All twelve metrics are listed, in the order of the scorecard, each with its state, its value or the reason there is none, its definition (version, what it measures, calculation, fidelity conventions, scale, interpretation), its counts and denominators, its scoring path and its fidelity. There is no combined score and no threshold.
+- **Each metric on its own.** All twelve metrics are listed, in the order of the scorecard, each with its state, its value or the reason there is none, its definition (version, what it measures, calculation, fidelity conventions, scale, interpretation), its counts and denominators, its scoring path, its fidelity, and the assessment of your acceptance criterion for it if you declared one. There is no combined score and no threshold of the offering's own.
 - **States that cannot be mistaken for each other.** A metric shows the state the scorecard records for it, with its meaning next to it. Each state has its own colour and outline.
 
   | State in the scorecard | Shown with |
@@ -45,7 +45,7 @@ The report is one HTML file. It opens from disk or from a CI artifact view, with
   | anything else | A note that the report has no description of this state, and the state as recorded. |
 
 - **Execution failure apart from all of those.** How the running of an Attempt ended is its execution status. It is shown in the attempt-level evidence and is not a metric state. An Attempt that did not complete is marked, shows its execution error, and has a dash where its task outcome would be: it is not shown as a failed Task. A metric that left it out says so in its counts, with the reason.
-- **Attempt-level evidence.** Every Attempt in the scorecard is listed with everything the scorecard records for it: today its identity, Task, execution status, execution error, and task outcome with its source. Wherever a metric names an Attempt, in the evidence its value rests on or in the evidence it excluded, the identity links to that Attempt.
+- **Attempt-level evidence.** Every Attempt in the scorecard has its own block with everything the scorecard records for it: today its identity, Task, execution status, execution error, task outcome with its source, the operational constraints that applied and the violation assessments with their evidence and source. Wherever a metric names an Attempt, in the evidence its value rests on or in the evidence it excluded, the identity links to that Attempt.
 
 ## A rendering of the scorecard, and nothing else
 
@@ -101,5 +101,5 @@ These are assumptions, not confirmed decisions.
 
 ## What is not there yet
 
-- Experimental conditions, execution statuses other than `completed` and `failed`, a scorecard status of complete or partial, acceptance assessments and token usage are not in the scorecard yet. The report shows them once the scorecard records them, laid out by shape.
+- Experimental conditions, execution statuses other than `completed` and `failed`, a scorecard status of complete or partial, and token usage are not in the scorecard yet. The report shows them once the scorecard records them, laid out by shape. Until the scorecard has a way to record that an experiment failed, the only execution failure the report can show is the execution status of an Attempt.
 - Delivery has been exercised on a local file system only. Delivery into the artifact context of a Foundry-managed run, and whether a reference to the report can be attached to a Foundry run, are not verified.

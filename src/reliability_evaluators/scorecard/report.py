@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import json
 import re
+from collections import Counter
 from html import escape
 from typing import Any
 
@@ -44,18 +45,18 @@ def render_report(scorecard: dict[str, Any]) -> str:
 class _Report:
     def __init__(self, scorecard: dict[str, Any]):
         self._scorecard = scorecard
-        # Where the row of each Attempt is, and which Attempt identities can be linked to
-        # one. An identity that more than one Attempt carries is not linked to either.
-        self._row_anchors: dict[str, str] = {}
-        self._attempt_rows: dict[str, str] = {}
+        # The position of the Attempt that an Attempt identity links to. An identity that
+        # more than one Attempt carries is not linked to either.
+        self._attempt_positions: dict[str, int] = {}
         attempts = scorecard.get("attempts")
-        attempts = attempts if isinstance(attempts, list) else []
-        identities = [attempt.get("attempt_id") if isinstance(attempt, dict) else None for attempt in attempts]
-        for position, identity in enumerate(identities):
-            row = f"/attempts/{position}"
-            self._row_anchors[row] = f"attempt-{position}"
-            if isinstance(identity, str) and identities.count(identity) == 1:
-                self._attempt_rows[identity] = row
+        if _is_records(attempts):
+            identities = [attempt.get("attempt_id") for attempt in attempts]
+            carried = Counter(identity for identity in identities if isinstance(identity, str))
+            self._attempt_positions = {
+                identity: position
+                for position, identity in enumerate(identities)
+                if isinstance(identity, str) and carried[identity] == 1
+            }
 
     def page(self) -> str:
         summary = {key: value for key, value in self._scorecard.items() if not _is_filled(value)}
@@ -68,14 +69,16 @@ class _Report:
 
     def _section(self, key: str, value: Any) -> str:
         pointer = _child("", key)
-        if key == "metrics" and isinstance(value, list) and all(_is_filled(entry, dict) for entry in value):
+        if key == "metrics" and _is_records(value):
             metrics = "\n".join(
                 self._metric(entry, _child(pointer, position), position) for position, entry in enumerate(value)
             )
             return f'<section id="metrics">\n<h2>Metrics</h2>\n{_METRICS_NOTE}\n{metrics}\n</section>'
-        if key == "attempts":
-            evidence = self._render(value, pointer)
-            return f'<section id="attempts">\n<h2>Attempt-level evidence</h2>\n{_ATTEMPTS_NOTE}\n{evidence}\n</section>'
+        if key == "attempts" and _is_records(value):
+            attempts = "\n".join(
+                self._attempt(entry, _child(pointer, position), position) for position, entry in enumerate(value)
+            )
+            return f'<section id="attempts">\n<h2>Attempt-level evidence</h2>\n{_ATTEMPTS_NOTE}\n{attempts}\n</section>'
         heading = escape(key.replace("_", " "))
         return f'<section>\n<h2 data-key="{escape(key)}">{heading}</h2>\n{self._render(value, pointer)}\n</section>'
 
@@ -93,6 +96,15 @@ class _Report:
         fields = self._fields(rest, pointer, css="fields of-metric") if rest else ""
         return f'<article class="{css}" id="metric-{position}">\n<h3>{heading}</h3>\n{state}\n{fields}\n</article>'
 
+    def _attempt(self, attempt: dict[str, Any], pointer: str, position: int) -> str:
+        identified = "attempt_id" in attempt and not isinstance(attempt["attempt_id"], (dict, list))
+        heading = "Unidentified Attempt"
+        if identified:
+            heading = self._value(attempt["attempt_id"], _child(pointer, "attempt_id"))
+        rest = {key: value for key, value in attempt.items() if not (identified and key == "attempt_id")}
+        fields = self._fields(rest, pointer) if rest else ""
+        return f'<section class="attempt" id="attempt-{position}">\n<h3>{heading}</h3>\n{fields}\n</section>'
+
     def _render(self, value: Any, pointer: str) -> str:
         """Lay a value out by its shape."""
         if _is_filled(value, dict):
@@ -100,7 +112,7 @@ class _Report:
                 return self._table([(key, _child(pointer, key), row) for key, row in value.items()], keyed=True)
             return self._fields(value, pointer)
         if _is_filled(value, list):
-            if all(_is_filled(row, dict) for row in value):
+            if _is_records(value):
                 rows = [(None, _child(pointer, position), row) for position, row in enumerate(value)]
                 return self._table(rows, keyed=False)
             return self._list(value, pointer)
@@ -119,13 +131,11 @@ class _Report:
         head = ("<td></td>" if keyed else "") + "".join(_key(column, "col") for column in columns)
         body = ""
         for key, pointer, row in rows:
-            anchor = self._row_anchors.get(pointer)
-            opening = f'<tr id="{anchor}">' if anchor else "<tr>"
             cells = _key(key, "row") if key is not None else ""
             for column in columns:
                 cell = self._render(row[column], _child(pointer, column)) if column in row else ""
                 cells += f"<td>{cell}</td>"
-            body += f"{opening}{cells}</tr>\n"
+            body += f"<tr>{cells}</tr>\n"
         return (
             f'<div class="scroll"><table class="rows">\n<thead><tr>{head}</tr></thead>\n'
             f"<tbody>\n{body}</tbody>\n</table></div>"
@@ -145,14 +155,18 @@ class _Report:
         elif isinstance(value, str) and _IDENTIFIER.fullmatch(value):
             css += f" is-{value}"
         shown = f'<span class="{css}" data-scorecard="{escape(pointer)}">{escape(_text(value))}</span>'
-        row = self._attempt_rows.get(value) if isinstance(value, str) else None
-        if row is None or pointer == _child(row, "attempt_id"):
+        position = self._attempt_positions.get(value) if isinstance(value, str) else None
+        if position is None or pointer == f"/attempts/{position}/attempt_id":
             return shown
-        return f'<a href="#{self._row_anchors[row]}">{shown}</a>'
+        return f'<a href="#attempt-{position}">{shown}</a>'
 
 
 def _is_filled(value: Any, kind: type | tuple[type, ...] = (dict, list)) -> bool:
     return isinstance(value, kind) and len(value) > 0
+
+
+def _is_records(value: Any) -> bool:
+    return _is_filled(value, list) and all(_is_filled(entry, dict) for entry in value)
 
 
 def _key(key: str, scope: str) -> str:
@@ -204,10 +218,11 @@ th::first-letter,h2[data-key]::first-letter{text-transform:uppercase}
 thead th{border-bottom-width:2px}
 td table{margin:-.3rem 0}
 td tr:last-child>*{border-bottom:0}
-tr[id]{scroll-margin-top:1rem}
-tr:target{outline:2px solid var(--link)}
+.attempt{padding-bottom:.6rem;border-top:1px solid var(--line);scroll-margin-top:1rem}
+.attempt h3{margin:.8rem 0 .2rem;font-size:1rem}
+.attempt:target{outline:2px solid var(--link);outline-offset:.4rem}
 .scroll{overflow-x:auto}
-.v{white-space:pre-wrap;overflow-wrap:anywhere}
+.v{white-space:pre-wrap;overflow-wrap:break-word}
 .absent{color:var(--muted)}
 ul.values{margin:0;padding-left:1.1rem}
 ul.short{display:flex;flex-wrap:wrap;gap:.1rem 1rem;padding:0;list-style:none}
