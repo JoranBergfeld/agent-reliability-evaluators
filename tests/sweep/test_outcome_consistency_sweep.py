@@ -35,6 +35,15 @@ def metric(scorecard, metric_id="outcome_consistency"):
     return entry
 
 
+# What an Attempt records about its experiment when its Task was given without one.
+NO_EXPERIMENT = {
+    "experiment_id": None,
+    "starting_state": None,
+    "intended_condition": None,
+    "observed_condition": None,
+    "lifecycle": [],
+}
+
 FOUR_IN_FIVE = ["success", "success", "success", "success", "failure"]
 ALWAYS_FAILS = ["failure", "failure", "failure"]
 
@@ -94,6 +103,7 @@ def test_the_value_refers_to_attempt_level_evidence_in_the_scorecard():
             "execution_status": "completed",
             "execution_error": None,
             "task_outcome": {"success": True, "source": SOURCE},
+            **NO_EXPERIMENT,
         },
         {
             "attempt_id": "close/attempt-2",
@@ -101,6 +111,7 @@ def test_the_value_refers_to_attempt_level_evidence_in_the_scorecard():
             "execution_status": "completed",
             "execution_error": None,
             "task_outcome": {"success": False, "source": SOURCE},
+            **NO_EXPERIMENT,
         },
     ]
 
@@ -165,6 +176,7 @@ def test_an_invocation_that_fails_is_an_execution_status_and_not_a_task_failure(
         "execution_status": "failed",
         "execution_error": "ConnectionError: the agent endpoint returned 503",
         "task_outcome": None,
+        **NO_EXPERIMENT,
     }
     outcome_consistency = metric(scorecard)
     assert outcome_consistency["value"] == 1

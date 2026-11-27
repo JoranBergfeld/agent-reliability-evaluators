@@ -6,9 +6,8 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import Any
 
-
-class EvidenceError(ValueError):
-    """Evidence that cannot be accepted as given. It is rejected, never repaired."""
+from .condition import Condition, ConditionRole, LifecycleStep, ObservedCondition, StartingStatePolicy
+from .error import EvidenceError
 
 
 class ExecutionStatus(str, Enum):
@@ -16,6 +15,8 @@ class ExecutionStatus(str, Enum):
 
     COMPLETED = "completed"
     FAILED = "failed"
+    # The verify control did not show that the intended condition occurred.
+    CONDITION_NOT_MET = "condition_not_met"
 
 
 @dataclass(frozen=True)
@@ -56,6 +57,17 @@ class Attempt:
     task_outcome: TaskOutcome | None = None
     # Why the execution did not complete, when it did not.
     execution_error: str | None = None
+    # The experiment the Attempt was made for. None: its Task was given without an experiment,
+    # so no starting-state policy and no condition were declared for it.
+    experiment_id: str | None = None
+    starting_state: StartingStatePolicy | None = None
+    # The condition the experiment intended for this Attempt, and its part in the experiment.
+    intended_condition: Condition | None = None
+    condition_role: ConditionRole | None = None
+    # What the verify control observed. None: nothing was observed.
+    observed_condition: ObservedCondition | None = None
+    # The customer controls invoked for this Attempt, in order.
+    lifecycle: tuple[LifecycleStep, ...] = ()
 
     def __post_init__(self) -> None:
         for name in ("attempt_id", "task_id"):
@@ -78,4 +90,15 @@ class Attempt:
             "execution_status": self.execution_status.value,
             "execution_error": self.execution_error,
             "task_outcome": None if self.task_outcome is None else self.task_outcome.to_dict(),
+            "experiment_id": self.experiment_id,
+            "starting_state": None if self.starting_state is None else self.starting_state.value,
+            "intended_condition": self._intended_condition(),
+            "observed_condition": None if self.observed_condition is None else self.observed_condition.to_dict(),
+            "lifecycle": [step.to_dict() for step in self.lifecycle],
         }
+
+    def _intended_condition(self) -> dict[str, Any] | None:
+        if self.intended_condition is None:
+            return None
+        role = None if self.condition_role is None else self.condition_role.value
+        return {"role": role, **self.intended_condition.to_dict()}
