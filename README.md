@@ -70,7 +70,7 @@ scorecard = run_sweep(
 print(to_json(scorecard))
 ```
 
-`artifact_dir` is a directory you choose in the run or artifact context of your CI platform. With it, the sweep delivers all four files or raises `ReportingFailure`.
+`artifact_dir` is a directory you choose in the execution context, including a local directory for a CLI-driven run. With it, the sweep delivers all four files or raises `ReportingFailure`; publishing that directory as a hosted CI artifact is up to your pipeline.
 
 An Evaluator can also be called on its own, without a sweep: see the metric's documentation. The two trajectory metrics also need a declared source of action evidence and an action-type mapping, which have no default. Each robustness metric needs an experiment that declares a variation of its kind: a fault, an environment variation, or a prompt variation with its prompt variants.
 

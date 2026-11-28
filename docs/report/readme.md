@@ -26,7 +26,7 @@ except ReportingFailure as failure:
 | `evidence.json` | The attempt-level evidence on its own: `{"schema_version": 1, "attempts": [...]}`, the same Attempts as in the scorecard. |
 | `reporting-failure.json` | Only after a reporting failure. See [Reporting failure](#reporting-failure). |
 
-Choose a directory in the run or artifact context of the platform the sweep runs on, such as a directory your CI publishes as a build artifact. The offering writes these files there and keeps nothing anywhere else. Access to them, their retention and their deletion are governed by that platform ([ADR 0003](../adr/0003-no-evidence-store.md)).
+Choose a directory in the execution context of the sweep, including a local directory for a CLI-driven run or a directory your CI publishes as a build artifact. The offering writes these files there and keeps nothing anywhere else. Access to them, their retention and their deletion are governed by that platform ([ADR 0003](../adr/0003-no-evidence-store.md)). Publishing a local directory as a hosted CI artifact is the caller's responsibility and is not required to validate CLI delivery.
 
 The sweep runs in your own process whichever scoring path a metric uses, so a metric scored by Foundry-managed scoring changes nothing about where the files go. What Foundry holds of such a run, and how to leave a reference to the scorecard there, is in [delivery alongside Foundry](delivery-alongside-foundry.md).
 
@@ -116,5 +116,5 @@ These are assumptions, not confirmed decisions.
 
 - Token usage has a section and a note of its own in the report, and is laid out by shape inside that section.
 - The declared experiments, the conditions, the customer controls and the confidence evidence have no layout of their own in the report: they are laid out by shape. Only how an execution ended is marked.
-- Delivery has been exercised on a local file system only, which stood in for the artifact directory of a CI job. That includes a Foundry-managed run, a partial one among them: see [delivery alongside Foundry](delivery-alongside-foundry.md#observed-live). No sweep has run in a CI job, and no directory has been published as a build artifact.
+- Delivery has been exercised on a local file system through the live CLI test, including a Foundry-managed run and a partial one: see [delivery alongside Foundry](delivery-alongside-foundry.md#observed-live). This validates CLI delivery to a caller-selected directory; no hosted CI job or remote artifact publication was tested or is required for that claim.
 - The offering leaves no reference to the scorecard in Foundry. One can be left on the evaluation of a managed run, by you: see [leaving a reference in Foundry](delivery-alongside-foundry.md#leaving-a-reference-in-foundry).
