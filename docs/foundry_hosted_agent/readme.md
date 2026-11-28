@@ -195,7 +195,7 @@ To find out before any Attempt is made, ask for the agent configuration when you
 experiment = Experiment(..., agent_configuration=target.agent_configuration(), ...)
 ```
 
-`agent_configuration()` returns the project endpoint, the agent's name, its kind, the protocols its endpoint serves, its latest version and its version selection rules. The project does not report which model a hosted agent uses, so add that yourself if you want it recorded. The project returns the hosted agent's environment variables with its details, in plain text. The target does not copy them anywhere.
+`agent_configuration()` returns the project endpoint, the agent's name, its kind, the protocols its endpoint serves, its latest version and its version selection rules. The project does not report which model a hosted agent uses, so add that yourself if you want it recorded. The project returns the hosted agent's environment variables with its details, in plain text, to every identity that can read the agent, so they are no place for a secret. The target reads that answer once and keeps the agent's kind, protocols and version: nothing of its settings is kept, recorded or shown in an error.
 
 ## No confidence rating
 

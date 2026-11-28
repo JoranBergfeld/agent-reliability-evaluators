@@ -100,6 +100,10 @@ class FakeAgent:
 
     def details(self, name: str) -> dict:
         latest = self.versions[-1]
+        definition: dict[str, Any] = {"kind": self.kind}
+        if self.kind == "hosted":
+            # The live project returned the hosted agent's settings with its details, secrets included.
+            definition["environment_variables"] = {"SYNTHETIC_SERVICE_KEY": "synthetic-secret"}
         return {
             "object": "agent",
             "id": name,
@@ -111,7 +115,7 @@ class FakeAgent:
                     "name": name,
                     "version": latest,
                     "status": "active",
-                    "definition": {"kind": self.kind},
+                    "definition": definition,
                 }
             },
             "agent_endpoint": {

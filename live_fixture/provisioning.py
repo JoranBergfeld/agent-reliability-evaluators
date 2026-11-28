@@ -356,7 +356,7 @@ def _deploy_hosted_agent(fixture, name=HOSTED_AGENT, instructions=AGENT_INSTRUCT
         if details.get("status") == "active":
             break
         if details.get("status") == "failed":
-            raise LiveFixtureError(f"Hosted agent deployment failed: {json.dumps(details)}")
+            raise LiveFixtureError(f"Hosted agent deployment failed: {json.dumps(_without_settings(details))}")
         time.sleep(10)
     else:
         raise LiveFixtureError(f"Hosted agent deployment timed out in status {details.get('status')!r}")
@@ -368,6 +368,22 @@ def _deploy_hosted_agent(fixture, name=HOSTED_AGENT, instructions=AGENT_INSTRUCT
             "protocol_configuration": {"responses": {}},
         },
     }, {"Content-Type": "application/merge-patch+json"})
+
+
+def _without_settings(details):
+    """What the project says about an agent or one of its versions, without the agent's definition.
+
+    Foundry returns the environment variables of a hosted agent in plain text with its details, and
+    the fixture's hold the agents' key. So the definition is left out before anything is said about
+    a deployment, and so is a list of settings wherever else it may be.
+    """
+    if isinstance(details, dict):
+        return {
+            key: _without_settings(value)
+            for key, value in details.items()
+            if key not in ("definition", "environment_variables")
+        }
+    return [_without_settings(item) for item in details] if isinstance(details, list) else details
 
 
 def _access_token(subscription, resource=FOUNDRY_RESOURCE):

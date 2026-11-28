@@ -71,6 +71,30 @@ where a request or the Azure CLI fails. `fixture.service.api_key` gives the agen
 it straight to the setting or the tool that needs it. `tests/fixture/test_no_secret_in_a_failure.py`
 fails the fixture on purpose, without Azure, and searches everything the failure shows.
 
+### The hosted agent's settings can be read in the project
+
+Foundry returns the environment variables of a hosted agent in plain text, with the details of the
+agent (`GET /agents/{name}`) and of each of its versions, to any identity that can read the agent.
+That was [observed live](../docs/foundry_hosted_agent/readme.md#observed-live) on 2026-11-27. The
+fixture gives its hosted agent the agents' key that way, as the setting `TODO_API_KEY`, so everyone
+who can read the fixture's project can read that key.
+
+That is acceptable here for one reason only: the key is generated per fixture, opens nothing but a
+service that holds synthetic data, and goes with the resource group. **Do not copy the pattern with
+a real secret.** A key in a hosted agent's environment variables is not hidden from the readers of
+its project.
+
+Neither the fixture nor the offering copies that answer anywhere:
+
+- When a hosted agent cannot be deployed, the fixture says what the project reported about it
+  without the agent's definition, so `hosted_agent_error` and `summary()` hold no setting.
+- The agent targets read the answer once and keep the agent's kind, protocols and version, nothing
+  of its settings (`src/reliability_evaluators/foundry/agent_details.py`).
+- `tests/fixture/test_no_secret_in_a_failure.py` and `tests/sweep/test_agent_settings_are_not_kept.py`
+  fail if a setting reaches an error, a traceback, a scorecard or a delivered file.
+
+A live check that reads an agent's details itself must not print or record them.
+
 ## A project with nothing in it
 
 A live check that needs neither agent nor the service can stand up much less: one Foundry account

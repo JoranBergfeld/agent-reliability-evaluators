@@ -14,7 +14,15 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import pytest
 
-from live_fixture import LiveFixture, LiveFixtureError, TodoService, TodoServiceError, local_service, provision
+from live_fixture import (
+    LiveFixture,
+    LiveFixtureError,
+    TodoService,
+    TodoServiceError,
+    ensure_note_following_agents,
+    local_service,
+    provision,
+)
 from live_fixture.hosted_agent import todo_tools
 from live_fixture.project_only import LiveProject
 from tests.fixture import fake_az
@@ -52,6 +60,54 @@ def project_that_refuses(status):
             self.wfile.write(body)
 
         do_GET = do_POST = refuse
+
+    server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
+    thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.05}, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{server.server_address[1]}"
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join()
+
+
+@contextlib.contextmanager
+def project_whose_hosted_agent_cannot_be_deployed():
+    """A project that has the prompt agent's copy, and answers the deployment of a hosted agent as failed.
+
+    As the live project does, it returns the settings a hosted agent was declared with in the details
+    of its version, in plain text.
+    """
+    declared = {}
+
+    class Handler(BaseHTTPRequestHandler):
+        def log_message(self, *_):
+            pass
+
+        def answer(self, status, body):
+            content = json.dumps(body).encode()
+            self.send_response(status)
+            self.send_header("Content-Length", str(len(content)))
+            self.end_headers()
+            self.wfile.write(content)
+
+        def do_GET(self):
+            path = self.path.partition("?")[0]
+            if path == "/agents/todo-prompt-notes":
+                return self.answer(200, {"name": "todo-prompt-notes"})
+            if path == "/agents/todo-hosted-notes/versions/1":
+                return self.answer(200, {
+                    "version": "1", "status": "failed", "definition": declared["definition"],
+                    "error": {"code": "BuildFailed", "message": "the image could not be built"},
+                })
+            self.answer(404, {"error": {"code": "not_found"}})
+
+        def do_POST(self):
+            sent = self.rfile.read(int(self.headers["Content-Length"])).decode(errors="replace")
+            metadata = sent.split("\r\n\r\n", 1)[1].split("\r\n--", 1)[0]
+            declared.update(json.loads(metadata))
+            self.answer(200, {"name": "todo-hosted-notes", "versions": {"latest": {"version": "1"}}})
 
     server = ThreadingHTTPServer(("127.0.0.1", 0), Handler)
     thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.05}, daemon=True)
@@ -146,3 +202,17 @@ def test_a_tool_of_the_hosted_agent_that_cannot_reach_the_service_does_not_show_
 
     assert "did not answer" in str(error)
     assert AGENTS_KEY not in shown_by(error)
+
+
+def test_a_hosted_agent_that_cannot_be_deployed_does_not_show_the_settings_the_project_returns(az):
+    logged = []
+    with project_whose_hosted_agent_cannot_be_deployed() as endpoint:
+        live = live_fixture(endpoint)
+        live.hosted_agent = "todo-hosted"
+        error = raised_by(lambda: ensure_note_following_agents(live, log=logged.append))
+
+    # The project says why, and that is kept. The settings it returns with it hold the agents' key.
+    assert isinstance(error, LiveFixtureError)
+    assert "Hosted agent deployment failed" in str(error) and "the image could not be built" in str(error)
+    shown = shown_by(error) + "\n".join(logged)
+    assert AGENTS_KEY not in shown and "TODO_API_KEY" not in str(error)

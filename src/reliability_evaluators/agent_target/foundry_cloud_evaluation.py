@@ -15,6 +15,7 @@ from math import isfinite
 from typing import Any, Callable, Iterator, Protocol
 
 from ..evidence import ActionEvent, ResourceMeasurement, ResourceType
+from ..foundry import AgentDetails, read_agent_details
 from ..managed_scoring.foundry import FoundryRequestError
 from .foundry_hosted import FoundryHostedAgentTarget, _output_items, _output_text
 from .foundry_prompt_agent import TOOL_CHOICE_NONE, _not_isolated
@@ -178,8 +179,8 @@ class FoundryCloudEvaluationTarget:
         self._poll_interval_seconds = poll_interval_seconds
         self._clock = clock
         self._sleep = sleep
-        # What the project said about the agent, and the eval the runs are made in, once known.
-        self._agent: dict[str, Any] | None = None
+        # What the project said about the agent, without its settings, and the eval the runs are made in, once known.
+        self._agent: AgentDetails | None = None
         self._eval_id: str | None = None
         # The Attempts of Tasks given without an experiment may be invoked from several threads.
         self._lock = threading.Lock()
@@ -232,7 +233,7 @@ class FoundryCloudEvaluationTarget:
         The type of the agent is what the project said when the target looked the agent up, on
         its first Attempt or for `agent_configuration`. Until then nothing is declared supported.
         """
-        kind = None if self._agent is None else (self._latest().get("definition") or {}).get("kind")
+        kind = None if self._agent is None else self._agent.kind
         if kind == "prompt":
             return IsolatedFollowUp(supported=True)
         if kind == "hosted":
@@ -302,34 +303,33 @@ class FoundryCloudEvaluationTarget:
         are not copied: they can hold secrets.
         """
         kind = self._supported_kind(_Recorded(composed_input=None))
-        endpoint = self._agent.get("agent_endpoint") or {}
         return {
             "agent_target": AGENT_TARGET,
             "entry_point": FOUNDRY_CLOUD_EVALUATION,
             "project_endpoint": getattr(self._project, "endpoint", None),
             "agent": self._agent_name,
             "kind": kind,
-            "protocols": endpoint.get("protocols"),
+            "protocols": self._agent.protocols,
             "pinned_version": self._agent_version,
-            "latest_version": self._latest().get("version"),
+            "latest_version": self._agent.latest_version,
         }
-
-    def _latest(self) -> dict[str, Any]:
-        return ((self._agent or {}).get("versions") or {}).get("latest") or {}
 
     def _supported_kind(self, recorded: _Recorded) -> str:
         """The type of the agent, when it is one that has been invoked through cloud evaluation.
 
         Raises otherwise. The agent is looked up once. An agent that is not supported is never invoked.
+        The project answers with a hosted agent's settings as well, in plain text. They are dropped
+        where the answer is read, so no error and no record of the target holds them.
         """
         with self._lock:
             if self._agent is None:
                 with _asking(recorded, f"agent {self._agent_name!r} could not be looked up in the Foundry project"):
-                    found = self._project.request("GET", f"/agents/{self._agent_name}?api-version={API_VERSION}")
-                self._agent = found if isinstance(found, dict) else {}
-        kind = (self._latest().get("definition") or {}).get("kind")
+                    self._agent = read_agent_details(
+                        self._project.request("GET", f"/agents/{self._agent_name}?api-version={API_VERSION}")
+                    )
+        kind = self._agent.kind
         recorded.agent_kind = kind
-        protocols = (self._agent.get("agent_endpoint") or {}).get("protocols") or []
+        protocols = self._agent.protocols or []
         if kind == "hosted" and RESPONSES_PROTOCOL not in protocols:
             raise UnsupportedCombination(
                 f"hosted agent {self._agent_name!r} serves the protocols {protocols} and not the Responses protocol. "

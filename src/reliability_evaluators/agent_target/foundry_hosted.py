@@ -13,7 +13,7 @@ from time import perf_counter
 from typing import Any, Callable
 
 from ..evidence import ActionEvent, ResourceMeasurement, ResourceType
-from ..foundry import Answer, BearerToken, NotAnswered, send
+from ..foundry import AgentDetails, Answer, BearerToken, NotAnswered, read_agent_details, send
 from .interface import CUSTOMER_CODE, AgentResponse, AttemptRequest, InvocationFailed, IsolatedFollowUp
 
 API_VERSION = "v1"
@@ -139,8 +139,8 @@ class FoundryHostedAgentTarget:
         self._project_endpoint = project_endpoint.rstrip("/")
         self._agent_name = agent_name
         self._agent_url = f"{self._project_endpoint}/agents/{agent_name}"
-        # What the project said about the agent, once it has been looked up.
-        self._agent: dict[str, Any] | None = None
+        # What the project said about the agent, once it has been looked up. Its settings are not kept.
+        self._agent: AgentDetails | None = None
         self._credential = credential or AzureCliCredential()
         self._compose_input = compose_input
         self._timeout_seconds = timeout_seconds
@@ -193,21 +193,22 @@ class FoundryHostedAgentTarget:
         the project returns with its details, are not copied: they can hold secrets.
         """
         agent = self._require_supported_agent(BearerToken(self._credential()))
-        endpoint = agent["agent_endpoint"]
         return {
             "agent_target": AGENT_TARGET,
             "project_endpoint": self._project_endpoint,
             "agent": self._agent_name,
             "kind": "hosted",
-            "protocols": endpoint["protocols"],
-            "latest_version": agent["versions"]["latest"].get("version"),
-            "version_selection_rules": (endpoint.get("version_selector") or {}).get("version_selection_rules"),
+            "protocols": agent.protocols,
+            "latest_version": agent.latest_version,
+            "version_selection_rules": agent.version_selection_rules,
         }
 
-    def _require_supported_agent(self, token: BearerToken) -> dict[str, Any]:
+    def _require_supported_agent(self, token: BearerToken) -> AgentDetails:
         """What the project says about the agent, when it is a hosted agent that serves the Responses protocol.
 
         Raises otherwise. The agent is looked up once. An agent that is not supported is never sent a request.
+        The project answers with the agent's settings as well, in plain text. They are dropped where the
+        answer is read, so no error and no record of the target holds them.
         """
         if self._agent is None:
             answer = _send("GET", self._agent_url, token, self._timeout_seconds, awaited="the Foundry project")
@@ -216,14 +217,13 @@ class FoundryHostedAgentTarget:
                     f"agent {self._agent_name!r} could not be looked up in the Foundry project: "
                     f"HTTP {answer.status}: {answer.text[:_SHOWN_BODY]}"
                 )
-            self._agent = answer.json
-        latest = (self._agent.get("versions") or {}).get("latest") or {}
-        kind = (latest.get("definition") or {}).get("kind")
+            self._agent = read_agent_details(answer.json)
+        kind = self._agent.kind
         if kind != "hosted":
             raise UnsupportedAgent(
                 f"agent {self._agent_name!r} is of kind {kind!r} and not a hosted agent, so it was not invoked"
             )
-        protocols = (self._agent.get("agent_endpoint") or {}).get("protocols") or []
+        protocols = self._agent.protocols or []
         if RESPONSES_PROTOCOL not in protocols:
             raise UnsupportedAgent(
                 f"hosted agent {self._agent_name!r} serves the protocols {protocols} and not the Responses "
