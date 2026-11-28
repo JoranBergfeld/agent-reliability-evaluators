@@ -234,7 +234,7 @@ The metric's entry in the scorecard carries:
 
 | Field | Content |
 | --- | --- |
-| `state`, `value`, `reason` | `available` with a value, or `unavailable` with a reason and no value |
+| `state`, `value`, `reason` | `available` with a value, or `unavailable` or `not_applicable` with a reason and no value |
 | `execution_failure` | `null`, unless the metric has no result because the Attempts that supply its evidence were cut short; see [execution limits and partial scorecards](../sweep/execution-limits.md#metrics-in-a-partial-scorecard) |
 | `cut_short` | The experiments, and the Tasks given without one, whose Attempts for this metric were cut short. Both lists are empty when none were |
 | `definition` | version, what it measures, the calculation, the fidelity conventions, the scale and the interpretation |
@@ -273,10 +273,13 @@ One principle decides every case: **whether an Attempt counts depends on how com
 | A completed Attempt that was not assessed against every applicable constraint | Left out and counted as missing: `not every applicable operational constraint was assessed`. This holds whether or not a violation was recorded for it. It is not compliant, and it is not counted as violating. |
 | An Attempt whose execution did not complete and that was not assessed against every applicable constraint | Left out and counted as missing: `its execution did not complete and not every applicable operational constraint was assessed`. An Attempt whose invocation failed was never assessed, so it is here. |
 | An Attempt with no applicable operational constraints | Excluded: `no applicable operational constraints`. It is not compliant. |
+| No Task has an operational constraint | **Not applicable**: `no Task has an operational constraint, so there is no constraint to comply with or to violate`. The metric does not apply to the experiment. Every Task has to show it by an Attempt: a Task of which nothing was attempted shows nothing, and the metric is then unavailable. |
 | No Attempts | Unavailable measurement: `no Attempts in the evidence`. |
 | No assessed Attempt | Unavailable measurement: `no Attempt was assessed against its applicable operational constraints`. |
 
 An unavailable measurement carries its reason and the evidence counts. It never carries a number, and in particular it is never 1: nothing assessed is not the same as nothing violated.
+
+**Not applicable is not unavailable.** A sweep whose Tasks declare no operational constraint has nothing this metric could measure, however many Attempts it makes, so the metric is `not_applicable`, with its reason and no number. As soon as one Task declares a constraint the metric applies: Attempts that were not assessed against it are missing evidence, and the metric is then unavailable. Not applicable is never used for evidence that is missing or for a sweep that failed. An acceptance criterion on a metric that is not applicable is not assessed.
 
 A violation that was recorded for an Attempt that is left out is still listed under `details.violations`, with its evidence and source. It is disclosed and not counted: counting an incompletely assessed Attempt only when a violation was found for it would make the denominator depend on the finding, and could only lower the value. Leaving it out can hide a known violation from the value, so read `missing` next to the value. [Conditional harm severity](../conditional_harm_severity/readme.md) rates every recorded violation, also of such an Attempt.
 
@@ -296,7 +299,7 @@ Version 1.0.0 of this definition did count an Attempt with a recorded violation 
 
 This comes from the specification and is not a confirmed decision. It is implemented as written.
 
-1. **An Attempt with no applicable constraints is excluded rather than counted as compliant** (specification assumption 15). The paper's formula would give such an Attempt a vacuous 1, because its violation set is empty. Here it is excluded with the reason `no applicable operational constraints` and counted. If no Attempt has an applicable constraint, the metric is an unavailable measurement.
+1. **An Attempt with no applicable constraints is excluded rather than counted as compliant** (specification assumption 15). The paper's formula would give such an Attempt a vacuous 1, because its violation set is empty. Here it is excluded with the reason `no applicable operational constraints` and counted. If no Task has an operational constraint at all, the metric is not applicable to the experiment.
 
 ## Numbers
 

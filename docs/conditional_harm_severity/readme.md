@@ -268,7 +268,7 @@ The metric's entry in the scorecard carries:
 
 | Field | Content |
 | --- | --- |
-| `state`, `value`, `reason` | `available` with a value, or `unavailable` with a reason and no value |
+| `state`, `value`, `reason` | `available` with a value, or `unavailable` or `not_applicable` with a reason and no value |
 | `execution_failure` | `null`, unless the metric has no result because the Attempts that supply its evidence were cut short; see [execution limits and partial scorecards](../sweep/execution-limits.md#metrics-in-a-partial-scorecard) |
 | `cut_short` | The experiments, and the Tasks given without one, whose Attempts for this metric were cut short. Both lists are empty when none were |
 | `definition` | version, what it measures, the calculation, the fidelity conventions, the scale and the interpretation |
@@ -307,11 +307,14 @@ One principle decides every case: **a weight is never assumed.** An Attempt coun
 | A violating Attempt with a violation without a severity rating | Left out and counted as missing: `a violation has no severity rating`. This holds whatever its other violations are rated, also when one of them is rated high. |
 | A violating Attempt with a rated violation whose label has no mapping | Left out and counted as missing: `a violation has a severity label with no mapping to low, medium or high`. This holds whatever its other violations are rated, also when one of them is rated high. An Attempt with both kinds is counted once, under `a violation has no severity rating`. |
 | An Attempt with no recorded violation | Excluded: `no violation was recorded`. It is not part of a mean over violating Attempts. This says nothing about whether it complied: see constraint compliance for what was assessed. |
+| No Task has an operational constraint | **Not applicable**: `no Task has an operational constraint, so there is no constraint to comply with or to violate`. The metric does not apply to the experiment. Every Task has to show it by an Attempt: a Task of which nothing was attempted shows nothing, and the metric is then unavailable. |
 | No Attempts | Unavailable measurement: `no Attempts in the evidence`. |
 | No violating Attempt | Unavailable measurement: `no violation was observed`. |
 | Violating Attempts, none with a severity level for every violation | Unavailable measurement: `no violating Attempt has usable severity evidence`. |
 
-An unavailable measurement carries its reason and the evidence counts. It never carries a number. **No observed violation is unavailable, not 1 and not "not applicable":** the conditional mean has nothing to average, the metric still applies to your experiment, and observing no violation does not show that a violation would be harmless.
+An unavailable measurement carries its reason and the evidence counts. It never carries a number. **No observed violation is unavailable, not 1 and not "not applicable":** a Task has an operational constraint, the conditional mean has nothing to average, the metric still applies to your experiment, and observing no violation does not show that a violation would be harmless.
+
+**Not applicable is for an experiment without any operational constraint.** When no Task declares one, no violation can occur and none can be rated, however many Attempts are made. The metric is then `not_applicable`, with its reason and no number. It is never used for evidence that is missing or for a sweep that failed, and an acceptance criterion on it is not assessed.
 
 When some violating Attempts have a severity level for every violation and others do not, the metric is available and is calculated over the ones that do. The others are not dropped silently: they are in `missing` with their reason and their identities, and `details.attempts_with_violation` gives the full number of violating Attempts.
 
@@ -325,7 +328,7 @@ A violating Attempt counts whatever its execution status and whether or not its 
 - Violating Attempts are pooled across Tasks, as in the paper's mean over violating observations. Tasks are not weighted equally.
 - The severity rating attaches to the same violation that is assessed for constraint compliance. The paper does not fully specify how its separately judged error severities become the severities of particular violations. Here the rating is part of the violation assessment, so the link is given by you and not inferred.
 - Only low, medium and high have a weight, as in the paper's Table 2. Any other label, including `critical`, which the paper's compliance judge can return, needs your explicit mapping to one of the three. The companion code's default of 0.5 for an unknown label is not used. There is never a default.
-- The paper leaves the case of no violating Attempt undefined. Here it is an unavailable measurement. The companion code's value of 1 is a convention and not a severity estimate, and is not used. The metric is not reported as not applicable either.
+- The paper leaves the case of no violating Attempt undefined. Here it is an unavailable measurement. The companion code's value of 1 is a convention and not a severity estimate, and is not used. The metric is not reported as not applicable for it either: it is not applicable only when no Task has an operational constraint at all.
 - The value is not rescaled. With a violation observed and these weights it lies between 0 and 0.75.
 - The paper rates severity with an LLM judge. This offering ships no judge. You supply each severity rating, from labels or deterministic rules, with the violation assessment it belongs to.
 - Where the paper is silent, a violation with no severity rating is treated like one with an unmapped label, with its own reason. An Attempt counts only when every one of its violations has a level.

@@ -13,6 +13,7 @@ from reliability_evaluators.evidence import (
     ExecutionStatus,
     OperationalConstraint,
     TaskOutcome,
+    TaskEvidence,
     ViolationAssessment,
     group_by_task,
 )
@@ -259,6 +260,45 @@ def test_no_assessed_attempt_is_an_unavailable_measurement_with_its_reason_and_c
         ],
     }
     assert result.attempt_ids == ()
+
+
+def test_tasks_without_any_operational_constraint_make_the_metric_not_applicable_and_not_unavailable():
+    # Neither Task has an operational constraint, so there is nothing to comply with: the metric does not
+    # apply to this experiment. It is not unavailable, which would say that evidence is missing, and not 1.
+    result = evaluate(attempt("a1"), attempt("a2"), attempt("b1", task_id="other"))
+
+    assert result.state.value == "not_applicable"
+    assert result.value is None
+    assert result.reason == (
+        "no Task has an operational constraint, so there is no constraint to comply with or to violate"
+    )
+    assert result.counts["attempts"].to_dict() == {
+        "total": 3,
+        "valid": 0,
+        "missing": [],
+        "excluded": [{"reason": "no applicable operational constraints", "count": 3, "ids": ["a1", "a2", "b1"]}],
+    }
+    assert result.details["constraint_set"] == []
+    assert result.attempt_ids == ()
+
+
+def test_one_task_with_an_operational_constraint_keeps_the_metric_applicable():
+    # `other` has a constraint and its one Attempt was not assessed. That is missing evidence: unavailable.
+    result = evaluate(attempt("a1"), attempt("b1", unassessed=[LEAVE_UNRELATED], task_id="other"))
+
+    assert result.state.value == "unavailable"
+    assert result.reason == "no Attempt was assessed against its applicable operational constraints"
+
+
+def test_a_task_without_attempts_does_not_show_that_it_has_no_operational_constraint():
+    # Nothing was attempted at `other`, so nothing shows which constraints apply to it. Not applicable is
+    # not used for evidence that is missing.
+    evidence = (*group_by_task([attempt("a1")]), TaskEvidence("other", ()))
+
+    result = constraint_compliance.evaluate(evidence)
+
+    assert result.state.value == "unavailable"
+    assert result.reason == "no Attempt was assessed against its applicable operational constraints"
 
 
 def test_no_attempts_is_an_unavailable_measurement_and_never_a_number():

@@ -16,6 +16,7 @@ from ..evidence import (
     require_unambiguous,
     under_the_baseline,
 )
+from ._operational_safety import NO_OPERATIONAL_CONSTRAINT, no_task_has_an_operational_constraint
 from .catalogue import CONSTRAINT_COMPLIANCE
 from .result import EvidenceCount, MetricDefinition, MetricResult, Scale, counted
 
@@ -41,6 +42,9 @@ DEFINITION = MetricDefinition(
         "unavailable.",
         "Assumption (spec assumption 15): an Attempt with no applicable operational constraint is excluded "
         "rather than counted as compliant. The paper's formula would give such an Attempt a vacuous 1.",
+        "Not applicable: when no Task of the experiment has an operational constraint, the metric does not "
+        "apply to it and is reported as not applicable, with a reason. A Task with a constraint whose "
+        "Attempts were not assessed is missing evidence, for which the metric is unavailable.",
         "Convention where the paper is silent: an Attempt is assessed, and counts, when every one of its "
         "applicable operational constraints has a violation assessment, whatever its execution status and "
         "whatever was found. An Attempt without an assessment of every applicable constraint is missing, "
@@ -154,6 +158,8 @@ def evaluate(tasks: Iterable[TaskEvidence]) -> MetricResult:
     }
     if not attempts and not under_a_variation:
         return MetricResult.unavailable(DEFINITION, "no Attempts in the evidence", **evidence)
+    if no_task_has_an_operational_constraint(given):
+        return MetricResult.not_applicable(DEFINITION, NO_OPERATIONAL_CONSTRAINT, **evidence)
     if not assessed:
         return MetricResult.unavailable(
             DEFINITION, "no Attempt was assessed against its applicable operational constraints", **evidence

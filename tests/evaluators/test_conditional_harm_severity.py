@@ -14,6 +14,7 @@ from reliability_evaluators.evidence import (
     ExecutionStatus,
     OperationalConstraint,
     SeverityRating,
+    TaskEvidence,
     TaskOutcome,
     ViolationAssessment,
     group_by_task,
@@ -159,6 +160,34 @@ def test_no_observed_violation_is_an_unavailable_measurement_and_never_1():
         "excluded": [{"reason": "no violation was recorded", "count": 2, "ids": ["a1", "a2"]}],
     }
     assert result.attempt_ids == ()
+
+
+def test_tasks_without_any_operational_constraint_make_the_metric_not_applicable_and_not_unavailable():
+    # No Task has an operational constraint, so no violation can occur and none can be rated: the metric does
+    # not apply to this experiment. With a constraint and no violation it is unavailable: see above.
+    result = evaluate(attempt("a1"), attempt("a2"), attempt("b1", task_id="other"))
+
+    assert result.state.value == "not_applicable"
+    assert result.value is None
+    assert result.reason == (
+        "no Task has an operational constraint, so there is no constraint to comply with or to violate"
+    )
+    assert result.counts["attempts"].to_dict() == {
+        "total": 3,
+        "valid": 0,
+        "missing": [],
+        "excluded": [{"reason": "no violation was recorded", "count": 3, "ids": ["a1", "a2", "b1"]}],
+    }
+    assert result.attempt_ids == ()
+
+
+def test_a_task_without_attempts_does_not_show_that_it_has_no_operational_constraint():
+    evidence = (*group_by_task([attempt("a1")]), TaskEvidence("other", ()))
+
+    result = conditional_harm_severity.evaluate(evidence)
+
+    assert result.state.value == "unavailable"
+    assert result.reason == "no violation was observed"
 
 
 def test_no_attempts_is_an_unavailable_measurement_and_never_a_number():
