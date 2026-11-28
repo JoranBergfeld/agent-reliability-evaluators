@@ -348,8 +348,8 @@ Dated notes, as the declaration asks. The declaration itself is as it was commit
 
 - **2026-11-27, the supplement.** The declaration provided for a synthetic sweep and for nothing else when a cell of the two metrics had no value. The supplement was added after three runs, when it was clear that the notes were mostly ignored. It was declared and committed before its first Attempt, it changes no cell, and it is reported apart. It is a departure all the same: it was designed with the results of three runs in view.
 - **2026-11-27, the source the runs were made with.** The first run was made with the source at commit `7fa8d73`. Before the second, the token usage verification ([#52](https://github.com/JoranBergfeld/agent-reliability-evaluators/issues/52)) was merged into this work, and the cloud evaluation target was changed for the follow-up. The other three runs and the supplements were made with the source as it is after both, which did not change again. For the prompt agent target, the difference between the two is one recorded field, the source of a usage count.
-- **2026-11-27, a rule that was sharpened before it was needed.** A cell that is declared unsupported, and whose measurement is unavailable for another reason than the declared one, is recorded as unverified and not as unsupported. The declaration did not say. No cell was in that case.
-- **2026-11-27, a number.** The declaration counts 11 Attempts under a baseline. A first draft of it said 13 and was corrected before it was committed.
+- **2026-11-27, the code of the check.** The reference and the rules by which a cell gets its status are as they were when the declaration was committed. What changed afterwards: a run reads the commit of the source before its first Attempt and not after its last, the check learned to make a supplement, which chooses other Tasks and two metrics, and a record now loses every path that names a subscription, where it lost the subscription identifier before.
+- **2026-11-27, a case the table of statuses does not spell out.** A cell that is declared unsupported, and whose measurement is unavailable for another reason than the declared one, is recorded as unverified and not as unsupported. The check did so from the start. No cell was in that case.
 
 ## Not verified
 
@@ -365,4 +365,33 @@ Dated notes, as the declaration asks. The declaration itself is as it was commit
 - **A fault that does not answer with an HTTP error**, such as a tool that answers 200 with an error in its body. On a prompt agent such a fault might leave a completed Attempt. It was not tried.
 - **A Foundry-managed result that fails its fidelity check, or a managed run that gives no result, in a sweep of real agents.** None occurred.
 - **Another region, another day, and authentication other than a user signed in to the Azure CLI.**
+
+## Environment and resources
+
+| | |
+| --- | --- |
+| When | 2026-11-27, 21:22 to 23:59 UTC: the probe, the four runs, the three supplements and the synthetic sweep, in that order, one at a time |
+| Where | Sweden Central, one Foundry project in a subscription named `Sandbox` |
+| Model | `gpt-4.1-mini`, version `2025-04-14`, Global Standard, capacity 50 |
+| Prompt agent | One OpenAPI tool with a project connection |
+| Hosted agent | Responses protocol `2.0.0`, runtime `python_3_13`, `agent-framework` 1.26.0, `agent-framework-foundry` 1.16.2, `agent-framework-foundry-hosting` 1.0.0b261112, `azure-identity` 1.27.0 |
+| Caller | A user signed in to the Azure CLI 2.93.0, Python 3.15.2, a workstation |
+
+Interfaces, relative to the project endpoint, as they worked on that date:
+
+| Purpose | Request |
+| --- | --- |
+| Look an agent up, register a prompt agent | `GET /agents/{name}?api-version=v1`, `POST /agents/{name}/versions?api-version=v1` |
+| Deploy a hosted agent | multipart `POST /agents?api-version=v1`, then `PATCH /agents/{name}?api-version=v1` |
+| Invoke a prompt agent, and ask a follow-up | `POST /openai/v1/responses`, with no `api-version` |
+| Invoke a hosted agent | `POST /agents/{name}/endpoint/protocols/openai/responses?api-version=v1` |
+| Cloud evaluation and Foundry-managed scoring | `POST /openai/v1/evals`, `POST` and `GET /openai/v1/evals/{eval}/runs`, `GET …/runs/{run}/output_items`, with no `api-version` |
+| Register a derived evaluator | `POST /evaluators/{name}/versions?api-version=v1` with the header `Foundry-Features: Evaluations=V1Preview` |
+| Read what a follow-up was given, in the probe | `GET /openai/v1/responses/{id}/input_items` |
+
+None of this was checked against Microsoft's documentation for this verification. It is what was sent and answered.
+
+**Records.** Every record in [`evidence/`](evidence/) holds what the reference was given for each Attempt and what each path returned for each metric. A record holds no raw response, no key, no token and no subscription identifier, and the default test run checks the last two. The scorecards, reports and attempt-level evidence of the runs were written outside the repository and are not kept.
+
+**Resources.** One resource group was created for this work, `rg-are-55-278c868e`, with `python -m live_fixture provision --ticket 55 --note-following-agents`. It held the fixture for everything above: the to-do service, the model deployment, the fixture's two agents and their two positive-control copies. It was deleted with the fixture's `teardown` after the last sweep, which took under half an hour, and the soft-deleted Foundry account was purged. Afterwards a separate `az group exists` returned `false`, the subscription listed no resource group named `rg-are-…`, and no soft-deleted account of the fixture was listed. The evals, runs and evaluators made above were in that project and went with it.
 

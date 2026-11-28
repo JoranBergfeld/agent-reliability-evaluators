@@ -8,18 +8,22 @@ Each run is made by a pytest invocation of its own, on a fixture that is provisi
 
     uv run python -m live_fixture provision --ticket 55 --note-following-agents
     $env:ARE_LIVE_FIXTURE_GROUP = "rg-are-55-<8 hex>"
-    uv run pytest -m live tests/live/test_full_matrix_live.py -s -k prompt-customer
-    uv run pytest -m live tests/live/test_full_matrix_live.py -s -k hosted-customer
     uv run pytest -m live tests/live/test_full_matrix_live.py -s -k cloud_follow_up
-    uv run pytest -m live tests/live/test_full_matrix_live.py -s -k prompt-cloud
-    uv run pytest -m live tests/live/test_full_matrix_live.py -s -k hosted-cloud
-    uv run pytest -m live tests/live/test_full_matrix_live.py -s -k "supplement and prompt-cloud"
+    uv run pytest -m live tests/live/test_full_matrix_live.py -s -k "test_run and prompt-customer"
+    uv run pytest -m live tests/live/test_full_matrix_live.py -s -k "test_run and hosted-customer"
+    uv run pytest -m live tests/live/test_full_matrix_live.py -s -k "test_run and prompt-cloud"
+    uv run pytest -m live tests/live/test_full_matrix_live.py -s -k "test_run and hosted-cloud"
+    uv run pytest -m live tests/live/test_full_matrix_live.py -s -k supplement
     uv run pytest -m live tests/live/test_full_matrix_live.py -s -k synthetic
     uv run python -m live_fixture teardown rg-are-55-<8 hex>
 
+Made one at a time: Foundry does not grade every row of a managed run while other runs are in
+progress in the project.
+
 A run writes its record to docs/coverage_matrix/evidence/<run>.json when it ends, and is not
 made again once that record exists. A run that stopped without a scorecard writes
-<run>.stopped-<n>.json with what stopped it. Without ARE_LIVE_FIXTURE_GROUP the check
+<run>.stopped-<n>.json with what stopped it. The records of 2026-11-27 are committed, so a
+new verification starts by removing them and declaring again what is run. Without ARE_LIVE_FIXTURE_GROUP the check
 provisions the fixture itself and tears it down. Set ARE_MATRIX_ARTIFACTS to a directory
 outside the repository to also keep each run's scorecard, report and evidence there.
 
