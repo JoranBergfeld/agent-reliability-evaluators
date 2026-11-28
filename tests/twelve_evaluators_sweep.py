@@ -162,10 +162,13 @@ NOTHING_TO_CALCULATE_FROM = {
 NO_VALID_PAIR = "no valid confidence/outcome pair"
 ZERO_BASELINE = "the baseline accuracy is zero, so the ratio is undefined"
 NO_RECORDING = "no Task has at least two Attempts with a usable action recording"
+EVERY_TOOL_DECLARED = "a declared action type for every tool its Attempts used"
 UNAVAILABLE_FOR = {
     "outcome_consistency": "no Task has at least two Attempts with a task outcome",
-    "distributional_trajectory_consistency": f"{NO_RECORDING} and no confirmed empty action sequence",
-    "sequential_trajectory_consistency": NO_RECORDING,
+    "distributional_trajectory_consistency": (
+        f"{NO_RECORDING}, {EVERY_TOOL_DECLARED} and no confirmed empty action sequence"
+    ),
+    "sequential_trajectory_consistency": f"{NO_RECORDING} and {EVERY_TOOL_DECLARED}",
     "resource_consistency": "no Task has at least two Attempts whose execution completed",
     "fault_robustness": ZERO_BASELINE,
     "environment_robustness": ZERO_BASELINE,

@@ -20,6 +20,8 @@ ActionTypes = Sequence[str]
 
 MINIMUM_ATTEMPTS = 2
 TOO_FEW_ATTEMPTS = "fewer than two Attempts with a usable action recording"
+# The reason a Task is excluded for, followed by the tool names in question.
+UNDECLARED_TOOL = "an Attempt that used a tool with no declared action type"
 
 
 def evaluate_attempt_pairs(
@@ -36,6 +38,10 @@ def evaluate_attempt_pairs(
 
     `pair_difference` is between 0, for two Attempts that agree, and 1. `undefined_task`
     returns why a Task with enough Attempts still cannot be calculated, or None.
+
+    An Attempt that used a tool with no declared action type cannot be compared, and it is not
+    dropped: its Task is excluded, with the tool names. Dropping it would leave the Attempts that
+    are alike and could only raise the value.
     """
     if not isinstance(action_types, ActionTypeMapping):
         raise ValueError(
@@ -53,10 +59,12 @@ def evaluate_attempt_pairs(
     not_completed: list[str] = []
     not_recorded: list[str] = []
     other_source: list[str] = []
-    without_action_type: list[str] = []
     undeclared_tool_names: set[str] = set()
     for task in tasks:
         sequences: dict[str, ActionTypes] = {}
+        # The Attempts whose actions were recorded from the declared source, typed or not, in order.
+        recorded: list[str] = []
+        undeclared_in_task: set[str] = set()
         for attempt in task.attempts:
             recording = attempt.action_evidence
             if attempt.execution_status is not ExecutionStatus.COMPLETED:
@@ -66,16 +74,21 @@ def evaluate_attempt_pairs(
             elif recording.source != action_types.evidence_source:
                 other_source.append(attempt.attempt_id)
             elif undeclared := {event.tool_name for event in recording.events} - declared.keys():
-                without_action_type.append(attempt.attempt_id)
-                undeclared_tool_names |= undeclared
+                recorded.append(attempt.attempt_id)
+                undeclared_in_task |= undeclared
             else:
+                recorded.append(attempt.attempt_id)
                 sequences[attempt.attempt_id] = tuple(declared[event.tool_name] for event in recording.events)
-        reason = (
-            TOO_FEW_ATTEMPTS if len(sequences) < MINIMUM_ATTEMPTS else undefined_task(tuple(sequences.values()))
-        )
+        undeclared_tool_names |= undeclared_in_task
+        if undeclared_in_task:
+            reason = f"{UNDECLARED_TOOL}: {', '.join(sorted(undeclared_in_task))}"
+        elif len(sequences) < MINIMUM_ATTEMPTS:
+            reason = TOO_FEW_ATTEMPTS
+        else:
+            reason = undefined_task(tuple(sequences.values()))
         if reason:
             excluded_tasks.setdefault(reason, []).append(task.task_id)
-            attempts_of_excluded_tasks.setdefault(reason, []).extend(sequences)
+            attempts_of_excluded_tasks.setdefault(reason, []).extend(recorded)
             continue
         differences = [pair_difference(first, second) for first, second in combinations(sequences.values(), 2)]
         value = 1 - _exact_mean(differences)
@@ -107,7 +120,6 @@ def evaluate_attempt_pairs(
                 missing=counted("no action recording", not_recorded),
                 excluded=counted("execution status is not completed", not_completed)
                 + counted("its action recording is not from the declared evidence source", other_source)
-                + counted("an action event has no declared action type", without_action_type)
                 + tuple(
                     entry
                     for reason, attempt_ids in attempts_of_excluded_tasks.items()

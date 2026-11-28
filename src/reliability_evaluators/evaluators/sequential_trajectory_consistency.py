@@ -16,7 +16,7 @@ from .result import MetricDefinition, MetricResult, Scale
 
 DEFINITION = MetricDefinition(
     metric=SEQUENTIAL_TRAJECTORY_CONSISTENCY,
-    version="1.0.0",
+    version="2.0.0",
     measures="Whether repeated Attempts at the same Task take their actions in the same order.",
     calculation=(
         "The ordered actions of each Attempt are mapped to action types. For every pair of Attempts at "
@@ -39,9 +39,12 @@ DEFINITION = MetricDefinition(
         "Assumption (spec assumption 10): the metric is calculated over the eligible Tasks and excluded "
         "Tasks are counted with reasons. A Task needs at least two Attempts with a usable action "
         "recording. The metric is unavailable only when no Task is eligible.",
-        "An Attempt is left out, with a reason, when its execution did not complete, when its recording "
-        "is not from the declared evidence source, or when one of its action events has a tool name "
-        "with no declared action type.",
+        "An Attempt is left out, with a reason, when its execution did not complete or when its recording "
+        "is not from the declared evidence source.",
+        "An Attempt that used a tool with no declared action type cannot be compared, and it is not "
+        "dropped: its Task is excluded with a reason that names the tool names, and counted like any "
+        "other excluded Task. Dropping the Attempt would leave the Attempts that are alike, which could "
+        "only raise the value.",
     ),
     scale=Scale(
         minimum=0.0,
@@ -72,7 +75,10 @@ def evaluate(tasks: Iterable[TaskEvidence], action_types: ActionTypeMapping) -> 
         action_types,
         pair_difference=normalized_edit_distance,
         mean_difference_name="mean_normalized_edit_distance",
-        no_eligible_task="no Task has at least two Attempts with a usable action recording",
+        no_eligible_task=(
+            "no Task has at least two Attempts with a usable action recording "
+            "and a declared action type for every tool its Attempts used"
+        ),
     )
 
 

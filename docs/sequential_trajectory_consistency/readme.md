@@ -7,7 +7,7 @@ Sequential trajectory consistency measures whether repeated Attempts at the same
 | | |
 | --- | --- |
 | Metric identity | `sequential_trajectory_consistency` |
-| Definition version | 1.0.0 |
+| Definition version | 2.0.0 |
 | Source | [Towards a Science of AI Agent Reliability, version 3](https://arxiv.org/html/2602.16666v3), Table 2 |
 | Canonical definition | [`src/reliability_evaluators/evaluators/sequential_trajectory_consistency.py`](../../src/reliability_evaluators/evaluators/sequential_trajectory_consistency.py) |
 | Scale | 0 to 1 |
@@ -228,14 +228,14 @@ An event without a tool name is rejected with an error. So are arguments or a re
 | An Attempt whose execution status is not `completed` | Excluded with the reason `execution status is not completed`. Its trajectory was cut short by something other than the agent. |
 | An Attempt with no action recording | Counted as missing with the reason `no action recording`. It is not compared as an empty sequence. |
 | An Attempt recorded from another source than the declared one | Excluded with the reason `its action recording is not from the declared evidence source`. Sources are never mixed. |
-| An Attempt with a tool name that has no declared action type | Excluded with the reason `an action event has no declared action type`. The tool names are listed in `details.tool_names_without_action_type`. |
+| A Task with an Attempt that used a tool with no declared action type | The Task is excluded with the reason `an Attempt that used a tool with no declared action type: ` followed by the tool names, and its Attempts are excluded with `its Task has ` and that reason. The Attempt is not dropped. The tool names are also listed in `details.tool_names_without_action_type`. |
 | A Task with fewer than two usable Attempts | The Task is excluded with the reason `fewer than two Attempts with a usable action recording`. |
 | No Tasks | Unavailable measurement: `no Tasks in the evidence`. |
-| No eligible Task | Unavailable measurement: `no Task has at least two Attempts with a usable action recording`. |
+| No eligible Task | Unavailable measurement: `no Task has at least two Attempts with a usable action recording and a declared action type for every tool its Attempts used`. |
 
 An unavailable measurement carries its reason and the evidence counts. It never carries a number.
 
-Leaving an Attempt out can raise the value: an Attempt that called an undeclared tool is unlike the others by construction. Read the excluded counts, and complete the mapping when `tool_names_without_action_type` is not empty.
+An Attempt that called an undeclared tool is unlike the others by construction, so dropping it would leave the Attempts that are alike and could only raise the value. It is therefore never dropped: its Task has no value until the mapping is complete. Complete the mapping when `tool_names_without_action_type` is not empty, and read the excluded counts.
 
 ## Fidelity conventions
 
@@ -253,10 +253,10 @@ These come from the specification and are not confirmed decisions. They are impl
 2. **The metric is calculated over the eligible Tasks** (specification assumption 10). Excluded Tasks are counted with their reasons. The metric is unavailable only when no Task is eligible.
 3. **When attempt counts differ between Tasks, the pair mean is taken per Task and Tasks are then weighted equally.** The paper's formula assumes the same number of Attempts for every Task.
 
-Three more conventions fill gaps that neither the paper nor the specification covers. They are choices of this definition, version 1.0.0:
+Three more conventions fill gaps that neither the paper nor the specification covers. They are choices of this definition, version 2.0.0:
 
 4. An Attempt whose execution did not complete is excluded, as it is for outcome consistency.
-5. An Attempt with a tool name that has no declared action type is excluded with a reason, by analogy with the unmapped severity label of specification assumption 16. It is not an error.
+5. An Attempt that used a tool with no declared action type cannot be compared, and it is not dropped: its Task is excluded with a reason that names the tool names. It is not an error. Version 1.0.0 excluded the Attempt alone and compared the others, which could only raise the value.
 6. The action type is decided by the tool name alone. To tell apart calls to one tool by their arguments, record them under different tool names. Actions that ran in parallel must be recorded in one declared order.
 
 ## Numbers

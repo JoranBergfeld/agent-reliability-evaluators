@@ -163,7 +163,8 @@ def test_only_tasks_with_a_confirmed_empty_attempt_give_an_unavailable_measureme
     assert result.state.value == "unavailable"
     assert result.value is None
     assert result.reason == (
-        "no Task has at least two Attempts with a usable action recording and no confirmed empty action sequence"
+        "no Task has at least two Attempts with a usable action recording, a declared action type for every tool "
+        "its Attempts used and no confirmed empty action sequence"
     )
     assert result.counts["tasks"].valid == 0
     assert result.counts["tasks"].excluded[0].to_dict() == {
@@ -172,6 +173,62 @@ def test_only_tasks_with_a_confirmed_empty_attempt_give_an_unavailable_measureme
         "ids": ["quiet", "silent"],
     }
     assert result.counts["attempt_pairs"].to_dict() == {"total": 0, "valid": 0, "missing": [], "excluded": []}
+
+
+def test_an_attempt_that_used_a_tool_with_no_declared_action_type_is_not_dropped_and_its_task_is_excluded():
+    # `purge_items` is not in the declared mapping, so the third Attempt of `task` has no action-type mix,
+    # and the Task cannot be calculated. `other`: disjoint mixes, divergence 1, value 0.
+    # The metric is 0. Dropping the Attempt would leave `task` with two identical mixes and a value of 1,
+    # and give (1 + 0) / 2 = 0.5: an Attempt that did something else would raise the value.
+    result = evaluate(
+        {
+            "task": [READ_UPDATE, READ_UPDATE, ["get_item", "purge_items"]],
+            "other": [["get_item"], ["delete_item"]],
+        }
+    )
+
+    assert result.value == 0
+    assert result.counts["tasks"].to_dict() == {
+        "total": 2,
+        "valid": 1,
+        "missing": [],
+        "excluded": [
+            {
+                "reason": "an Attempt that used a tool with no declared action type: purge_items",
+                "count": 1,
+                "ids": ["task"],
+            },
+        ],
+    }
+    assert result.counts["attempts"].to_dict() == {
+        "total": 5,
+        "valid": 2,
+        "missing": [],
+        "excluded": [
+            {
+                "reason": "its Task has an Attempt that used a tool with no declared action type: purge_items",
+                "count": 3,
+                "ids": ["task/attempt-1", "task/attempt-2", "task/attempt-3"],
+            },
+        ],
+    }
+    assert result.details["tool_names_without_action_type"] == ["purge_items"]
+
+
+def test_two_identical_attempts_and_one_that_used_an_undeclared_tool_do_not_give_1():
+    # The third Attempt did what the others did and then called a tool that has no declared action type.
+    # Nothing shows that the three used the same mix, so there is no value. It is not 1.
+    result = evaluate({"task": [READ_UPDATE, READ_UPDATE, [*READ_UPDATE, "purge_items"]]})
+
+    assert result.state.value == "unavailable"
+    assert result.value is None
+    assert [entry.to_dict() for entry in result.counts["tasks"].excluded] == [
+        {
+            "reason": "an Attempt that used a tool with no declared action type: purge_items",
+            "count": 1,
+            "ids": ["task"],
+        }
+    ]
 
 
 def test_an_attempt_whose_actions_were_not_recorded_is_missing_evidence_and_not_an_empty_sequence():
