@@ -20,16 +20,16 @@ from ..evidence import EvidenceError
 from ..scorecard import RESCORE, AcceptanceCriterion, code_scoring_use, criteria_by_metric, rescore_entry
 from .declaration import ActionEvidenceDeclaration, ConfiguredEvaluator
 from .recalculation import (
-    _cut_short,
-    _EarlierScorecard,
-    _evidence,
-    _read,
-    _EarlierEvaluation,
-    _submitted_evidence,
-    _usage_of_the_evaluator,
-    _validating_the_supplied_evidence,
+    cut_short_of,
+    EarlierScorecard,
+    evidence_given,
+    read_earlier_scorecard,
+    EarlierEvaluation,
+    submitted_evidence,
+    usage_of_the_evaluator,
+    validating_the_supplied_evidence,
 )
-from .runner import _scored_in_this_process, _select
+from .runner import scored_in_this_process, select_evaluator
 
 
 class RescoreFailed(Exception):
@@ -102,8 +102,8 @@ def _rescore(
 ) -> dict[str, Any]:
     requested = _requested(metrics)
     criteria = criteria_by_metric(acceptance_criteria)
-    with _validating_the_supplied_evidence():
-        earlier = _read(earlier_scorecard)
+    with validating_the_supplied_evidence():
+        earlier = read_earlier_scorecard(earlier_scorecard)
     rescored = deepcopy(dict(earlier_scorecard))
     entries = {entry.get("metric_id"): entry for entry in rescored["metrics"] if isinstance(entry, Mapping)}
     for metric_id, metric in requested.items():
@@ -113,24 +113,24 @@ def _rescore(
                 f"the earlier scorecard assessed an acceptance criterion for {metric_id!r}, and none is declared "
                 "for the rescore. Declare the acceptance criteria again, as for the sweep"
             )
-        with _validating_the_supplied_evidence():
-            rescoring = _EarlierEvaluation(
-                _select(metric, action_evidence),
+        with validating_the_supplied_evidence():
+            rescoring = EarlierEvaluation(
+                select_evaluator(metric, action_evidence),
                 _attempts_used(entry, earlier),
-                _cut_short(entry, earlier.executions),
+                cut_short_of(entry, earlier.executions),
                 had_execution_failure=False,
             )
             by_identity = {attempt.attempt_id: attempt for attempt in earlier.attempts}
-            evidence = _evidence(rescoring, [by_identity[attempt_id] for attempt_id in rescoring.attempt_ids], earlier)
-        scored = _scored_in_this_process(
+            evidence = evidence_given(rescoring, [by_identity[attempt_id] for attempt_id in rescoring.attempt_ids], earlier)
+        scored = scored_in_this_process(
             rescoring.evaluator, evidence, attempts_used=rescoring.attempt_ids, cut_short=rescoring.cut_short
         )
-        same_evidence = _submitted_evidence(entry, evidence, rescoring.evaluator.evaluated_with())
+        same_evidence = submitted_evidence(entry, evidence, rescoring.evaluator.evaluated_with())
         entry[RESCORE] = rescore_entry(scored, same_evidence, criteria.get(metric_id))
-        with _validating_the_supplied_evidence():
+        with validating_the_supplied_evidence():
             # The rescore is a scoring of its own. It is code in this process, so it used no tokens,
             # and what the managed runs used stays as it was reported.
-            _usage_of_the_evaluator(rescored, metric_id)[RESCORE] = code_scoring_use()
+            usage_of_the_evaluator(rescored, metric_id)[RESCORE] = code_scoring_use()
     return rescored
 
 
@@ -171,7 +171,7 @@ def _managed_entry(entries: Mapping[Any, Any], metric_id: Any) -> dict[str, Any]
     return entry
 
 
-def _attempts_used(entry: Mapping[str, Any], earlier: _EarlierScorecard) -> tuple[str, ...]:
+def _attempts_used(entry: Mapping[str, Any], earlier: EarlierScorecard) -> tuple[str, ...]:
     """The identities of the Attempts the managed evaluator was given, which are the ones that are rescored."""
     metric_id = entry["metric_id"]
     used = entry.get("attempts_used")

@@ -180,7 +180,7 @@ class FoundryHostedAgentTarget:
         if failure is not None:
             raise InvocationFailed(failure, invocation=invocation)
         return AgentResponse(
-            output=_output_text(response),
+            output=output_text(response),
             resource_measurements=_resource_measurements(elapsed, invocation["tool_calls"]),
             invocation=invocation,
         )
@@ -352,7 +352,7 @@ def _tool_calls(response: dict[str, Any]) -> list[dict[str, Any]] | None:
     None when the response has no list of output items: the calls were then not exposed,
     which is not the same as no call.
     """
-    items = _output_items(response)
+    items = output_items(response)
     if items is None:
         return None
     returned = {
@@ -362,7 +362,7 @@ def _tool_calls(response: dict[str, Any]) -> list[dict[str, Any]] | None:
         {
             "call_id": item.get("call_id"),
             "name": item.get("name"),
-            "arguments": _decoded(item.get("arguments")),
+            "arguments": decoded_arguments(item.get("arguments")),
             "output": returned.get(item.get("call_id")),
         }
         for item in items
@@ -370,7 +370,7 @@ def _tool_calls(response: dict[str, Any]) -> list[dict[str, Any]] | None:
     ]
 
 
-def _decoded(arguments: Any) -> Any:
+def decoded_arguments(arguments: Any) -> Any:
     """The arguments of a tool call. The protocol gives them as JSON text; anything else is kept as given."""
     if not isinstance(arguments, str):
         return arguments
@@ -380,17 +380,17 @@ def _decoded(arguments: Any) -> Any:
         return arguments
 
 
-def _output_items(response: dict[str, Any]) -> list[dict[str, Any]] | None:
+def output_items(response: dict[str, Any]) -> list[dict[str, Any]] | None:
     """The output items of a response, in order, or None when it has no list of them."""
     output = response.get("output")
     return [item for item in output if isinstance(item, dict)] if isinstance(output, list) else None
 
 
-def _output_text(response: dict[str, Any]) -> str:
+def output_text(response: dict[str, Any]) -> str:
     """The text of the agent's messages, in order."""
     return "".join(
         part.get("text") or ""
-        for item in _output_items(response) or []
+        for item in output_items(response) or []
         if item.get("type") == "message" and isinstance(item.get("content"), list)
         for part in item["content"]
         if isinstance(part, dict) and part.get("type") == "output_text"

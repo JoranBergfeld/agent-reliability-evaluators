@@ -66,8 +66,8 @@ class LiveFixture:
 
     def project_request(self, method, path, body=None, headers=None, raw=None):
         """Call the Foundry project's REST API as the signed-in Azure CLI identity."""
-        return _request(method, self.project_endpoint + path, _content(body, raw), headers,
-                        bearer=_access_token(self.subscription))
+        return request_json(method, self.project_endpoint + path, request_content(body, raw), headers,
+                        bearer=bearer_token(self.subscription))
 
     def summary(self):
         """What was provisioned, without keys or subscription identifiers."""
@@ -85,19 +85,19 @@ def provision(ticket, location="swedencentral", subscription="Sandbox", log=prin
     A failure to deploy the hosted agent is recorded on the returned fixture. Any other failure
     tears the resource group down again before raising.
     """
-    _require_subscription(subscription)
+    require_subscription(subscription)
     suffix = uuid.uuid4().hex[:8]
     group = f"rg-are-{ticket}-{suffix}"
     if not GROUP_PATTERN.match(group):
         raise LiveFixtureError(f"Ticket label {ticket!r} must be lowercase letters and digits")
-    if _az(subscription, "group", "exists", "--name", group):
+    if az(subscription, "group", "exists", "--name", group):
         raise LiveFixtureError(f"Refusing to reuse existing resource group {group}")
     account = group.removeprefix("rg-")
-    _az(subscription, "group", "create", "--name", group, "--location", location,
+    az(subscription, "group", "create", "--name", group, "--location", location,
         "--tags", "purpose=are-live-fixture", "cleanup=delete-after-check")
     log(f"Created resource group {group}")
     try:
-        project = _create_project(subscription, group, account, location, log)
+        project = create_project(subscription, group, account, location, log)
         service = _deploy_service(subscription, group, suffix, location, log)
         fixture = LiveFixture(
             resource_group=group, subscription=subscription, location=location,
@@ -123,10 +123,10 @@ def provision(ticket, location="swedencentral", subscription="Sandbox", log=prin
 
 def connect(resource_group, subscription="Sandbox"):
     """Re-attach to a fixture provisioned earlier, reading its keys back from Azure."""
-    _require_group_name(resource_group)
-    _require_subscription(subscription)
+    require_group_name(resource_group)
+    require_subscription(subscription)
     account = resource_group.removeprefix("rg-")
-    app = _az(subscription, "containerapp", "show", "--resource-group", resource_group,
+    app = az(subscription, "containerapp", "show", "--resource-group", resource_group,
               "--name", "todo-" + resource_group.rsplit("-", 1)[1])
     settings = HiddenDict(
         (item["name"], Secret(item.get("value"))) for item in app["properties"]["template"]["containers"][0]["env"]
@@ -185,16 +185,16 @@ def teardown(resource_group, subscription="Sandbox", log=print, timeout_minutes=
 
     Returns the purge result for the soft-deleted Foundry account. Raises if the group still exists.
     """
-    _require_group_name(resource_group)
-    _require_subscription(subscription)
+    require_group_name(resource_group)
+    require_subscription(subscription)
     purge = "not attempted: resource group absent"
-    if _az(subscription, "group", "exists", "--name", resource_group):
-        location = _az(subscription, "group", "show", "--name", resource_group)["location"]
+    if az(subscription, "group", "exists", "--name", resource_group):
+        location = az(subscription, "group", "show", "--name", resource_group)["location"]
         log(f"Deleting resource group {resource_group}")
         # Deletion took about half an hour when observed, so poll and do not hold one call open.
-        _az(subscription, "group", "delete", "--name", resource_group, "--yes", "--no-wait")
+        az(subscription, "group", "delete", "--name", resource_group, "--yes", "--no-wait")
         deadline = time.monotonic() + timeout_minutes * 60
-        while _az(subscription, "group", "exists", "--name", resource_group):
+        while az(subscription, "group", "exists", "--name", resource_group):
             if time.monotonic() > deadline:
                 raise LiveFixtureError(
                     f"Resource group {resource_group} still exists {timeout_minutes} minutes after "
@@ -202,50 +202,50 @@ def teardown(resource_group, subscription="Sandbox", log=print, timeout_minutes=
             time.sleep(30)
         # Group deletion only soft-deletes the Foundry account, which keeps its name reserved.
         try:
-            _az(subscription, "cognitiveservices", "account", "purge", "--location", location,
+            az(subscription, "cognitiveservices", "account", "purge", "--location", location,
                 "--resource-group", resource_group, "--name", resource_group.removeprefix("rg-"))
             purge = "purged"
         except LiveFixtureError as error:
             purge = f"not purged: {error}"
-    if _az(subscription, "group", "exists", "--name", resource_group):
+    if az(subscription, "group", "exists", "--name", resource_group):
         raise LiveFixtureError(f"Resource group {resource_group} still exists after deletion")
     log(f"Confirmed absent: {resource_group} (Foundry account {purge})")
     return purge
 
 
-def _require_group_name(resource_group):
+def require_group_name(resource_group):
     if not GROUP_PATTERN.match(resource_group):
         raise LiveFixtureError(f"{resource_group!r} is not a live-fixture resource group (rg-are-<ticket>-<random>)")
 
 
-def _require_subscription(subscription):
+def require_subscription(subscription):
     if not shutil.which("az"):
         raise LiveFixtureError("The Azure CLI (az) is required")
-    if _az(subscription, "account", "show")["name"] != subscription:
+    if az(subscription, "account", "show")["name"] != subscription:
         raise LiveFixtureError(f"Refusing to act outside the subscription named {subscription}")
 
 
-def _create_project(subscription, group, account, location, log, deploy_model=True):
+def create_project(subscription, group, account, location, log, deploy_model=True):
     log(f"Creating Foundry account {account} and project {PROJECT}")
     resource = ("--resource-group", group, "--name", account)
     for attempt in range(3):
         try:
-            _az(subscription, "cognitiveservices", "account", "create", *resource, "--location", location,
+            az(subscription, "cognitiveservices", "account", "create", *resource, "--location", location,
                 "--kind", "AIServices", "--sku", "S0", "--custom-domain", account,
                 "--allow-project-management", "false", "--yes")
             break
         except LiveFixtureError:
-            existing = _az(subscription, "cognitiveservices", "account", "list", "--resource-group", group)
+            existing = az(subscription, "cognitiveservices", "account", "list", "--resource-group", group)
             if attempt == 2 or existing:
                 raise
             time.sleep(15)
-    _az(subscription, "cognitiveservices", "account", "identity", "assign", *resource)
-    foundry = _az(subscription, "cognitiveservices", "account", "update", *resource,
+    az(subscription, "cognitiveservices", "account", "identity", "assign", *resource)
+    foundry = az(subscription, "cognitiveservices", "account", "update", *resource,
                   "--allow-project-management", "true")
-    project = _az(subscription, "cognitiveservices", "account", "project", "create", *resource,
+    project = az(subscription, "cognitiveservices", "account", "project", "create", *resource,
                   "--project-name", PROJECT, "--location", location,
                   "--display-name", "Disposable to-do live fixture")
-    caller = _access_token(subscription).claim("oid")
+    caller = bearer_token(subscription).claim("oid")
     if caller is None:
         raise LiveFixtureError("The token of the signed-in Azure CLI identity names no object identifier")
     # A scope holds the subscription identifier, so it is passed as a Secret.
@@ -255,12 +255,12 @@ def _create_project(subscription, group, account, location, log, deploy_model=Tr
         (project["identity"]["principalId"], "ServicePrincipal", FOUNDRY_USER, Secret(foundry["id"])),
         (caller, "User", FOUNDRY_PROJECT_MANAGER, Secret(project["id"])),
     ):
-        _az(subscription, "role", "assignment", "create", "--assignee-object-id", principal,
+        az(subscription, "role", "assignment", "create", "--assignee-object-id", principal,
             "--assignee-principal-type", kind, "--role", role, "--scope", scope)
     if not deploy_model:
         return project
     log(f"Deploying model {MODEL['name']} as {MODEL_DEPLOYMENT}")
-    _az(subscription, "cognitiveservices", "account", "deployment", "create", *resource,
+    az(subscription, "cognitiveservices", "account", "deployment", "create", *resource,
         "--deployment-name", MODEL_DEPLOYMENT, "--model-format", "OpenAI",
         "--model-name", MODEL["name"], "--model-version", MODEL["version"],
         "--sku-name", MODEL["sku"], "--sku-capacity", str(MODEL["capacity"]))
@@ -271,17 +271,17 @@ def _deploy_service(subscription, group, suffix, location, log):
     log("Building and deploying the to-do service")
     app_name = "todo-" + suffix
     api_key, admin_key = Secret(secrets.token_urlsafe(32)), Secret(secrets.token_urlsafe(32))
-    _az(subscription, "containerapp", "up", "--name", app_name, "--resource-group", group,
+    az(subscription, "containerapp", "up", "--name", app_name, "--resource-group", group,
         "--location", location, "--source", str(ROOT / "service"), "--ingress", "external",
         "--target-port", "8080", "--env-vars", api_key.within("TODO_API_KEY={}"),
         admin_key.within("TODO_ADMIN_KEY={}"), output=None)
     # State is in memory, so exactly one replica must serve every call.
-    app = _az(subscription, "containerapp", "update", "--name", app_name, "--resource-group", group,
+    app = az(subscription, "containerapp", "update", "--name", app_name, "--resource-group", group,
               "--min-replicas", "1", "--max-replicas", "1")
     service = TodoService("https://" + app["properties"]["configuration"]["ingress"]["fqdn"], api_key, admin_key)
     for _ in range(36):
         try:
-            if _request("GET", service.url + "/health") == {"ok": True}:
+            if request_json("GET", service.url + "/health") == {"ok": True}:
                 return service
         except LiveFixtureError:
             pass
@@ -295,11 +295,11 @@ def _register_prompt_agent(fixture, project_id):
     `project_id` is the resource identifier of the project, as a Secret: it holds the subscription identifier.
     """
     connection = project_id.within("{}/connections/todo-api")
-    _request("PUT", connection.within(ARM_RESOURCE + "{}?api-version=" + CONNECTION_API_VERSION), _content({
+    request_json("PUT", connection.within(ARM_RESOURCE + "{}?api-version=" + CONNECTION_API_VERSION), request_content({
         "properties": {"category": "OpenAPI", "target": fixture.service.url, "authType": "CustomKeys",
                        "credentials": {"keys": {"x-api-key": fixture.service.api_key}},
                        "metadata": {"type": "openapi"}},
-    }), bearer=_access_token(fixture.subscription, ARM_RESOURCE))
+    }), bearer=bearer_token(fixture.subscription, ARM_RESOURCE))
     definition = HiddenDict({"definition": {
         "kind": "prompt", "model": MODEL_DEPLOYMENT, "instructions": AGENT_INSTRUCTIONS,
         "tools": [{"type": "openapi", "openapi": {
@@ -386,9 +386,9 @@ def _without_settings(details):
     return [_without_settings(item) for item in details] if isinstance(details, list) else details
 
 
-def _access_token(subscription, resource=FOUNDRY_RESOURCE):
+def bearer_token(subscription, resource=FOUNDRY_RESOURCE):
     """A bearer token of the signed-in Azure CLI identity for a resource, as a Secret."""
-    return Secret(_az(subscription, "account", "get-access-token", "--resource", resource)["accessToken"])
+    return Secret(az(subscription, "account", "get-access-token", "--resource", resource)["accessToken"])
 
 
 class _CommandLine(list):
@@ -407,7 +407,7 @@ class _Ran:
         self.returncode, self.stdout, self.stderr = result.returncode, result.stdout, result.stderr
 
 
-def _az(subscription, *args, timeout=1800, output="json"):
+def az(subscription, *args, timeout=1800, output="json"):
     """Run the Azure CLI and return what it answered, in a container that does not show what it holds.
 
     An argument can be a Secret: the Azure CLI is given what it holds, and no error shows it.
@@ -439,17 +439,17 @@ def _run(command, timeout):
     return _Ran(result)
 
 
-def _content(body=None, raw=None):
+def request_content(body=None, raw=None):
     """What a request carries, in a container that does not show it: `raw` as it is, or `body` as JSON."""
     if raw is not None:
         return HiddenBytes(raw)
     return None if body is None else HiddenBytes(json.dumps(body).encode())
 
 
-def _request(method, url, content=None, headers=None, bearer=None):
+def request_json(method, url, content=None, headers=None, bearer=None):
     """Send a request and return the JSON it is answered with, in a container that does not show what it holds.
 
-    `content` is what `_content` gives. `bearer` is a Secret, and `url` may be one. Nothing a caller
+    `content` is what `request_content` gives. `bearer` is a Secret, and `url` may be one. Nothing a caller
     passes here is shown by a failure, and a failure is chained to nothing.
     """
     for attempt in range(6):

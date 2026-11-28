@@ -15,7 +15,7 @@ from typing import Any, Callable
 
 from ..evidence import ActionEvent, ResourceMeasurement, ResourceType
 from ..foundry import Answer, BearerToken, NotAnswered, send
-from .foundry_hosted import AzureCliCredential, _decoded, _output_items, _output_text
+from .foundry_hosted import AzureCliCredential, decoded_arguments, output_items, output_text
 from .interface import (
     CUSTOMER_CODE,
     AgentResponse,
@@ -127,7 +127,7 @@ class FoundryPromptAgentTarget:
         elapsed = self._clock() - started
         response, invocation = _completed(answer, lambda response: _invocation(answer, response, composed))
         return AgentResponse(
-            output=_output_text(response),
+            output=output_text(response),
             resource_measurements=_resource_measurements(elapsed, invocation["tool_calls"]),
             invocation=invocation,
         )
@@ -157,11 +157,11 @@ class FoundryPromptAgentTarget:
         }
         answer = _send(self._responses_url, BearerToken(self._credential()), self._timeout_seconds, body)
         response, follow_up = _completed(answer, lambda response: _follow_up(answer, response, request.prompt))
-        not_isolated = _not_isolated(follow_up, previous)
-        if not_isolated is not None:
-            raise InvocationFailed(not_isolated, invocation=follow_up)
+        why_not_used = not_isolated(follow_up, previous)
+        if why_not_used is not None:
+            raise InvocationFailed(why_not_used, invocation=follow_up)
         return ConfidenceResponse(
-            attempt_id=request.attempt.attempt_id, output=_output_text(response), invocation=follow_up
+            attempt_id=request.attempt.attempt_id, output=output_text(response), invocation=follow_up
         )
 
 
@@ -216,7 +216,7 @@ def _invocation(answer: Answer, response: dict[str, Any], composed_input: str | 
         "token_usage": usage,
         "token_usage_missing": None if usage is not None else NO_USAGE if response else NO_RESPONSE,
         "token_usage_source": None if usage is None else USAGE_SOURCE,
-        "tool_calls": _tool_calls(response),
+        "tool_calls": tool_calls_of_a_response(response),
     }
 
 
@@ -234,19 +234,19 @@ def _completed(
             f"the Foundry project answered HTTP {answer.status}: {_described(_error_of(answer))}",
             invocation=recorded({}),
         )
-    if not isinstance(response, dict) or _output_items(response) is None:
+    if not isinstance(response, dict) or output_items(response) is None:
         raise InvocationFailed(
             f"the Foundry project answered HTTP 200 with a body that is not a response: {answer.text[:_SHOWN_BODY]}",
             invocation=recorded({}),
         )
     record = recorded(response)
-    failure = _failure_of(response)
+    failure = failure_of_a_response(response)
     if failure is not None:
         raise InvocationFailed(failure, invocation=record)
     return response, record
 
 
-def _not_isolated(follow_up: dict[str, Any], previous: str | None) -> str | None:
+def not_isolated(follow_up: dict[str, Any], previous: str | None) -> str | None:
     """Why the answer to a follow-up is not used, from what the project reports of it, or None when it is.
 
     `previous` is the response of the Attempt, which the follow-up was to continue.
@@ -286,7 +286,7 @@ def _follow_up(answer: Answer, response: dict[str, Any], question: str) -> dict[
     }
 
 
-def _failure_of(response: dict[str, Any]) -> str | None:
+def failure_of_a_response(response: dict[str, Any]) -> str | None:
     """Why a response is not a completed execution of the agent, or None when it is one.
 
     A status of completed does not prove it: a response that carries an error failed.
@@ -351,7 +351,7 @@ def native_tool_calls(request: AttemptRequest, response: AgentResponse) -> list[
     ]
 
 
-def _tool_calls(response: dict[str, Any]) -> list[dict[str, Any]] | None:
+def tool_calls_of_a_response(response: dict[str, Any]) -> list[dict[str, Any]] | None:
     """The tool calls the response exposes, in its order, each with what the tool returned.
 
     A tool call is an output item whose type ends in `_call`, such as `openapi_call`. What it
@@ -360,7 +360,7 @@ def _tool_calls(response: dict[str, Any]) -> list[dict[str, Any]] | None:
     None when the response has no list of output items: the calls were then not exposed,
     which is not the same as no call.
     """
-    items = _output_items(response)
+    items = output_items(response)
     if items is None:
         return None
     returned = {
@@ -374,7 +374,7 @@ def _tool_calls(response: dict[str, Any]) -> list[dict[str, Any]] | None:
             "type": item["type"],
             # A tool type that gives its calls no name is named after its type.
             "name": item.get("name") or item["type"],
-            "arguments": _decoded(item.get("arguments")),
+            "arguments": decoded_arguments(item.get("arguments")),
             "output": returned.get(item.get("call_id")),
             "status": item.get("status"),
         }

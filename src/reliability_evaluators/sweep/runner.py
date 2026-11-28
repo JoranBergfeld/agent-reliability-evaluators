@@ -217,7 +217,7 @@ def _sweep(
     """Make the Attempts and score them. Each Attempt is added to `attempts` as it is made,
     so that `run_sweep` still has the evidence if this stops.
     """
-    selected = [_select(metric, action_evidence) for metric in metrics]
+    selected = [select_evaluator(metric, action_evidence) for metric in metrics]
     _require_one_evaluator_per_metric(selected)
     for evaluator in selected:
         _require_compared_variation(evaluator.evaluator, experiments)
@@ -294,7 +294,7 @@ def _sweep(
         for shared, (attempts_of_set, executions) in zip(sharing, made)
         for evaluator in shared.members
     ]
-    returned = _score_managed(
+    returned = score_in_foundry(
         managed_scoring,
         {evaluator.metric_id: evidence for evaluator, evidence, _ in to_score if evaluator.metric_id in managed},
         {evaluator.metric_id: evaluator.evaluated_with() for evaluator, _, _ in to_score},
@@ -307,9 +307,9 @@ def _sweep(
         }
         # By the path that was declared, never by what came back: nothing falls back to this process.
         if evaluator.scoring_path is ScoringPath.FOUNDRY_MANAGED:
-            scored.append(_as_foundry_returned(evaluator, returned[evaluator.metric_id], **attributed))
+            scored.append(as_foundry_returned(evaluator, returned[evaluator.metric_id], **attributed))
         else:
-            scored.append(_scored_in_this_process(evaluator, evidence, **attributed))
+            scored.append(scored_in_this_process(evaluator, evidence, **attributed))
     return build_scorecard(
         metrics=scored,
         attempts=attempts,
@@ -320,8 +320,8 @@ def _sweep(
     )
 
 
-def _scored_in_this_process(
-    evaluator: _SelectedEvaluator, evidence: Sequence[TaskEvidence], **attributed: Any
+def scored_in_this_process(
+    evaluator: SelectedEvaluator, evidence: Sequence[TaskEvidence], **attributed: Any
 ) -> ScoredMetric:
     """The result of an Evaluator that is calculated in this process, attributed to it."""
     return ScoredMetric(
@@ -332,8 +332,8 @@ def _scored_in_this_process(
     )
 
 
-def _as_foundry_returned(
-    evaluator: _SelectedEvaluator, managed_result: Any, **attributed: Any
+def as_foundry_returned(
+    evaluator: SelectedEvaluator, managed_result: Any, **attributed: Any
 ) -> ScoredMetric | MissingResult:
     """What Foundry-managed scoring gave for an Evaluator, attributed to it: its result, or that it gave none."""
     if isinstance(managed_result, ManagedFailure):
@@ -396,7 +396,7 @@ def _in_every_set(preparation: PreparationUsage, sets: int) -> PreparationUsage:
     )
 
 
-def _score_managed(
+def score_in_foundry(
     managed_scoring: FoundryManagedScoring | None,
     evidence: dict[str, Sequence[TaskEvidence]],
     declared: dict[str, tuple[Any, ...]],
@@ -441,7 +441,7 @@ _EVALUATED_WITH = {"action_types": lambda action_evidence: action_evidence.mappi
 
 
 @dataclass(frozen=True)
-class _SelectedEvaluator:
+class SelectedEvaluator:
     """An Evaluator selected for the sweep, with what the customer declared for it."""
 
     evaluator: Evaluator
@@ -534,16 +534,16 @@ def _plan(tasks: Sequence[Task], experiments: Sequence[Experiment], set_number: 
     )
 
 
-def _select(
+def select_evaluator(
     metric: str | ConfiguredEvaluator, action_evidence: ActionEvidenceDeclaration | None
-) -> _SelectedEvaluator:
+) -> SelectedEvaluator:
     configured = metric if isinstance(metric, ConfiguredEvaluator) else ConfiguredEvaluator(metric_id=metric)
     evaluator = _evaluator(configured.metric_id)
     if configured.action_evidence is not None and "action_types" not in evaluator.declarations:
         raise ValueError(f"{configured.metric_id!r} does not use action evidence, and it is configured with one")
     declared = {"action_types": configured.action_evidence or action_evidence}
     _require_declarations(evaluator, declared)
-    return _SelectedEvaluator(
+    return SelectedEvaluator(
         evaluator, {name: declared[name] for name in evaluator.declarations}, configured.scoring_path
     )
 
@@ -589,7 +589,7 @@ def _require_compared_variation(evaluator: Evaluator, experiments: Sequence[Expe
         )
 
 
-def _require_one_evaluator_per_metric(selected: Sequence[_SelectedEvaluator]) -> None:
+def _require_one_evaluator_per_metric(selected: Sequence[SelectedEvaluator]) -> None:
     seen: set[str] = set()
     for evaluator in selected:
         metric_id = evaluator.evaluator.definition.metric.metric_id

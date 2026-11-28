@@ -11,13 +11,13 @@ from .provisioning import (
     GROUP_PATTERN,
     PROJECT,
     LiveFixtureError,
-    _access_token,
-    _az,
-    _content,
-    _create_project,
-    _request,
-    _require_group_name,
-    _require_subscription,
+    bearer_token,
+    az,
+    request_content,
+    create_project,
+    request_json,
+    require_group_name,
+    require_subscription,
     teardown,
 )
 
@@ -34,12 +34,12 @@ class LiveProject:
 
     def access_token(self):
         """A bearer token for the project's REST API, for the signed-in Azure CLI identity."""
-        return _access_token(self.subscription).reveal()
+        return bearer_token(self.subscription).reveal()
 
     def project_request(self, method, path, body=None, headers=None):
         """Call the Foundry project's REST API as the signed-in Azure CLI identity."""
-        return _request(
-            method, self.project_endpoint + path, _content(body), headers, bearer=_access_token(self.subscription)
+        return request_json(
+            method, self.project_endpoint + path, request_content(body), headers, bearer=bearer_token(self.subscription)
         )
 
     def summary(self):
@@ -55,17 +55,17 @@ def provision_project(ticket, location="swedencentral", subscription="Sandbox", 
 
     Any failure tears the resource group down again before raising.
     """
-    _require_subscription(subscription)
+    require_subscription(subscription)
     group = f"rg-are-{ticket}-{uuid.uuid4().hex[:8]}"
     if not GROUP_PATTERN.match(group):
         raise LiveFixtureError(f"Ticket label {ticket!r} must be lowercase letters and digits")
-    if _az(subscription, "group", "exists", "--name", group):
+    if az(subscription, "group", "exists", "--name", group):
         raise LiveFixtureError(f"Refusing to reuse existing resource group {group}")
-    _az(subscription, "group", "create", "--name", group, "--location", location,
+    az(subscription, "group", "create", "--name", group, "--location", location,
         "--tags", "purpose=are-live-fixture", "cleanup=delete-after-check")
     log(f"Created resource group {group}")
     try:
-        _create_project(subscription, group, group.removeprefix("rg-"), location, log, deploy_model=deploy_model)
+        create_project(subscription, group, group.removeprefix("rg-"), location, log, deploy_model=deploy_model)
         project = _project(group, subscription, location, deploy_model)
         _wait_for_access(project, log)
     except BaseException as error:
@@ -96,12 +96,12 @@ def _wait_for_access(project, log):
 
 def connect_project(resource_group, subscription="Sandbox"):
     """Re-attach to a project provisioned earlier."""
-    _require_group_name(resource_group)
-    _require_subscription(subscription)
+    require_group_name(resource_group)
+    require_subscription(subscription)
     account = resource_group.removeprefix("rg-")
     resource = ("--resource-group", resource_group, "--name", account)
-    location = _az(subscription, "cognitiveservices", "account", "show", *resource)["location"]
-    deployments = _az(subscription, "cognitiveservices", "account", "deployment", "list", *resource)
+    location = az(subscription, "cognitiveservices", "account", "show", *resource)["location"]
+    deployments = az(subscription, "cognitiveservices", "account", "deployment", "list", *resource)
     return _project(resource_group, subscription, location, bool(deployments))
 
 

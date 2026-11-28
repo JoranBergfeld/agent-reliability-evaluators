@@ -49,7 +49,7 @@ from ..scorecard import (
     read_preparation_usage,
 )
 from .declaration import ActionEvidenceDeclaration, ConfiguredEvaluator, ExecutionLimits
-from .runner import _as_foundry_returned, _score_managed, _scored_in_this_process, _select, _SelectedEvaluator
+from .runner import as_foundry_returned, score_in_foundry, scored_in_this_process, select_evaluator, SelectedEvaluator
 
 SUPERSEDED = "superseded"
 
@@ -163,11 +163,11 @@ def _recalculate(
     managed_scoring: FoundryManagedScoring | None,
 ) -> dict[str, Any]:
     corrections = _given(outcome_corrections)
-    with _validating_the_supplied_evidence():
-        earlier = _read(earlier_scorecard)
+    with validating_the_supplied_evidence():
+        earlier = read_earlier_scorecard(earlier_scorecard)
         scored_earlier = _scored_earlier(earlier)
     evaluators = _selected(scored_earlier, metrics, action_evidence)
-    with _validating_the_supplied_evidence():
+    with validating_the_supplied_evidence():
         _require_reproduced(earlier, _scorecard(earlier, _score(evaluators, earlier, earlier.attempts)))
     _require_criteria_declared_again(earlier.metrics, acceptance_criteria)
     attempts = apply_outcome_corrections(earlier.attempts, corrections)
@@ -183,7 +183,7 @@ def _recalculate(
 
 
 def _scorecard(
-    earlier: _EarlierScorecard,
+    earlier: EarlierScorecard,
     scored: Sequence[ScoredMetric | MissingResult | CarriedMetric],
     attempts: Sequence[Attempt] | None = None,
     acceptance_criteria: Sequence[AcceptanceCriterion] = (),
@@ -213,7 +213,7 @@ def _given(outcome_corrections: Any) -> tuple[Any, ...]:
 
 
 @contextmanager
-def _validating_the_supplied_evidence() -> Iterator[None]:
+def validating_the_supplied_evidence() -> Iterator[None]:
     try:
         yield
     except EvidenceError as error:
@@ -221,7 +221,7 @@ def _validating_the_supplied_evidence() -> Iterator[None]:
 
 
 @dataclass(frozen=True)
-class _EarlierScorecard:
+class EarlierScorecard:
     """What the scorecard the customer supplied holds."""
 
     # The scorecard as it was supplied, for what is compared with it part by part.
@@ -238,7 +238,7 @@ class _EarlierScorecard:
     preparation_usage: tuple[PreparationUsage, ...]
 
 
-def _read(earlier_scorecard: Any) -> _EarlierScorecard:
+def read_earlier_scorecard(earlier_scorecard: Any) -> EarlierScorecard:
     if not isinstance(earlier_scorecard, Mapping):
         raise EvidenceError(
             "the earlier scorecard is supplied as the data of its JSON, with the attempt-level evidence in it. "
@@ -289,7 +289,7 @@ def _read(earlier_scorecard: Any) -> _EarlierScorecard:
         preparation_usage = read_preparation_usage(token_usage.get("shared_preparation"))
     except ValueError as error:
         raise EvidenceError(f"its token usage is not what this version reports: {error}") from error
-    return _EarlierScorecard(
+    return EarlierScorecard(
         supplied=earlier_scorecard,
         metrics=earlier_scorecard[_METRICS],
         experiments=experiments,
@@ -342,7 +342,7 @@ class _ScoredEarlier:
     entry: Mapping[str, Any]
 
 
-def _scored_earlier(earlier: _EarlierScorecard) -> list[_ScoredEarlier]:
+def _scored_earlier(earlier: EarlierScorecard) -> list[_ScoredEarlier]:
     """The metrics the earlier scorecard scored, which are the ones scored again.
 
     Each is scored again from the Attempts its Evaluator was given by the sweep, which the
@@ -386,7 +386,7 @@ def _scored_earlier(earlier: _EarlierScorecard) -> list[_ScoredEarlier]:
             _ScoredEarlier(
                 metric_id,
                 tuple(by_identity[attempt_id] for attempt_id in attempt_ids),
-                _cut_short(entry, earlier.executions),
+                cut_short_of(entry, earlier.executions),
                 entry.get("execution_failure") is not None,
                 scoring_path,
                 entry,
@@ -395,7 +395,7 @@ def _scored_earlier(earlier: _EarlierScorecard) -> list[_ScoredEarlier]:
     return scored
 
 
-def _cut_short(entry: Mapping[str, Any], executions: Sequence[ExecutionRecord]) -> CutShort:
+def cut_short_of(entry: Mapping[str, Any], executions: Sequence[ExecutionRecord]) -> CutShort:
     """Where the earlier scorecard says the Attempts for a metric were cut short."""
     metric_id = entry["metric_id"]
     recorded = entry.get("cut_short")
@@ -420,10 +420,10 @@ def _cut_short(entry: Mapping[str, Any], executions: Sequence[ExecutionRecord]) 
 
 
 @dataclass(frozen=True)
-class _EarlierEvaluation:
+class EarlierEvaluation:
     """An Evaluator with what the customer declared for it, and the identities of the Attempts it is given."""
 
-    evaluator: _SelectedEvaluator
+    evaluator: SelectedEvaluator
     attempt_ids: tuple[str, ...]
     cut_short: CutShort
     # The metric had no result because its Attempts were cut short. A recalculation gives it none.
@@ -437,7 +437,7 @@ def _selected(
     scored_earlier: Sequence[_ScoredEarlier],
     metrics: Sequence[str | ConfiguredEvaluator],
     action_evidence: ActionEvidenceDeclaration | None,
-) -> list[_EarlierEvaluation]:
+) -> list[EarlierEvaluation]:
     """The Evaluators of the metrics the earlier scorecard scored, selected as the sweep selects them."""
     configured: dict[str, str | ConfiguredEvaluator] = {}
     for metric in metrics:
@@ -462,8 +462,8 @@ def _selected(
                 "again on another scoring path than the one that was chosen for it"
             )
     return [
-        _EarlierEvaluation(
-            _select(configured.get(scored.metric_id, scored.metric_id), action_evidence),
+        EarlierEvaluation(
+            select_evaluator(configured.get(scored.metric_id, scored.metric_id), action_evidence),
             tuple(attempt.attempt_id for attempt in scored.attempts_used),
             scored.cut_short,
             scored.had_execution_failure,
@@ -474,8 +474,8 @@ def _selected(
 
 
 def _score(
-    evaluators: Sequence[_EarlierEvaluation],
-    earlier: _EarlierScorecard,
+    evaluators: Sequence[EarlierEvaluation],
+    earlier: EarlierScorecard,
     attempts: Sequence[Attempt],
     corrected: Sequence[str] = (),
     managed_scoring: FoundryManagedScoring | None = None,
@@ -493,10 +493,10 @@ def _score(
     by_identity = {attempt.attempt_id: attempt for attempt in attempts}
     as_it_was = {attempt.attempt_id: attempt for attempt in earlier.attempts}
     scored: list[ScoredMetric | MissingResult | CarriedMetric] = []
-    for_foundry: dict[str, tuple[_EarlierEvaluation, tuple[TaskEvidence, ...]]] = {}
+    for_foundry: dict[str, tuple[EarlierEvaluation, tuple[TaskEvidence, ...]]] = {}
     for evaluation in evaluators:
         if evaluation.managed_entry is not None:
-            evidence = _evidence(evaluation, [by_identity[one] for one in evaluation.attempt_ids], earlier)
+            evidence = evidence_given(evaluation, [by_identity[one] for one in evaluation.attempt_ids], earlier)
             carried = _carried(evaluation, earlier, evidence, corrected, asked_again=managed_scoring is not None)
             if carried is None:
                 for_foundry[evaluation.evaluator.metric_id] = (evaluation, evidence)
@@ -504,9 +504,9 @@ def _score(
                 scored.append(carried)
             continue
         given = as_it_was if evaluation.had_execution_failure else by_identity
-        evidence = _evidence(evaluation, [given[attempt_id] for attempt_id in evaluation.attempt_ids], earlier)
+        evidence = evidence_given(evaluation, [given[attempt_id] for attempt_id in evaluation.attempt_ids], earlier)
         scored.append(
-            _scored_in_this_process(
+            scored_in_this_process(
                 evaluation.evaluator, evidence, attempts_used=evaluation.attempt_ids, cut_short=evaluation.cut_short
             )
         )
@@ -514,8 +514,8 @@ def _score(
 
 
 def _carried(
-    evaluation: _EarlierEvaluation,
-    earlier: _EarlierScorecard,
+    evaluation: EarlierEvaluation,
+    earlier: EarlierScorecard,
     evidence: Sequence[TaskEvidence],
     corrected: Sequence[str],
     *,
@@ -530,15 +530,15 @@ def _carried(
     cut short is never scored again, in Foundry either.
     """
     entry, metric_id = evaluation.managed_entry, evaluation.evaluator.metric_id
-    usage = _usage_of_the_evaluator(earlier.supplied, metric_id)
+    usage = usage_of_the_evaluator(earlier.supplied, metric_id)
     marked = entry.get(NOT_RECALCULATED)
     already = tuple(marked.get("corrected_attempt_ids") or ()) if isinstance(marked, Mapping) else ()
     declared = evaluation.evaluator.evaluated_with()
     as_it_was = {attempt.attempt_id: attempt for attempt in earlier.attempts}
-    before = _evidence(evaluation, [as_it_was[one] for one in evaluation.attempt_ids], earlier)
+    before = evidence_given(evaluation, [as_it_was[one] for one in evaluation.attempt_ids], earlier)
     # An entry that is already out of date records the digest of evidence that was corrected since.
-    submitted = _submitted_evidence(dict(entry, managed_scoring=None) if already else entry, before, declared)
-    touched = _submitted_evidence({"metric_id": metric_id}, evidence, declared) != submitted
+    submitted = submitted_evidence(dict(entry, managed_scoring=None) if already else entry, before, declared)
+    touched = submitted_evidence({"metric_id": metric_id}, evidence, declared) != submitted
     out_of_date = (
         *already,
         *(one for one in evaluation.attempt_ids if touched and one in corrected and one not in already),
@@ -552,7 +552,7 @@ def _carried(
 
 def _scored_again_in_foundry(
     managed_scoring: FoundryManagedScoring | None,
-    for_foundry: Mapping[str, tuple[_EarlierEvaluation, tuple[TaskEvidence, ...]]],
+    for_foundry: Mapping[str, tuple[EarlierEvaluation, tuple[TaskEvidence, ...]]],
 ) -> list[ScoredMetric | MissingResult]:
     """What Foundry returns for each metric it is asked to score again, attributed to Foundry-managed scoring.
 
@@ -565,7 +565,7 @@ def _scored_again_in_foundry(
         if not has_managed_evaluator(metric_id):
             raise ValueError(f"{metric_id!r} has no Foundry-managed evaluator in this version")
     managed_scoring.register(list(for_foundry))
-    returned = _score_managed(
+    returned = score_in_foundry(
         managed_scoring,
         {metric_id: evidence for metric_id, (_, evidence) in for_foundry.items()},
         {metric_id: evaluation.evaluator.evaluated_with() for metric_id, (evaluation, _) in for_foundry.items()},
@@ -578,7 +578,7 @@ def _scored_again_in_foundry(
                 f"it in the customer's own process instead: {returned[metric_id].error}"
             )
         scored.append(
-            _as_foundry_returned(
+            as_foundry_returned(
                 evaluation.evaluator,
                 returned[metric_id],
                 attempts_used=evaluation.attempt_ids,
@@ -588,7 +588,7 @@ def _scored_again_in_foundry(
     return scored
 
 
-def _usage_of_the_evaluator(scorecard: Mapping[str, Any], metric_id: str) -> dict[str, Any]:
+def usage_of_the_evaluator(scorecard: Mapping[str, Any], metric_id: str) -> dict[str, Any]:
     """Where a scorecard reports the token usage of the Evaluator of one metric."""
     usage = scorecard.get(TOKEN_USAGE)
     evaluators = usage.get("evaluators") if isinstance(usage, Mapping) else None
@@ -602,7 +602,7 @@ def _usage_of_the_evaluator(scorecard: Mapping[str, Any], metric_id: str) -> dic
     return reported[0]
 
 
-def _submitted_evidence(entry: Mapping[str, Any], evidence: Sequence[Any], declared: Sequence[Any]) -> str | None:
+def submitted_evidence(entry: Mapping[str, Any], evidence: Sequence[Any], declared: Sequence[Any]) -> str | None:
     """The digest of the evidence a metric is scored from, which has to be the digest of what was submitted.
 
     The digest is the one the evidence travels to Foundry with, so the two are the same
@@ -634,8 +634,8 @@ def _submitted_evidence(entry: Mapping[str, Any], evidence: Sequence[Any], decla
     return digest
 
 
-def _evidence(
-    evaluation: _EarlierEvaluation, attempts: Sequence[Attempt], earlier: _EarlierScorecard
+def evidence_given(
+    evaluation: EarlierEvaluation, attempts: Sequence[Attempt], earlier: EarlierScorecard
 ) -> tuple[TaskEvidence, ...]:
     """The Attempts an Evaluator is given, grouped by Task as the sweep grouped them for it.
 
@@ -691,7 +691,7 @@ def _recorded_experiment(recorded: Any) -> tuple[str, str, Any]:
     return recorded["experiment_id"], recorded["task_id"], None if variation is None else variation.get("kind")
 
 
-def _require_reproduced(earlier: _EarlierScorecard, reproduced: Mapping[str, Any]) -> None:
+def _require_reproduced(earlier: EarlierScorecard, reproduced: Mapping[str, Any]) -> None:
     """Require that the supplied evidence gives the earlier scorecard when it is scored as it is.
 
     `reproduced` is the scorecard of the supplied evidence, scored without any correction.

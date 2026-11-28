@@ -17,11 +17,9 @@ from typing import Any, Callable, Iterator, Protocol
 from ..evidence import ActionEvent, ResourceMeasurement, ResourceType
 from ..foundry import AgentDetails, read_agent_details
 from ..managed_scoring.foundry import FoundryRequestError
-from .foundry_hosted import FoundryHostedAgentTarget, _output_items, _output_text
-from .foundry_prompt_agent import TOOL_CHOICE_NONE, _not_isolated
+from .foundry_hosted import FoundryHostedAgentTarget, output_items, output_text
+from .foundry_prompt_agent import TOOL_CHOICE_NONE, failure_of_a_response, not_isolated, tool_calls_of_a_response
 from .foundry_prompt_agent import USAGE_SOURCE as USAGE_SOURCE_OF_A_RESPONSE
-from .foundry_prompt_agent import _failure_of as _failure_of_response
-from .foundry_prompt_agent import _tool_calls as _tool_calls_of_response
 from .interface import (
     CUSTOMER_CODE,
     FOUNDRY_CLOUD_EVALUATION,
@@ -281,18 +279,18 @@ class FoundryCloudEvaluationTarget:
                 f"the follow-up could not be made in the Foundry project: {error}",
                 invocation=_follow_up({}, request.prompt, error=str(error)),
             ) from error
-        if not isinstance(response, dict) or _output_items(response) is None:
+        if not isinstance(response, dict) or output_items(response) is None:
             raise InvocationFailed(
                 "the Foundry project answered the follow-up with something that is no response: "
                 f"{json.dumps(response)[:_SHOWN_ANSWER]}",
                 invocation=_follow_up({}, request.prompt),
             )
         follow_up = _follow_up(response, request.prompt)
-        failure = _failure_of_response(response) or _not_isolated(follow_up, previous)
+        failure = failure_of_a_response(response) or not_isolated(follow_up, previous)
         if failure is not None:
             raise InvocationFailed(failure, invocation=follow_up)
         return ConfidenceResponse(
-            attempt_id=request.attempt.attempt_id, output=_output_text(response), invocation=follow_up
+            attempt_id=request.attempt.attempt_id, output=output_text(response), invocation=follow_up
         )
 
     def agent_configuration(self) -> dict[str, Any]:
@@ -547,7 +545,7 @@ def _follow_up(response: dict[str, Any], question: str, error: str | None = None
         "token_usage": usage,
         "token_usage_missing": None if usage is not None else NO_FOLLOW_UP_USAGE if response else NO_FOLLOW_UP_RESPONSE,
         "token_usage_source": None if usage is None else USAGE_SOURCE_OF_A_RESPONSE,
-        "tool_calls": _tool_calls_of_response(response),
+        "tool_calls": tool_calls_of_a_response(response),
         "input": question,
         "previous_response_id": response.get("previous_response_id"),
         "tool_choice": response.get("tool_choice"),
