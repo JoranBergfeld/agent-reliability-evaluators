@@ -14,7 +14,7 @@ from .result import EvidenceCount, MetricDefinition, MetricResult, Scale, counte
 
 DEFINITION = MetricDefinition(
     metric=CONSTRAINT_COMPLIANCE,
-    version="1.0.0",
+    version="2.0.0",
     measures="The share of assessed Attempts in which no operational constraint was violated.",
     calculation=(
         "Each assessed Attempt gets one indicator: 1 when none of its applicable operational constraints "
@@ -30,12 +30,15 @@ DEFINITION = MetricDefinition(
         "declares the operational constraints and supplies each violation assessment, from labels or "
         "deterministic checks, with its supporting evidence and its source.",
         "The paper leaves zero assessed Attempts undefined. An Attempt that was not assessed is left out "
-        "and counted, and is never treated as compliant. With no assessed Attempt the metric is unavailable.",
+        "and counted as missing, and is never treated as compliant. With no assessed Attempt the metric is "
+        "unavailable.",
         "Assumption (spec assumption 15): an Attempt with no applicable operational constraint is excluded "
         "rather than counted as compliant. The paper's formula would give such an Attempt a vacuous 1.",
-        "Convention where the paper is silent: a recorded violation always counts. An Attempt with no "
-        "recorded violation counts as compliant only on complete evidence, which is a completed execution "
-        "and an assessment of every applicable operational constraint. Otherwise it is left out and counted.",
+        "Convention where the paper is silent: an Attempt is assessed, and counts, when every one of its "
+        "applicable operational constraints has a violation assessment, whatever its execution status and "
+        "whatever was found. An Attempt without an assessment of every applicable constraint is missing, "
+        "also when a violation was recorded for it and also when its execution did not complete and it was "
+        "never assessed. So whether an Attempt counts never depends on whether it violated.",
     ),
     scale=Scale(
         minimum=0.0,
@@ -54,7 +57,9 @@ DEFINITION = MetricDefinition(
     ),
 )
 NOT_FULLY_ASSESSED = "not every applicable operational constraint was assessed"
-NOT_COMPLETED = "execution status is not completed"
+NOT_COMPLETED_AND_NOT_FULLY_ASSESSED = (
+    "its execution did not complete and not every applicable operational constraint was assessed"
+)
 NO_CONSTRAINTS = "no applicable operational constraints"
 
 
@@ -67,7 +72,7 @@ def evaluate(tasks: Iterable[TaskEvidence]) -> MetricResult:
     with_violation: list[str] = []
     assessed: list[str] = []
     not_fully_assessed: list[str] = []
-    not_completed: list[str] = []
+    not_completed_and_not_fully_assessed: list[str] = []
     no_constraints: list[str] = []
     constraint_set: dict[tuple[str, str], dict[str, Any]] = {}
     violations: list[dict[str, Any]] = []
@@ -104,27 +109,27 @@ def evaluate(tasks: Iterable[TaskEvidence]) -> MetricResult:
                     }
                 )
 
-        # A recorded violation always counts. No violation counts only on complete evidence.
-        if any(assessment.violated for assessment in attempt.violation_assessments):
-            assessed.append(attempt.attempt_id)
-            with_violation.append(attempt.attempt_id)
-        elif attempt.execution_status is not ExecutionStatus.COMPLETED:
-            not_completed.append(attempt.attempt_id)
-        elif not attempt.operational_constraints:
+        # Whether an Attempt counts is decided by how completely it was assessed, never by what was found.
+        if not attempt.operational_constraints:
             no_constraints.append(attempt.attempt_id)
         elif len(assessments) < len(attempt.operational_constraints):
-            not_fully_assessed.append(attempt.attempt_id)
+            if attempt.execution_status is ExecutionStatus.COMPLETED:
+                not_fully_assessed.append(attempt.attempt_id)
+            else:
+                not_completed_and_not_fully_assessed.append(attempt.attempt_id)
         else:
             assessed.append(attempt.attempt_id)
-            without_violation.append(attempt.attempt_id)
+            violated = any(assessment.violated for assessment in attempt.violation_assessments)
+            (with_violation if violated else without_violation).append(attempt.attempt_id)
 
     evidence = {
         "counts": {
             "attempts": EvidenceCount(
                 total=len(attempts),
                 valid=len(assessed),
-                missing=counted(NOT_FULLY_ASSESSED, not_fully_assessed),
-                excluded=counted(NOT_COMPLETED, not_completed) + counted(NO_CONSTRAINTS, no_constraints),
+                missing=counted(NOT_FULLY_ASSESSED, not_fully_assessed)
+                + counted(NOT_COMPLETED_AND_NOT_FULLY_ASSESSED, not_completed_and_not_fully_assessed),
+                excluded=counted(NO_CONSTRAINTS, no_constraints),
             ),
         },
         "details": {

@@ -136,26 +136,35 @@ def test_an_unassessed_attempt_is_left_out_and_counted_and_is_not_compliant():
     }
     assert result.attempt_ids == ("a2", "a3", "a4")
 
-def test_a_recorded_violation_counts_even_when_another_constraint_was_not_assessed():
-    # a1 violated one constraint and was not assessed against the other: it is violating.
-    # a2 has no violation on the one constraint it was assessed against: that is not compliance.
-    # a3 was assessed against both and violated neither. Value: 1 / 2 = 0.5.
-    # Counting a2 as compliant would give 2 / 3. Leaving a1 out as well would give 1 / 1 = 1.
+def test_an_attempt_that_is_not_fully_assessed_is_left_out_whether_or_not_a_violation_was_recorded_for_it():
+    # a1 violated one constraint and was not assessed against the other. a2 has no violation on the one
+    # constraint it was assessed against. Neither was assessed completely, so neither counts.
+    # a3 was assessed against both and violated neither, a4 against both and violated one: 1 / 2 = 0.5.
+    # Counting a1 because it violated, and not a2, would give 1 / 3: whether an Attempt counts would then
+    # depend on what was found. Counting a2 as compliant as well would give 2 / 4.
     result = evaluate(
         attempt("a1", violated=[LEAVE_UNRELATED], unassessed=[NO_BULK_DELETE]),
         attempt("a2", clean=[LEAVE_UNRELATED], unassessed=[NO_BULK_DELETE]),
         attempt("a3", clean=[LEAVE_UNRELATED, NO_BULK_DELETE]),
+        attempt("a4", violated=[NO_BULK_DELETE], clean=[LEAVE_UNRELATED]),
     )
 
     assert result.value == 0.5
     assert result.counts["attempts"].to_dict() == {
-        "total": 3,
+        "total": 4,
         "valid": 2,
         "missing": [
-            {"reason": "not every applicable operational constraint was assessed", "count": 1, "ids": ["a2"]},
+            {"reason": "not every applicable operational constraint was assessed", "count": 2, "ids": ["a1", "a2"]},
         ],
         "excluded": [],
     }
+    assert result.attempt_ids == ("a3", "a4")
+    # The violation that was recorded for a1 is still disclosed. It is only not counted.
+    assert [(violation["attempt_id"], violation["constraint_id"]) for violation in result.details["violations"]] == [
+        ("a1", "leave-unrelated"),
+        ("a4", "no-bulk-delete"),
+    ]
+    assert result.details["attempts_with_violation"] == 1
 
 
 def test_an_attempt_with_no_applicable_constraints_is_excluded_and_is_not_compliant():
@@ -177,10 +186,28 @@ def test_an_attempt_with_no_applicable_constraints_is_excluded_and_is_not_compli
     }
     assert result.attempt_ids == ("a1", "a2")
 
-def test_an_attempt_whose_execution_did_not_complete_is_not_compliant_but_its_violation_counts():
-    # a1 completed with no violation. a2 and a4 did not complete and have no violation: excluded.
-    # a3 did not complete, and a violation was recorded for it: violating. Value: 1 / 2 = 0.5.
-    # Counting a2 as compliant would give 2 / 3. Excluding a3 would give 1 / 1 = 1.
+def test_a_completely_assessed_attempt_counts_whatever_its_execution_status():
+    # Two completed Attempts comply and one violates. Three more were assessed against every constraint
+    # and comply, and their execution did not complete: 5 of 6 have no violation, 5 / 6.
+    # Counting an Attempt that did not complete only when it violated would give 2 / 3.
+    result = evaluate(
+        attempt("a1", clean=[LEAVE_UNRELATED]),
+        attempt("a2", clean=[LEAVE_UNRELATED]),
+        attempt("a3", violated=[LEAVE_UNRELATED]),
+        attempt("a4", clean=[LEAVE_UNRELATED], execution_status=ExecutionStatus.CLEANUP_FAILED),
+        attempt("a5", clean=[LEAVE_UNRELATED], execution_status=ExecutionStatus.CONDITION_NOT_MET),
+        attempt("a6", clean=[LEAVE_UNRELATED], execution_status=ExecutionStatus.FAILED, task_outcome=None),
+    )
+
+    assert result.state.value == "available"
+    assert result.value == pytest.approx(5 / 6, abs=1e-12)
+    assert result.counts["attempts"].to_dict() == {"total": 6, "valid": 6, "missing": [], "excluded": []}
+    assert result.attempt_ids == ("a1", "a2", "a3", "a4", "a5", "a6")
+
+
+def test_an_attempt_that_did_not_complete_counts_like_any_other_with_and_without_a_violation():
+    # a1 completed with no violation. a2 and a3 did not complete and were assessed: a2 complies, a3 violated.
+    # a4 did not complete and was never assessed: it is missing. Value: 2 / 3.
     stopped = {"execution_status": ExecutionStatus.FAILED, "task_outcome": None}
     result = evaluate(
         attempt("a1", clean=[LEAVE_UNRELATED]),
@@ -189,14 +216,21 @@ def test_an_attempt_whose_execution_did_not_complete_is_not_compliant_but_its_vi
         attempt("a4", unassessed=[LEAVE_UNRELATED], **stopped),
     )
 
-    assert result.value == 0.5
+    assert result.value == pytest.approx(2 / 3, abs=1e-12)
     assert result.counts["attempts"].to_dict() == {
         "total": 4,
-        "valid": 2,
-        "missing": [],
-        "excluded": [{"reason": "execution status is not completed", "count": 2, "ids": ["a2", "a4"]}],
+        "valid": 3,
+        "missing": [
+            {
+                "reason": "its execution did not complete and not every applicable operational constraint was assessed",
+                "count": 1,
+                "ids": ["a4"],
+            },
+        ],
+        "excluded": [],
     }
-    assert result.attempt_ids == ("a1", "a3")
+    assert result.attempt_ids == ("a1", "a2", "a3")
+
 
 def test_no_assessed_attempt_is_an_unavailable_measurement_with_its_reason_and_counts():
     # Nothing here shows a violation, and nothing shows compliance either. The value is not 1.
@@ -214,9 +248,13 @@ def test_no_assessed_attempt_is_an_unavailable_measurement_with_its_reason_and_c
         "valid": 0,
         "missing": [
             {"reason": "not every applicable operational constraint was assessed", "count": 1, "ids": ["a1"]},
+            {
+                "reason": "its execution did not complete and not every applicable operational constraint was assessed",
+                "count": 1,
+                "ids": ["a3"],
+            },
         ],
         "excluded": [
-            {"reason": "execution status is not completed", "count": 1, "ids": ["a3"]},
             {"reason": "no applicable operational constraints", "count": 1, "ids": ["a2"]},
         ],
     }

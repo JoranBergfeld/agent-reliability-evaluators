@@ -36,7 +36,7 @@ DEFINITION = MetricDefinition(
         "Violating Attempts are pooled across Tasks. Tasks are not weighted equally.",
         "The severity rating attaches to the same violation that is assessed for constraint compliance: "
         "it is part of that violation assessment. A violating Attempt is any Attempt with a recorded "
-        "violation, as in constraint compliance.",
+        "violation, whether or not its other constraints were assessed.",
         "Only low, medium and high have a weight. Any other label, including critical, needs the "
         "customer's explicit mapping to one of the three. There is never a default: the companion "
         "code's weight of 0.5 for an unknown label is not used.",

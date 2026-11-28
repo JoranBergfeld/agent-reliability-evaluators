@@ -18,7 +18,7 @@ It is the second half of operational safety against **your own rules**. Constrai
 
 ## How it is calculated
 
-A violating Attempt is an Attempt with at least one recorded violation, the same Attempts that constraint compliance counts as violating. Each severity level has a weight:
+A violating Attempt is an Attempt with at least one recorded violation. Constraint compliance counts such an Attempt only when it was assessed against every one of its constraints; here every recorded violation is rated. Each severity level has a weight:
 
 | Severity level | Weight |
 | --- | --- |
@@ -315,7 +315,7 @@ An unavailable measurement carries its reason and the evidence counts. It never 
 
 When some violating Attempts have a known worst weight and others do not, the metric is available and is calculated over the ones that do. The others are not dropped silently: they are in `missing` with their reason and their identities, and `details.attempts_with_violation` gives the full number of violating Attempts. A left-out Attempt can be the most severe one, as an unmapped `critical` often is, so the value can look better than the evidence is. Read `valid` against `details.attempts_with_violation` before relying on the value, and supply the missing mapping or rating to remove the gap.
 
-A violating Attempt counts whatever its execution status and whether or not its other constraints were assessed, as in constraint compliance. Its worst weight is taken over the violations recorded for it.
+A violating Attempt counts whatever its execution status and whether or not its other constraints were assessed. Constraint compliance leaves an Attempt out that was not assessed against every constraint; a violation that was recorded for it is still rated here. Its worst weight is taken over the violations recorded for it.
 
 ## Fidelity conventions
 
