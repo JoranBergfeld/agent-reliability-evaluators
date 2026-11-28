@@ -420,7 +420,7 @@ def _cut_short(entry: Mapping[str, Any], executions: Sequence[ExecutionRecord]) 
 
 
 @dataclass(frozen=True)
-class _Rescoring:
+class _EarlierEvaluation:
     """An Evaluator with what the customer declared for it, and the identities of the Attempts it is given."""
 
     evaluator: _SelectedEvaluator
@@ -437,7 +437,7 @@ def _selected(
     scored_earlier: Sequence[_ScoredEarlier],
     metrics: Sequence[str | ConfiguredEvaluator],
     action_evidence: ActionEvidenceDeclaration | None,
-) -> list[_Rescoring]:
+) -> list[_EarlierEvaluation]:
     """The Evaluators of the metrics the earlier scorecard scored, selected as the sweep selects them."""
     configured: dict[str, str | ConfiguredEvaluator] = {}
     for metric in metrics:
@@ -462,7 +462,7 @@ def _selected(
                 "again on another scoring path than the one that was chosen for it"
             )
     return [
-        _Rescoring(
+        _EarlierEvaluation(
             _select(configured.get(scored.metric_id, scored.metric_id), action_evidence),
             tuple(attempt.attempt_id for attempt in scored.attempts_used),
             scored.cut_short,
@@ -474,7 +474,7 @@ def _selected(
 
 
 def _score(
-    evaluators: Sequence[_Rescoring],
+    evaluators: Sequence[_EarlierEvaluation],
     earlier: _EarlierScorecard,
     attempts: Sequence[Attempt],
     corrected: Sequence[str] = (),
@@ -493,28 +493,28 @@ def _score(
     by_identity = {attempt.attempt_id: attempt for attempt in attempts}
     as_it_was = {attempt.attempt_id: attempt for attempt in earlier.attempts}
     scored: list[ScoredMetric | MissingResult | CarriedMetric] = []
-    for_foundry: dict[str, tuple[_Rescoring, tuple[TaskEvidence, ...]]] = {}
-    for rescoring in evaluators:
-        if rescoring.managed_entry is not None:
-            evidence = _evidence(rescoring, [by_identity[one] for one in rescoring.attempt_ids], earlier)
-            carried = _carried(rescoring, earlier, evidence, corrected, asked_again=managed_scoring is not None)
+    for_foundry: dict[str, tuple[_EarlierEvaluation, tuple[TaskEvidence, ...]]] = {}
+    for evaluation in evaluators:
+        if evaluation.managed_entry is not None:
+            evidence = _evidence(evaluation, [by_identity[one] for one in evaluation.attempt_ids], earlier)
+            carried = _carried(evaluation, earlier, evidence, corrected, asked_again=managed_scoring is not None)
             if carried is None:
-                for_foundry[rescoring.evaluator.metric_id] = (rescoring, evidence)
+                for_foundry[evaluation.evaluator.metric_id] = (evaluation, evidence)
             else:
                 scored.append(carried)
             continue
-        given = as_it_was if rescoring.had_execution_failure else by_identity
-        evidence = _evidence(rescoring, [given[attempt_id] for attempt_id in rescoring.attempt_ids], earlier)
+        given = as_it_was if evaluation.had_execution_failure else by_identity
+        evidence = _evidence(evaluation, [given[attempt_id] for attempt_id in evaluation.attempt_ids], earlier)
         scored.append(
             _scored_in_this_process(
-                rescoring.evaluator, evidence, attempts_used=rescoring.attempt_ids, cut_short=rescoring.cut_short
+                evaluation.evaluator, evidence, attempts_used=evaluation.attempt_ids, cut_short=evaluation.cut_short
             )
         )
     return [*scored, *_scored_again_in_foundry(managed_scoring, for_foundry)]
 
 
 def _carried(
-    rescoring: _Rescoring,
+    evaluation: _EarlierEvaluation,
     earlier: _EarlierScorecard,
     evidence: Sequence[TaskEvidence],
     corrected: Sequence[str],
@@ -529,19 +529,19 @@ def _carried(
     is out of date and for one that Foundry gave no result for. A metric whose Attempts were
     cut short is never scored again, in Foundry either.
     """
-    entry, metric_id = rescoring.managed_entry, rescoring.evaluator.metric_id
+    entry, metric_id = evaluation.managed_entry, evaluation.evaluator.metric_id
     usage = _usage_of_the_evaluator(earlier.supplied, metric_id)
     marked = entry.get(NOT_RECALCULATED)
     already = tuple(marked.get("corrected_attempt_ids") or ()) if isinstance(marked, Mapping) else ()
-    declared = rescoring.evaluator.evaluated_with()
+    declared = evaluation.evaluator.evaluated_with()
     as_it_was = {attempt.attempt_id: attempt for attempt in earlier.attempts}
-    before = _evidence(rescoring, [as_it_was[one] for one in rescoring.attempt_ids], earlier)
+    before = _evidence(evaluation, [as_it_was[one] for one in evaluation.attempt_ids], earlier)
     # An entry that is already out of date records the digest of evidence that was corrected since.
     submitted = _submitted_evidence(dict(entry, managed_scoring=None) if already else entry, before, declared)
     touched = _submitted_evidence({"metric_id": metric_id}, evidence, declared) != submitted
     out_of_date = (
         *already,
-        *(one for one in rescoring.attempt_ids if touched and one in corrected and one not in already),
+        *(one for one in evaluation.attempt_ids if touched and one in corrected and one not in already),
     )
     failure = entry.get("execution_failure")
     cut_short = isinstance(failure, Mapping) and bool(failure.get("experiment_ids") or failure.get("task_ids"))
@@ -552,7 +552,7 @@ def _carried(
 
 def _scored_again_in_foundry(
     managed_scoring: FoundryManagedScoring | None,
-    for_foundry: Mapping[str, tuple[_Rescoring, tuple[TaskEvidence, ...]]],
+    for_foundry: Mapping[str, tuple[_EarlierEvaluation, tuple[TaskEvidence, ...]]],
 ) -> list[ScoredMetric | MissingResult]:
     """What Foundry returns for each metric it is asked to score again, attributed to Foundry-managed scoring.
 
@@ -568,10 +568,10 @@ def _scored_again_in_foundry(
     returned = _score_managed(
         managed_scoring,
         {metric_id: evidence for metric_id, (_, evidence) in for_foundry.items()},
-        {metric_id: rescoring.evaluator.evaluated_with() for metric_id, (rescoring, _) in for_foundry.items()},
+        {metric_id: evaluation.evaluator.evaluated_with() for metric_id, (evaluation, _) in for_foundry.items()},
     )
     scored = []
-    for metric_id, (rescoring, _) in for_foundry.items():
+    for metric_id, (evaluation, _) in for_foundry.items():
         if isinstance(returned[metric_id], ManagedFailure):
             raise ValueError(
                 f"Foundry-managed scoring gave no result for {metric_id!r}, and a recalculation does not score "
@@ -579,10 +579,10 @@ def _scored_again_in_foundry(
             )
         scored.append(
             _as_foundry_returned(
-                rescoring.evaluator,
+                evaluation.evaluator,
                 returned[metric_id],
-                attempts_used=rescoring.attempt_ids,
-                cut_short=rescoring.cut_short,
+                attempts_used=evaluation.attempt_ids,
+                cut_short=evaluation.cut_short,
             )
         )
     return scored
@@ -635,7 +635,7 @@ def _submitted_evidence(entry: Mapping[str, Any], evidence: Sequence[Any], decla
 
 
 def _evidence(
-    rescoring: _Rescoring, attempts: Sequence[Attempt], earlier: _EarlierScorecard
+    evaluation: _EarlierEvaluation, attempts: Sequence[Attempt], earlier: _EarlierScorecard
 ) -> tuple[TaskEvidence, ...]:
     """The Attempts an Evaluator is given, grouped by Task as the sweep grouped them for it.
 
@@ -644,7 +644,7 @@ def _evidence(
     sweep. One that compares a kind of variation with the baseline was given the Task of
     every experiment whose variation is of that kind.
     """
-    kind = rescoring.evaluator.evaluator.compares_variation
+    kind = evaluation.evaluator.evaluator.compares_variation
     if kind is None:
         # Every set of Attempts is made with the same Tasks and experiments, so each Task is named once.
         by_task: dict[str, list[Attempt]] = {record.task_id: [] for record in earlier.executions}
@@ -667,7 +667,7 @@ def _evidence(
     for attempt in attempts:
         if attempt.experiment_id not in task_of:
             raise EvidenceError(
-                f"the Evaluator of {rescoring.evaluator.evaluator.definition.metric.metric_id!r} used Attempt "
+                f"the Evaluator of {evaluation.evaluator.evaluator.definition.metric.metric_id!r} used Attempt "
                 f"{attempt.attempt_id!r}, which was not made in an experiment whose variation is of the kind "
                 f"{kind.value!r}"
             )

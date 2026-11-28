@@ -24,7 +24,7 @@ from .recalculation import (
     _EarlierScorecard,
     _evidence,
     _read,
-    _Rescoring,
+    _EarlierEvaluation,
     _submitted_evidence,
     _usage_of_the_evaluator,
     _validating_the_supplied_evidence,
@@ -114,7 +114,7 @@ def _rescore(
                 "for the rescore. Declare the acceptance criteria again, as for the sweep"
             )
         with _validating_the_supplied_evidence():
-            rescoring = _Rescoring(
+            rescoring = _EarlierEvaluation(
                 _select(metric, action_evidence),
                 _attempts_used(entry, earlier),
                 _cut_short(entry, earlier.executions),

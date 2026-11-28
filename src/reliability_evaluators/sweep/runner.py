@@ -38,7 +38,7 @@ from ..scorecard import (
 )
 from .confidence import ATTEMPT_NOT_COMPLETED, SWEEP_CANCELLED, elicit_confidence
 from .declaration import ActionEvidenceDeclaration, ConfiguredEvaluator, Experiment, NoTaskOutcomeYet, Task
-from .execution import RETRYABLE, Budget, Cancellation, Execution, execution_of
+from .execution import RETRYABLE, AttemptGate, Cancellation, Execution, execution_of
 from .lifecycle import ConfidenceFollowUp, planned_attempt_ids, run_experiments
 from .reuse import SharedAttempts, share_attempts
 
@@ -252,10 +252,10 @@ def _sweep(
             clock=clock,
         )
         # Each set makes the planned Attempts of a Task anew, under the Task's limits anew.
-        budgets = {task.task_id: Budget(task, cancelled, clock) for task in tasks}
+        gates = {task.task_id: AttemptGate(task, cancelled, clock) for task in tasks}
         at_tasks = _run_planned_attempts(
             [
-                partial(_run_planned_attempt, task, attempt_id, make_attempt, budgets[task.task_id], attempts)
+                partial(_run_planned_attempt, task, attempt_id, make_attempt, gates[task.task_id], attempts)
                 for task, attempt_id in plan.attempts_at_tasks
             ],
             max_concurrent_attempts,
@@ -267,14 +267,14 @@ def _sweep(
             of_task, at_tasks = at_tasks[: task.attempts], at_tasks[task.attempts :]
             executions.append(
                 execution_of(
-                    task, [made_for for made_for in of_task if made_for], budgets[task.task_id], attempt_set=set_number
+                    task, [made_for for made_for in of_task if made_for], gates[task.task_id], attempt_set=set_number
                 )
             )
         executions += run_experiments(
             plan.experiments,
             make_attempt,
             ask_confidence,
-            lambda task: Budget(task, cancelled, clock),
+            lambda task: AttemptGate(task, cancelled, clock),
             attempts,
             unrestored,
             set_number,
@@ -647,7 +647,7 @@ def _run_planned_attempt(
     task: Task,
     first: str,
     make_attempt: Callable[..., tuple[Attempt, ConfidenceFollowUp]],
-    budget: Budget,
+    gate: AttemptGate,
     attempts: list[Attempt],
 ) -> list[Attempt]:
     """Make one planned Attempt of a Task given without an experiment, and its retries.
@@ -657,7 +657,7 @@ def _run_planned_attempt(
     may no longer start.
     """
     executions: list[Attempt] = []
-    retries = budget.may_start()
+    retries = gate.may_start()
     while retries:
         retry = len(executions)
         attempt, follow_up = make_attempt(
@@ -665,7 +665,7 @@ def _run_planned_attempt(
         )
         attempt = follow_up(attempt)
         retries = (
-            attempt.execution_status in RETRYABLE and retry < task.limits.max_retries and budget.may_start()
+            attempt.execution_status in RETRYABLE and retry < task.limits.max_retries and gate.may_start()
         )
         if retries:
             # The Attempt stays in the evidence with why it did not complete. The retry is another Attempt.

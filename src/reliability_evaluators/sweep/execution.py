@@ -29,8 +29,8 @@ class Cancellation:
         return self._latched
 
 
-class Budget:
-    """Whether a further Attempt or retry of one Task may start.
+class AttemptGate:
+    """Whether a further Attempt or retry of one Task may start, under its execution limits.
 
     It may not once the sweep was cancelled or the Task's total time limit was reached.
     `stopped` and `reason` then say which, and stay as they are.
@@ -111,7 +111,7 @@ def _planned_under(task: Task, experiment: Experiment | None, role: ConditionRol
 def execution_of(
     task: Task,
     made: Sequence[Sequence[Attempt]],
-    budget: Budget,
+    gate: AttemptGate,
     *,
     experiment: Experiment | None = None,
     stop_reason: str | None = None,
@@ -127,8 +127,8 @@ def execution_of(
     planned = sum(_planned_under(task, experiment, role) for role in roles)
     last = tuple(executions[-1] for executions in made)
     not_made = planned - len(last)
-    if budget.stopped is not None:
-        status, reason = budget.stopped, budget.reason
+    if gate.stopped is not None:
+        status, reason = gate.stopped, gate.reason
     elif any(attempt.execution_status is ExecutionStatus.CANCELLED for attempt in last):
         status, reason = ExperimentStatus.CANCELLED, CANCELLED
     elif not_made:
