@@ -17,14 +17,14 @@ from __future__ import annotations
 import json
 import time
 from dataclasses import dataclass, field, replace
-from typing import Any, Callable, Iterable, Mapping, Protocol, Sequence
+from typing import Any, Callable, Iterable, Mapping, Sequence
 
 from ..evaluators import Fidelity, MetricResult, MetricState
 from ..evidence import TaskEvidence
 from . import grader
 from .artifact import DerivationError, ManagedArtifact, derive_artifact
 from .fidelity import NOT_CHECKED, FidelityCheck, check_value, no_value_on_either_channel
-from ..foundry import FoundryRequestError
+from ..foundry import ENDED, FoundryRequestError, Project, output_items_of
 
 # Registering an evaluator is a preview feature of the project API and has to be opted into.
 EVALUATORS_API = "api-version=v1"
@@ -37,7 +37,6 @@ PREVIEW_FEATURE = {"Foundry-Features": "Evaluations=V1Preview"}
 # truncated. The limit is under what was observed, because what Foundry counts is not documented.
 SUBMITTED_RUN_LIMIT_BYTES = 2_000_000
 OBSERVED_REFUSED_RUN_BYTES = 2_096_233
-OUTPUT_ITEM_PAGE = 100
 # Foundry was seen to return one row of a run as an error, where the evaluator had not raised and
 # every other row was graded. A part of a result is therefore asked for up to this many times.
 PART_ATTEMPTS = 3
@@ -70,12 +69,6 @@ class ManagedScoringFailure(Exception):
 
 class _NotGraded(ManagedScoringFailure):
     """Foundry returned a row with a result in error. The part that row asked for can be asked for again."""
-
-
-class Project(Protocol):
-    """What managed scoring needs of a Foundry project. `FoundryProject` is the real one."""
-
-    def request(self, method: str, path: str, body: Any = None, headers: dict[str, str] | None = None) -> Any: ...
 
 
 @dataclass(frozen=True, kw_only=True)
@@ -419,7 +412,7 @@ class FoundryManagedScoring:
         """Wait until the run has ended. One that did not complete gave no result."""
         eval_id, run_id = run.eval_id, run.run["id"]
         run_path = f"/openai/v1/evals/{eval_id}/runs/{run_id}"
-        while run.run.get("status") not in ("completed", "failed", "canceled"):
+        while run.run.get("status") not in ENDED:
             if time.monotonic() >= run.deadline:
                 self._cancel(run_path)
                 raise ManagedScoringFailure(
@@ -447,16 +440,7 @@ class FoundryManagedScoring:
     def _output_items(self, run: _ManagedRun, submitted: int) -> list[dict[str, Any]]:
         """The output items of the last run in the order of the rows that were submitted, one for each row."""
         eval_id, run_id = run.eval_id, run.run["id"]
-        items: list[dict[str, Any]] = []
-        after = ""
-        while True:
-            page = self.project.request(
-                "GET", f"/openai/v1/evals/{eval_id}/runs/{run_id}/output_items?limit={OUTPUT_ITEM_PAGE}{after}"
-            )
-            items.extend(page.get("data", []))
-            if not page.get("has_more"):
-                break
-            after = f"&after={page['last_id']}"
+        items = output_items_of(self.project, f"/openai/v1/evals/{eval_id}/runs/{run_id}")
         # An item names the row it is for by the position of the row in what was submitted.
         by_row = {item.get("datasource_item_id"): item for item in items}
         run.made[-1]["items"] = items

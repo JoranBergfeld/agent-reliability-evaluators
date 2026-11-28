@@ -32,7 +32,7 @@ USAGE_SOURCE = (
 )
 REQUEST_ID_HEADERS = ("x-request-id", "apim-request-id")
 # How much of an answer's body is quoted in an error.
-_SHOWN_BODY = 2000
+SHOWN_BODY = 2000
 ELAPSED_TIME_BOUNDARY = (
     "wall clock from just before the Responses request is sent to the hosted agent until its response has been "
     "read, measured by the agent target. Getting the token and looking the agent up are not included"
@@ -117,14 +117,14 @@ class FoundryHostedAgentTarget:
         elapsed = self._clock() - started
         if answer.status != 200:
             raise InvocationFailed(
-                f"the hosted agent endpoint answered HTTP {answer.status}: {answer.text[:_SHOWN_BODY]}",
+                f"the hosted agent endpoint answered HTTP {answer.status}: {answer.text[:SHOWN_BODY]}",
                 invocation=_invocation(answer, {}, composed),
             )
         response = answer.json
         if not isinstance(response, dict):
             raise InvocationFailed(
                 "the hosted agent endpoint answered HTTP 200 with a body that is not a response: "
-                f"{answer.text[:_SHOWN_BODY]}",
+                f"{answer.text[:SHOWN_BODY]}",
                 invocation=_invocation(answer, {}, composed),
             )
         invocation = _invocation(answer, response, composed)
@@ -133,7 +133,7 @@ class FoundryHostedAgentTarget:
             raise InvocationFailed(failure, invocation=invocation)
         return AgentResponse(
             output=output_text(response),
-            resource_measurements=_resource_measurements(elapsed, invocation["tool_calls"]),
+            resource_measurements=measured_of_an_attempt(elapsed, invocation["tool_calls"]),
             invocation=invocation,
         )
 
@@ -167,7 +167,7 @@ class FoundryHostedAgentTarget:
             if answer.status != 200 or not isinstance(answer.json, dict):
                 raise InvocationFailed(
                     f"agent {self._agent_name!r} could not be looked up in the Foundry project: "
-                    f"HTTP {answer.status}: {answer.text[:_SHOWN_BODY]}"
+                    f"HTTP {answer.status}: {answer.text[:SHOWN_BODY]}"
                 )
             self._agent = read_agent_details(answer.json)
         kind = self._agent.kind
@@ -204,7 +204,7 @@ class FoundryHostedAgentTarget:
             raise InvocationFailed(f"the Foundry project could not be reached: {unanswered.reason}") from None
 
 
-def _request_ids(answer: Answer) -> dict[str, str]:
+def request_ids(answer: Answer) -> dict[str, str]:
     """The headers that identify the request on the platform, where the answer carried them."""
     return {name: answer.header(name) for name in REQUEST_ID_HEADERS if answer.header(name)}
 
@@ -229,12 +229,12 @@ def _invocation(answer: Answer, response: dict[str, Any], composed_input: str | 
             "api_version": API_VERSION,
             "composed_input": composed_input,
             "http_status": answer.status,
-            "request_ids": _request_ids(answer),
+            "request_ids": request_ids(answer),
             "agent": response.get("agent_reference"),
             "agent_session_id": response.get("agent_session_id"),
             "status": response.get("status"),
             "metadata": response.get("metadata"),
-            "error": response.get("error") if response else _error_of(answer),
+            "error": response.get("error") if response else error_of_an_answer(answer),
         },
     ).to_dict()
 
@@ -254,23 +254,28 @@ def _failure_of(response: dict[str, Any]) -> str | None:
     return None
 
 
-def _error_of(answer: Answer) -> Any:
+def error_of_an_answer(answer: Answer) -> Any:
     """The error an answer without a response object carries: its `error`, or its body as it is."""
     body = answer.json
-    return body["error"] if isinstance(body, dict) and "error" in body else answer.text[:_SHOWN_BODY]
+    return body["error"] if isinstance(body, dict) and "error" in body else answer.text[:SHOWN_BODY]
 
 
-def _resource_measurements(elapsed: float, tool_calls: list[dict[str, Any]] | None) -> tuple[ResourceMeasurement, ...]:
-    """What the target measured of one Attempt. A count it could not make is left out."""
+def measured_of_an_attempt(
+    elapsed: float,
+    tool_calls: list[dict[str, Any]] | None,
+    elapsed_time_boundary: str = ELAPSED_TIME_BOUNDARY,
+    tool_call_boundary: str = TOOL_CALL_BOUNDARY,
+) -> tuple[ResourceMeasurement, ...]:
+    """What a target measured of one Attempt, each within the boundary it names. A count it could not make is left out."""
     measured = [
         ResourceMeasurement(
-            resource_type=ResourceType.ELAPSED_TIME, value=elapsed, unit="seconds", boundary=ELAPSED_TIME_BOUNDARY
+            resource_type=ResourceType.ELAPSED_TIME, value=elapsed, unit="seconds", boundary=elapsed_time_boundary
         )
     ]
     if tool_calls is not None:
         measured.append(
             ResourceMeasurement(
-                resource_type=ResourceType.TOOL_CALLS, value=len(tool_calls), unit="calls", boundary=TOOL_CALL_BOUNDARY
+                resource_type=ResourceType.TOOL_CALLS, value=len(tool_calls), unit="calls", boundary=tool_call_boundary
             )
         )
     return tuple(measured)

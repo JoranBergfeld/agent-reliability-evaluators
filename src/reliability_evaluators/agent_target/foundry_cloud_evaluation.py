@@ -12,10 +12,10 @@ import threading
 import time
 from dataclasses import dataclass
 from math import isfinite
-from typing import Any, Callable, Iterator, Protocol
+from typing import Any, Callable, Iterator
 
 from ..evidence import ActionEvent, InvocationEvidence, ResourceMeasurement, ResourceType
-from ..foundry import AgentDetails, FoundryRequestError, read_agent_details
+from ..foundry import ENDED, AgentDetails, FoundryRequestError, Project, output_items_of, read_agent_details
 from .foundry_hosted import FoundryHostedAgentTarget, output_items, output_text
 from .foundry_prompt_agent import TOOL_CHOICE_NONE, failure_of_a_response, not_isolated, tool_calls_of_a_response
 from .foundry_prompt_agent import USAGE_SOURCE as USAGE_SOURCE_OF_A_RESPONSE
@@ -52,8 +52,6 @@ CRITERION = {
     "reference": "{{item.attempt_id}}",
     "operation": "eq",
 }
-OUTPUT_ITEM_PAGE = 100
-ENDED = ("completed", "failed", "canceled")
 # How much of an answer that is not what was asked for is quoted in an error.
 _SHOWN_ANSWER = 2000
 NO_RUN = "no cloud evaluation run is known to have been made, so no usage was reported"
@@ -86,16 +84,6 @@ TOOL_CALL_BOUNDARY = (
     "tool calls in the output item that Foundry cloud evaluation returned for the Attempt, counted by the agent "
     "target. A tool call the platform does not report there is not counted"
 )
-
-
-class Project(Protocol):
-    """What the target needs of a Foundry project. `managed_scoring.FoundryProject` is the real one.
-
-    `request` returns the JSON the project answers with, and raises `FoundryRequestError` when
-    it is not answered or answered with an error status.
-    """
-
-    def request(self, method: str, path: str, body: Any = None, headers: dict[str, str] | None = None) -> Any: ...
 
 
 class UnsupportedCombination(InvocationFailed):
@@ -207,7 +195,7 @@ class FoundryCloudEvaluationTarget:
         run_path = f"{runs}/{made['id']}"
         self._wait(recorded, run_path, deadline, limit)
         with _asking(recorded, f"the output items of the cloud evaluation run {made['id']} could not be read"):
-            items = self._output_items(run_path)
+            items = output_items_of(self._project, run_path)
         recorded.result_read = True
         # Paired by the identity of the Attempt, never by the order of the rows.
         own = [item for item in items if (item.get("datasource_item") or {}).get("attempt_id") == request.attempt_id]
@@ -425,17 +413,6 @@ class FoundryCloudEvaluationTarget:
             # An answer that is no run says nothing about the run, so the run is asked for again.
             if isinstance(answered, dict):
                 recorded.run = answered
-
-    def _output_items(self, run_path: str) -> list[dict[str, Any]]:
-        items: list[dict[str, Any]] = []
-        after = ""
-        while True:
-            page = self._project.request("GET", f"{run_path}/output_items?limit={OUTPUT_ITEM_PAGE}{after}")
-            page = page if isinstance(page, dict) else {}
-            items.extend(item for item in page.get("data") or [] if isinstance(item, dict))
-            if not page.get("has_more") or not page.get("last_id"):
-                return items
-            after = f"&after={page['last_id']}"
 
 
 @dataclass
