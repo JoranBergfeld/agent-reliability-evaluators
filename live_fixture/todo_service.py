@@ -10,7 +10,11 @@ from .service.server import make_server
 
 
 class TodoServiceError(RuntimeError):
-    pass
+    """The to-do service did not do what it was asked. `status` is the HTTP status it answered with, if it answered."""
+
+    def __init__(self, message, status=None):
+        super().__init__(message)
+        self.status = status
 
 
 class TodoService:
@@ -105,7 +109,9 @@ class TodoService:
         except Unanswered as unanswered:
             raise TodoServiceError(f"{method} Attempt {attempt_id}: no answer: {unanswered.reason}") from None
         if status >= 400:
-            raise TodoServiceError(f"{method} Attempt {attempt_id}: HTTP {status} {answered.decode(errors='replace')}")
+            raise TodoServiceError(
+                f"{method} Attempt {attempt_id}: HTTP {status} {answered.decode(errors='replace')}", status
+            )
         return json.loads(answered)
 
 

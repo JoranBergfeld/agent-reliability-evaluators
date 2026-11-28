@@ -7,13 +7,14 @@ service recorded, never from the agent's response.
 `tests/todo_experiment.py` declares the same Task with a state of the service per Attempt,
 named by a composed input. Here the prompt names one state for the whole experiment, so
 that nothing is composed and an experiment can declare continuing state or a variation.
+What the two share is in `tests/todo_task.py`.
 """
 
-from live_fixture import TodoServiceError, strict_task_outcome, task_prompt
-from reliability_evaluators.evidence import TaskOutcome
-from reliability_evaluators.sweep import Condition, ExecutionLimits, Experiment, ObservedCondition, Task
+from live_fixture import TodoServiceError, task_prompt
+from reliability_evaluators.sweep import Condition, ExecutionLimits, ObservedCondition
+from tests.todo_task import EVENTS_SOURCE, experiment_on_the_fixture, faulted_calls, strict_outcome
 
-CONDITION_SOURCE = "events of the to-do service"
+CONDITION_SOURCE = EVENTS_SOURCE
 BASELINE = Condition(condition_id="baseline", description="Every tool works.")
 UPDATE_FAILS = Condition(
     condition_id="update-fails",
@@ -47,8 +48,7 @@ class TodoFixtureSweep:
         self._calls_before = 0
 
     def success_rule(self, request, response):
-        outcome = strict_task_outcome(self._service.evidence(self.state))
-        return TaskOutcome(success=outcome["success"], source=outcome["source"])
+        return strict_outcome(self._service, self.state)
 
     def experiment(
         self,
@@ -64,23 +64,19 @@ class TodoFixtureSweep:
 
         `shareable_success_rule` is the Task's success rule in words, for an agent that is asked for its confidence.
         """
-        return Experiment(
-            experiment_id="todo",
-            task=Task(
-                task_id="todo",
-                prompt=task_prompt(self.state),
-                success_rule=self.success_rule,
-                shareable_success_rule=shareable_success_rule,
-                attempts=attempts,
-                limits=limits,
-            ),
+        return experiment_on_the_fixture(
+            self,
+            task_id="todo",
+            prompt=task_prompt(self.state),
+            success_rule=self.success_rule,
+            shareable_success_rule=shareable_success_rule,
+            attempts=attempts,
+            limits=limits,
             agent_configuration=agent_configuration or {"agent": "todo-prompt"},
             starting_state=starting_state,
             baseline=BASELINE,
             variation=variation,
-            controls=self,
-            write_capable=True,
-            authorized_resources=[f"state {self.state} of the to-do service"],
+            authorized_resource=f"state {self.state} of the to-do service",
         )
 
     def prepare_state(self, context):
@@ -95,7 +91,7 @@ class TodoFixtureSweep:
         self.service_evidence[context.attempt_id] = evidence
         calls = evidence["events"][self._calls_before :]
         self._calls_before = len(evidence["events"])
-        faulted = [event["tool"] for event in calls if event["fault_injected"]]
+        faulted = faulted_calls(calls)
         intended = context.condition.parameters.get("failing_tool")
         return ObservedCondition(
             met=bool(faulted) and set(faulted) == {intended} if intended else not faulted,
@@ -109,5 +105,5 @@ class TodoFixtureSweep:
             self._service.remove_attempt(self.state)
         except TodoServiceError as error:
             # A state that was never prepared is not there to remove.
-            if "HTTP 404" not in str(error):
+            if error.status != 404:
                 raise

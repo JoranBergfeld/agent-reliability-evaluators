@@ -6,7 +6,7 @@ shapes observed on the live fixture (see docs/foundry_hosted_agent/readme.md):
 - `GET /agents/{name}?api-version=v1`: what the project says about the agent;
 - `POST /agents/{name}/endpoint/protocols/openai/responses?api-version=v1`: one invocation.
 
-Every request must carry the bearer token in `FakeFoundryProject.token`. Every answer carries
+Every request must carry the bearer token in `FakeHostedAgentProject.token`. Every answer carries
 the request identifiers `synthetic-request-N` and `synthetic-apim-N`, N being the number of
 the request among all the project received.
 """
@@ -87,14 +87,14 @@ class FakeHostedAgent:
 
 
 @dataclass
-class FakeFoundryProject:
+class FakeHostedAgentProject:
     endpoint: str
     token: str
     agents: dict[str, FakeHostedAgent]
 
 
 @contextlib.contextmanager
-def fake_foundry_project(agents: dict[str, FakeHostedAgent]) -> Iterator[FakeFoundryProject]:
+def fake_foundry_project(agents: dict[str, FakeHostedAgent]) -> Iterator[FakeHostedAgentProject]:
     """Serve `agents`, by name, until the block ends."""
     token = "synthetic-bearer-token"
     # Every request received, in order. A request is numbered by its position, from 1.
@@ -144,7 +144,7 @@ def fake_foundry_project(agents: dict[str, FakeHostedAgent]) -> Iterator[FakeFou
     thread = threading.Thread(target=server.serve_forever, kwargs={"poll_interval": 0.05}, daemon=True)
     thread.start()
     try:
-        yield FakeFoundryProject(f"http://127.0.0.1:{server.server_address[1]}{PROJECT_PATH}", token, agents)
+        yield FakeHostedAgentProject(f"http://127.0.0.1:{server.server_address[1]}{PROJECT_PATH}", token, agents)
     finally:
         server.shutdown()
         server.server_close()

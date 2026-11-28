@@ -9,11 +9,11 @@ from __future__ import annotations
 
 import re
 
-from live_fixture import TASK_PROMPT, TodoService, strict_task_outcome
+from live_fixture import TASK_PROMPT, TodoService
 from reliability_evaluators.evidence import TaskOutcome
-from reliability_evaluators.sweep import Condition, ExecutionLimits, Experiment, ObservedCondition, Task
+from reliability_evaluators.sweep import Condition, ExecutionLimits, Experiment, ObservedCondition
+from tests.todo_task import EVENTS_SOURCE, experiment_on_the_fixture, faulted_calls, strict_outcome
 
-EVENTS_SOURCE = "events of the to-do service"
 ALL_TOOLS_WORK = Condition(condition_id="all-tools-work", description="Every tool of the to-do service works.")
 
 
@@ -53,8 +53,7 @@ class TodoSetup:
         return f"Use attempt_id {self.on_service(request.attempt_id)}. {request.prompt}"
 
     def strict_success(self, request, response) -> TaskOutcome:
-        outcome = strict_task_outcome(self._service.evidence(self.on_service(request.attempt_id)))
-        return TaskOutcome(success=outcome["success"], source=outcome["source"])
+        return strict_outcome(self._service, self.on_service(request.attempt_id))
 
     def prepare_state(self, context) -> None:
         self._service.prepare_attempt(self.on_service(context.attempt_id))
@@ -64,7 +63,7 @@ class TodoSetup:
 
     def verify_condition(self, context) -> ObservedCondition:
         events = self._service.evidence(self.on_service(context.attempt_id))["events"]
-        faulted = [event["tool"] for event in events if event["fault_injected"]]
+        faulted = faulted_calls(events)
         intended = self._failing_tool(context)
         return ObservedCondition(
             met=set(faulted) == ({intended} if intended else set()),
@@ -99,22 +98,17 @@ class TodoSetup:
         task outcome is decided by the fixture's strict rule whatever the prompt asks.
         `shareable_success_rule` is that rule in words, for an agent that is asked for its confidence.
         """
-        task = Task(
+        return experiment_on_the_fixture(
+            self,
             task_id=task_id,
             prompt=prompt,
             success_rule=self.strict_success,
             shareable_success_rule=shareable_success_rule,
             attempts=attempts,
             limits=limits,
-        )
-        return Experiment(
-            experiment_id=task_id,
-            task=task,
             agent_configuration=agent_configuration,
             starting_state="fresh",
             baseline=baseline,
             variation=None,
-            controls=self,
-            write_capable=True,
-            authorized_resources=[f"to-do service state of the Attempts of {task_id} in run {self._run_id}"],
+            authorized_resource=f"to-do service state of the Attempts of {task_id} in run {self._run_id}",
         )
