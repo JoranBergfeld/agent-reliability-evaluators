@@ -14,9 +14,8 @@ from dataclasses import dataclass
 from math import isfinite
 from typing import Any, Callable, Iterator, Protocol
 
-from ..evidence import ActionEvent, ResourceMeasurement, ResourceType
-from ..foundry import AgentDetails, read_agent_details
-from ..managed_scoring.foundry import FoundryRequestError
+from ..evidence import ActionEvent, InvocationEvidence, ResourceMeasurement, ResourceType
+from ..foundry import AgentDetails, FoundryRequestError, read_agent_details
 from .foundry_hosted import FoundryHostedAgentTarget, output_items, output_text
 from .foundry_prompt_agent import TOOL_CHOICE_NONE, failure_of_a_response, not_isolated, tool_calls_of_a_response
 from .foundry_prompt_agent import USAGE_SOURCE as USAGE_SOURCE_OF_A_RESPONSE
@@ -456,55 +455,54 @@ class _Recorded:
         run, item = self.run or {}, self.item
         returned = (item or {}).get("datasource_item") or {}
         sample = (item or {}).get("sample") or {}
-        usage = sample.get("usage")
-        return {
-            "agent_target": AGENT_TARGET,
-            "entry_point": FOUNDRY_CLOUD_EVALUATION,
-            "api_version": API_VERSION,
-            "agent_kind": self.agent_kind,
-            "composed_input": self.composed_input,
-            "eval_id": self.eval_id,
-            "run_id": run.get("id"),
-            "run_status": run.get("status"),
-            "output_item_id": None if item is None else item.get("id"),
-            "status": None if item is None else item.get("status"),
-            "criterion": CRITERION,
-            "agent": None
-            if item is None
-            else {
-                "id": returned.get("agent_id"),
-                "name": returned.get("agent_name"),
-                "version": returned.get("agent_version"),
-            },
-            "response_id": returned.get("response_id"),
-            "conversation_id": returned.get("conversation_id"),
-            "model": sample.get("model"),
-            "metadata": None
-            if item is None
-            else {"attempt_id": returned.get("attempt_id"), "task_id": returned.get("task_id")},
-            # The error of the item's sample. Without an item, the error of the run.
-            "error": sample.get("error") if item is not None else _error_of(run),
+        return InvocationEvidence.with_usage(
             # As the platform reported it for the item. Usage that was not reported is missing, never zero.
-            "token_usage": usage,
-            "token_usage_missing": self._usage_missing(usage),
-            "token_usage_source": None if usage is None else USAGE_SOURCE.get(self.agent_kind, _OF_THE_ITEM),
-            # The run's own rows. They can count the same tokens more than once, so they are not a total.
-            "run_per_model_usage": run.get("per_model_usage"),
-            "latency_ms": sample.get("latency_ms"),
-            "tool_calls": None if item is None else _tool_calls(returned),
-            # The run's link to the Foundry portal is left out: it embeds the customer's subscription identifier.
-            "platform_diagnostics": {
-                "meaning": PLATFORM_DIAGNOSTICS_MEANING,
-                "result_counts": run.get("result_counts"),
-                "per_testing_criteria_results": run.get("per_testing_criteria_results"),
-                "results": None if item is None else item.get("results"),
+            sample.get("usage"),
+            source=USAGE_SOURCE.get(self.agent_kind, _OF_THE_ITEM),
+            missing=self._usage_missing(),
+            agent_target=AGENT_TARGET,
+            entry_point=FOUNDRY_CLOUD_EVALUATION,
+            response_id=returned.get("response_id"),
+            tool_calls=None if item is None else _tool_calls(returned),
+            identifiers={
+                "api_version": API_VERSION,
+                "agent_kind": self.agent_kind,
+                "composed_input": self.composed_input,
+                "eval_id": self.eval_id,
+                "run_id": run.get("id"),
+                "run_status": run.get("status"),
+                "output_item_id": None if item is None else item.get("id"),
+                "status": None if item is None else item.get("status"),
+                "criterion": CRITERION,
+                "agent": None
+                if item is None
+                else {
+                    "id": returned.get("agent_id"),
+                    "name": returned.get("agent_name"),
+                    "version": returned.get("agent_version"),
+                },
+                "conversation_id": returned.get("conversation_id"),
+                "model": sample.get("model"),
+                "metadata": None
+                if item is None
+                else {"attempt_id": returned.get("attempt_id"), "task_id": returned.get("task_id")},
+                # The error of the item's sample. Without an item, the error of the run.
+                "error": sample.get("error") if item is not None else _error_of(run),
+                # The run's own rows. They can count the same tokens more than once, so they are not a total.
+                "run_per_model_usage": run.get("per_model_usage"),
+                "latency_ms": sample.get("latency_ms"),
+                # The run's link to the Foundry portal is left out: it embeds the customer's subscription identifier.
+                "platform_diagnostics": {
+                    "meaning": PLATFORM_DIAGNOSTICS_MEANING,
+                    "result_counts": run.get("result_counts"),
+                    "per_testing_criteria_results": run.get("per_testing_criteria_results"),
+                    "results": None if item is None else item.get("results"),
+                },
             },
-        }
+        ).to_dict()
 
-    def _usage_missing(self, usage: Any) -> str | None:
+    def _usage_missing(self) -> str:
         """Why there is no usage for the Attempt, when there is none."""
-        if usage is not None:
-            return None
         if self.item is not None:
             return NO_USAGE
         if self.run is None:
@@ -528,28 +526,29 @@ def _follow_up(response: dict[str, Any], question: str, error: str | None = None
     none. `question` is what the agent was sent. With it are the response the project says the
     follow-up continued and the tool choice it says it applied.
     """
-    usage = response.get("usage")
-    return {
-        "agent_target": AGENT_TARGET,
-        # The follow-up is sent by this process. Only the Attempt it follows was invoked by cloud evaluation.
-        "entry_point": CUSTOMER_CODE,
-        "protocol": RESPONSES_PROTOCOL,
-        "api_version": API_VERSION,
-        "agent": response.get("agent_reference"),
-        "response_id": response.get("id"),
-        "status": response.get("status"),
-        "model": response.get("model"),
-        "metadata": response.get("metadata"),
-        "error": response.get("error") if response else error,
+    return InvocationEvidence.with_usage(
         # As the platform reported it. Usage that was not reported is missing, never zero.
-        "token_usage": usage,
-        "token_usage_missing": None if usage is not None else NO_FOLLOW_UP_USAGE if response else NO_FOLLOW_UP_RESPONSE,
-        "token_usage_source": None if usage is None else USAGE_SOURCE_OF_A_RESPONSE,
-        "tool_calls": tool_calls_of_a_response(response),
-        "input": question,
-        "previous_response_id": response.get("previous_response_id"),
-        "tool_choice": response.get("tool_choice"),
-    }
+        response.get("usage"),
+        source=USAGE_SOURCE_OF_A_RESPONSE,
+        missing=NO_FOLLOW_UP_USAGE if response else NO_FOLLOW_UP_RESPONSE,
+        agent_target=AGENT_TARGET,
+        # The follow-up is sent by this process. Only the Attempt it follows was invoked by cloud evaluation.
+        entry_point=CUSTOMER_CODE,
+        response_id=response.get("id"),
+        tool_calls=tool_calls_of_a_response(response),
+        identifiers={
+            "protocol": RESPONSES_PROTOCOL,
+            "api_version": API_VERSION,
+            "agent": response.get("agent_reference"),
+            "status": response.get("status"),
+            "model": response.get("model"),
+            "metadata": response.get("metadata"),
+            "error": response.get("error") if response else error,
+            "input": question,
+            "previous_response_id": response.get("previous_response_id"),
+            "tool_choice": response.get("tool_choice"),
+        },
+    ).to_dict()
 
 
 def _failure_of(

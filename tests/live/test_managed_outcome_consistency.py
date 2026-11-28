@@ -27,7 +27,6 @@ from reliability_evaluators.evidence import Attempt, ExecutionStatus, group_by_t
 from reliability_evaluators.managed_scoring import (
     FoundryManagedScoring,
     FoundryProject,
-    azure_cli_token,
     derive_artifact,
 )
 from reliability_evaluators.managed_scoring.grader import decode_result, result_parts
@@ -54,7 +53,7 @@ def live():
 @pytest.fixture(scope="module")
 def scoring(live):
     """Managed scoring as a customer sets it up: the project endpoint and the Azure CLI's identity."""
-    return FoundryManagedScoring(project=FoundryProject(live.project_endpoint, token=azure_cli_token))
+    return FoundryManagedScoring(project=FoundryProject(live.project_endpoint))
 
 
 class ScriptedTodoAgent:

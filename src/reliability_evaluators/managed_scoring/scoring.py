@@ -24,7 +24,7 @@ from ..evidence import TaskEvidence
 from . import grader
 from .artifact import DerivationError, ManagedArtifact, derive_artifact
 from .fidelity import NOT_CHECKED, FidelityCheck, check_value, no_value_on_either_channel
-from .foundry import FoundryRequestError
+from ..foundry import FoundryRequestError
 
 # Registering an evaluator is a preview feature of the project API and has to be opted into.
 EVALUATORS_API = "api-version=v1"

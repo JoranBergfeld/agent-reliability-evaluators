@@ -16,7 +16,7 @@ from enum import Enum
 from typing import Any, Iterable, Mapping, Sequence
 
 from ..evaluators import ScoringPath
-from ..evidence import Attempt, ConditionRole, ExecutionStatus, TaskEvidence
+from ..evidence import Attempt, ConditionRole, ExecutionStatus, InvocationEvidence, TaskEvidence
 
 UNIT = "tokens"
 MEANING = (
@@ -428,18 +428,20 @@ def _recorded_use(recorded: Mapping[str, Any] | None, of: str) -> dict[str, Any]
     target stated none. Without a count the use is missing, for the reason the target
     recorded in `token_usage_missing` when it recorded one. `of` names the request.
     """
-    recorded = recorded or {}
+    evidence = InvocationEvidence.read(recorded)
     identifiers = {
-        "response_id": recorded.get("response_id"),
-        "request_ids": recorded.get("request_ids") or {},
-        "evaluation_run": _evaluation_run(recorded),
+        "response_id": evidence.response_id,
+        "request_ids": evidence.request_ids,
+        # With the eval and the run named, a use whose count is missing here can still be looked for on
+        # the platform: a run that was not waited for may report the usage of its item later.
+        "evaluation_run": evidence.evaluation_run,
         "source": None,
     }
     if not recorded:
         return _missing(f"the agent target recorded nothing of {of}", **identifiers)
-    usage = recorded.get("token_usage")
+    usage = evidence.token_usage
     if usage is None:
-        why = recorded.get("token_usage_missing")
+        why = evidence.token_usage_missing
         if not isinstance(why, str) or not why.strip():
             why = f"the agent target recorded no token usage for {of}"
         return _missing(why, **identifiers)
@@ -450,21 +452,10 @@ def _recorded_use(recorded: Mapping[str, Any] | None, of: str) -> dict[str, Any]
             f"the token usage the agent target recorded for {of} has no total_tokens that is a whole number",
             **identifiers,
         )
-    source = recorded.get("token_usage_source")
+    source = evidence.token_usage_source
     if isinstance(source, str) and source.strip():
         identifiers["source"] = source
     return _reported(total, **identifiers)
-
-
-def _evaluation_run(recorded: Mapping[str, Any]) -> dict[str, Any] | None:
-    """The evaluation run a request was made through, as the agent target recorded it, or None for no run.
-
-    With the eval and the run named, a use whose count is missing here can still be looked for on
-    the platform: a run that was not waited for may report the usage of its item later.
-    """
-    if recorded.get("eval_id") is None and recorded.get("run_id") is None:
-        return None
-    return {key: recorded.get(key) for key in ("eval_id", "run_id", "output_item_id")}
 
 
 def _reported(total_tokens: int, **identifiers: Any) -> dict[str, Any]:

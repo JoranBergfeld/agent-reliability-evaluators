@@ -63,10 +63,12 @@ FoundryManagedScoring(project=my_project).register(["outcome_consistency"])
 
 Every request goes to your project as the identity of the bearer token you supply. The offering has no identity of its own and stores no token.
 
-`FoundryProject(endpoint, token=...)` takes a function that returns a token for `https://ai.azure.com`.
+`FoundryProject(endpoint, credential=...)` takes a function that returns a token for `https://ai.azure.com`. The Foundry agent targets take it under the same name, `credential`, with the same default: there is one way to say who you are.
 
-- **Default: the Azure CLI.** `azure_cli_token` runs `az account get-access-token --resource https://ai.azure.com`. In CI this is whatever your pipeline signed in as before the sweep, for example with `az login --service-principal` or your platform's federated sign-in.
+- **Default: the Azure CLI.** `AzureCliCredential()` runs `az account get-access-token --resource https://ai.azure.com` and keeps the token until five minutes before it expires. Pass `AzureCliCredential(subscription="<name or id>")` when the signed-in identity has several tenants. In CI this is whatever your pipeline signed in as before the sweep, for example with `az login --service-principal` or your platform's federated sign-in.
 - **Your own function.** Pass any function that returns a token, for example one built on `azure-identity` if your project already uses it.
+
+The token is sent to an `https` endpoint only, or to this machine. It is held where no error and no traceback shows it: an error of a request names the request and the answer, never the token.
 
 **The choice made here:** the project is called over its REST API with the Python standard library (`urllib`), and the token comes from a function you choose. No Azure SDK is used and no package is needed. The Azure CLI is a tool on the runner, not a Python dependency, and you can replace it with your own token function.
 

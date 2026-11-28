@@ -1,9 +1,10 @@
 """Agent target for a Foundry prompt agent, invoked from customer code through the project's Responses interface.
 
-Standard library only: plain REST with a bearer token. See docs/foundry_prompt_agent/readme.md.
+Standard library only: plain REST with a bearer token, sent through the `FoundryProject` that
+everything that reaches a Foundry project uses. See docs/foundry_prompt_agent/readme.md.
 
-The credential and the reading of a response's output are those of the hosted agent target,
-imported from `foundry_hosted`, so that the two targets cannot come to read a response differently.
+The reading of a response's output is that of the hosted agent target, imported from
+`foundry_hosted`, so that the two targets cannot come to read a response differently.
 """
 
 from __future__ import annotations
@@ -13,9 +14,9 @@ from math import isfinite
 from time import perf_counter
 from typing import Any, Callable
 
-from ..evidence import ActionEvent, ResourceMeasurement, ResourceType
-from ..foundry import Answer, BearerToken, NotAnswered, send
-from .foundry_hosted import AzureCliCredential, decoded_arguments, output_items, output_text
+from ..evidence import ActionEvent, InvocationEvidence, ResourceMeasurement, ResourceType
+from ..foundry import Answer, FoundryProject, NotAnswered
+from .foundry_hosted import decoded_arguments, output_items, output_text
 from .interface import (
     CUSTOMER_CODE,
     AgentResponse,
@@ -100,11 +101,10 @@ class FoundryPromptAgentTarget:
             raise ValueError(f"the version of an agent is text, such as '3', or left out. Got {agent_version!r}")
         if type(timeout_seconds) not in (int, float) or not isfinite(timeout_seconds) or timeout_seconds <= 0:
             raise ValueError(f"timeout_seconds is a positive, finite number of seconds, got {timeout_seconds!r}")
-        self._responses_url = project_endpoint.rstrip("/") + RESPONSES_ROUTE
+        self._project = FoundryProject(project_endpoint, credential=credential, timeout_seconds=timeout_seconds)
         self._agent = {"type": "agent_reference", "name": agent_name}
         if agent_version is not None:
             self._agent["version"] = agent_version
-        self._credential = credential or AzureCliCredential()
         self._compose_input = compose_input
         self._timeout_seconds = timeout_seconds
         self._clock = clock
@@ -118,12 +118,12 @@ class FoundryPromptAgentTarget:
             # Identifies the Attempt on the platform. The response returns it.
             "metadata": {"attempt_id": request.attempt_id, "task_id": request.task_id},
         }
-        # Held as a BearerToken from here on, which shows itself in no error and no traceback.
-        token = BearerToken(self._credential())
         # The time limit the customer declared for the Attempt comes before the target's own.
         limit = self._timeout_seconds if request.timeout_seconds is None else request.timeout_seconds
+        # Before the clock starts: getting the token is no part of the Attempt's elapsed time.
+        self._project.sign_in()
         started = self._clock()
-        answer = _send(self._responses_url, token, limit, body)
+        answer = self._send(limit, body)
         elapsed = self._clock() - started
         response, invocation = _completed(answer, lambda response: _invocation(answer, response, composed))
         return AgentResponse(
@@ -155,7 +155,7 @@ class FoundryPromptAgentTarget:
                 "request": "confidence",
             },
         }
-        answer = _send(self._responses_url, BearerToken(self._credential()), self._timeout_seconds, body)
+        answer = self._send(self._timeout_seconds, body)
         response, follow_up = _completed(answer, lambda response: _follow_up(answer, response, request.prompt))
         why_not_used = not_isolated(follow_up, previous)
         if why_not_used is not None:
@@ -164,24 +164,16 @@ class FoundryPromptAgentTarget:
             attempt_id=request.attempt.attempt_id, output=output_text(response), invocation=follow_up
         )
 
-
-def _send(url: str, token: BearerToken, timeout_seconds: float, body: dict[str, Any]) -> Answer:
-    """Send one request to the project. It is sent once: a request that may have reached the agent is not repeated."""
-    try:
-        return send(
-            "POST",
-            url,
-            bearer=token,
-            content=json.dumps(body).encode(),
-            headers={"Content-Type": "application/json"},
-            timeout_seconds=timeout_seconds,
-        )
-    except NotAnswered as unanswered:
-        # No answer came back, so nothing is known about what the agent did.
-        if unanswered.timed_out:
-            # The sweep records a TimeoutError as an Attempt that timed out.
-            raise TimeoutError(f"the Foundry project did not answer within {timeout_seconds:g} seconds") from None
-        raise InvocationFailed(f"the Foundry project could not be reached: {unanswered.reason}") from None
+    def _send(self, timeout_seconds: float, body: dict[str, Any]) -> Answer:
+        """Send one request to the project. It is sent once: a request that may have reached the agent is not repeated."""
+        try:
+            return self._project.send_once("POST", RESPONSES_ROUTE, body, timeout_seconds=timeout_seconds)
+        except NotAnswered as unanswered:
+            # No answer came back, so nothing is known about what the agent did.
+            if unanswered.timed_out:
+                # The sweep records a TimeoutError as an Attempt that timed out.
+                raise TimeoutError(f"the Foundry project did not answer within {timeout_seconds:g} seconds") from None
+            raise InvocationFailed(f"the Foundry project could not be reached: {unanswered.reason}") from None
 
 
 def _request_ids(answer: Answer) -> dict[str, str]:
@@ -195,29 +187,30 @@ def _invocation(answer: Answer, response: dict[str, Any], composed_input: str | 
     `response` is the response object of the answer, or empty when the answer has none.
     `composed_input` is what the agent was sent when that was not the Attempt's prompt as it is.
     """
-    usage = response.get("usage")
-    return {
-        "agent_target": AGENT_TARGET,
-        "entry_point": CUSTOMER_CODE,
-        "protocol": RESPONSES_PROTOCOL,
-        "api_version": API_VERSION,
-        "composed_input": composed_input,
-        "http_status": answer.status,
-        "request_ids": _request_ids(answer),
-        "agent": response.get("agent_reference"),
-        "response_id": response.get("id"),
-        "status": response.get("status"),
-        # The model deployment the response names, and the model a header of the answer says served the request.
-        "model": response.get("model"),
-        "served_model": answer.header(SERVED_MODEL_HEADER),
-        "metadata": response.get("metadata"),
-        "error": response.get("error") if response else _error_of(answer),
+    return InvocationEvidence.with_usage(
         # As the platform reported it. Usage that was not reported is missing, never zero.
-        "token_usage": usage,
-        "token_usage_missing": None if usage is not None else NO_USAGE if response else NO_RESPONSE,
-        "token_usage_source": None if usage is None else USAGE_SOURCE,
-        "tool_calls": tool_calls_of_a_response(response),
-    }
+        response.get("usage"),
+        source=USAGE_SOURCE,
+        missing=NO_USAGE if response else NO_RESPONSE,
+        agent_target=AGENT_TARGET,
+        entry_point=CUSTOMER_CODE,
+        response_id=response.get("id"),
+        tool_calls=tool_calls_of_a_response(response),
+        identifiers={
+            "protocol": RESPONSES_PROTOCOL,
+            "api_version": API_VERSION,
+            "composed_input": composed_input,
+            "http_status": answer.status,
+            "request_ids": _request_ids(answer),
+            "agent": response.get("agent_reference"),
+            "status": response.get("status"),
+            # The model deployment the response names, and the model a header of the answer says served the request.
+            "model": response.get("model"),
+            "served_model": answer.header(SERVED_MODEL_HEADER),
+            "metadata": response.get("metadata"),
+            "error": response.get("error") if response else _error_of(answer),
+        },
+    ).to_dict()
 
 
 def _completed(

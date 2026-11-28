@@ -35,6 +35,7 @@ from .experiment import (
     json_data,
 )
 from .grouping import NOT_UNDER_THE_BASELINE, TaskEvidence, group_by_task, require_unambiguous, under_the_baseline
+from .invocation import InvocationEvidence
 from .reading import read_attempts
 
 __all__ = [
@@ -50,6 +51,7 @@ __all__ = [
     "EvidenceError",
     "ExecutionStatus",
     "ExperimentStatus",
+    "InvocationEvidence",
     "LifecyclePoint",
     "LifecycleStep",
     "ObservedCondition",

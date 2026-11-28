@@ -122,7 +122,7 @@ def test_a_prompt_agent_in_a_project_that_cannot_be_reached_does_not_show_the_to
 
 
 def test_a_request_to_a_foundry_project_that_gets_no_answer_does_not_show_the_token():
-    project = FoundryProject(nothing_listens("https"), token=lambda: TOKEN)
+    project = FoundryProject(nothing_listens("https"), credential=lambda: TOKEN)
 
     error = raised_by(lambda: project.request("POST", "/openai/v1/evals", {"name": "synthetic"}), FoundryRequestError)
 
@@ -130,3 +130,35 @@ def test_a_request_to_a_foundry_project_that_gets_no_answer_does_not_show_the_to
     assert TOKEN not in shown_by(error)
     # The project holds the token it was given for the requests that follow, and does not show it.
     assert TOKEN not in repr(project) and TOKEN not in repr(vars(project))
+
+
+def test_a_request_that_the_project_refuses_does_not_show_the_token_and_is_sent_once_more_with_a_new_one(hosted_project):
+    tokens = iter([TOKEN, hosted_project.token])
+    project = FoundryProject(hosted_project.endpoint, credential=lambda: next(tokens))
+
+    # The first token is refused with HTTP 401. The project is asked for a token again, and that one is accepted.
+    details = project.request("GET", "/agents/todo-hosted?api-version=v1")
+    refused = raised_by(
+        lambda: FoundryProject(hosted_project.endpoint, credential=lambda: TOKEN).request(
+            "GET", "/agents/todo-hosted?api-version=v1"
+        ),
+        FoundryRequestError,
+    )
+
+    assert details["name"] == "todo-hosted"
+    assert refused.status == 401
+    assert TOKEN not in shown_by(refused)
+
+
+@pytest.mark.parametrize(
+    "reached_with",
+    [
+        lambda endpoint: FoundryProject(endpoint, credential=lambda: TOKEN),
+        lambda endpoint: hosted_agent(endpoint),
+        lambda endpoint: prompt_agent(endpoint),
+    ],
+    ids=["project", "hosted agent target", "prompt agent target"],
+)
+def test_a_token_is_not_sent_over_plain_http_to_another_machine(reached_with):
+    with pytest.raises(ValueError, match="https endpoint"):
+        reached_with("http://project.example/api/projects/synthetic")

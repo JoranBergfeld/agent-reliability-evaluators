@@ -1,24 +1,23 @@
 """Agent target for a Foundry hosted agent that speaks the Responses protocol, invoked from customer code.
 
-Standard library only: plain REST with a bearer token. See docs/foundry_hosted_agent/readme.md.
+Standard library only: plain REST with a bearer token, sent through the `FoundryProject` that
+everything that reaches a Foundry project uses. See docs/foundry_hosted_agent/readme.md.
 """
 
 from __future__ import annotations
 
 import json
-import shutil
-import subprocess
-import time
 from time import perf_counter
 from typing import Any, Callable
 
-from ..evidence import ActionEvent, ResourceMeasurement, ResourceType
-from ..foundry import AgentDetails, Answer, BearerToken, NotAnswered, read_agent_details, send
+from ..evidence import ActionEvent, InvocationEvidence, ResourceMeasurement, ResourceType
+from ..foundry import AgentDetails, Answer, FoundryProject, NotAnswered, read_agent_details
+
+# Offered here as well: it is what `credential` is when none is given.
+from ..foundry import AzureCliCredential as AzureCliCredential
 from .interface import CUSTOMER_CODE, AgentResponse, AttemptRequest, InvocationFailed, IsolatedFollowUp
 
 API_VERSION = "v1"
-# What a token for a Foundry project is asked for.
-TOKEN_RESOURCE = "https://ai.azure.com"
 AGENT_TARGET = "foundry_hosted_agent"
 RESPONSES_PROTOCOL = "responses"
 # The evidence source to declare when `native_tool_calls` records the action evidence.
@@ -42,53 +41,6 @@ TOOL_CALL_BOUNDARY = (
     "function_call items in the output of the response the hosted agent returned for the Attempt, counted by the "
     "agent target. A tool call the agent does not report there is not counted"
 )
-
-
-class AzureCliCredential:
-    """Bearer tokens for a Foundry project, from the identity the Azure CLI is signed in with.
-
-    Calling it returns a token. The token is kept until five minutes before it expires, so a
-    long sweep asks the Azure CLI again only when it has to. `subscription` names the
-    subscription to ask for, when the signed-in identity has more than one tenant.
-    """
-
-    def __init__(self, subscription: str | None = None):
-        self._subscription = subscription
-        self._token: str | None = None
-        self._expires_on = 0.0
-
-    def __call__(self) -> str:
-        if self._token is None or time.time() >= self._expires_on - 300:
-            az = shutil.which("az")
-            if az is None:
-                raise RuntimeError("the Azure CLI (az) is not on PATH, so it cannot give a token for the Foundry project")
-            command = [az, "account", "get-access-token", "--resource", TOKEN_RESOURCE, "--only-show-errors", "-o", "json"]
-            if self._subscription:
-                command += ["--subscription", self._subscription]
-            failed = self._ask(command)
-            if failed is not None:
-                raise RuntimeError(f"the Azure CLI gave no token for the Foundry project: {failed}")
-        return self._token
-
-    def _ask(self, command: list[str]) -> str | None:
-        """Ask the Azure CLI for a token and keep it. Returns why it gave none, or None when it gave one.
-
-        What the Azure CLI printed holds the token. It is read here and goes no further, so that
-        it is no variable of a function an error is raised in.
-        """
-        try:
-            result = subprocess.run(command, text=True, capture_output=True, timeout=120)
-        except (OSError, subprocess.SubprocessError) as error:
-            return f"it did not run to its end ({type(error).__name__})"
-        if result.returncode:
-            return result.stderr.strip()
-        try:
-            token = json.loads(result.stdout)
-            # Without an expiry time the token is not kept.
-            self._token, self._expires_on = token["accessToken"], float(token.get("expires_on") or 0)
-        except (ValueError, KeyError, TypeError):
-            return "it answered with something that holds no access token"
-        return None
 
 
 class UnsupportedAgent(Exception):
@@ -136,12 +88,12 @@ class FoundryHostedAgentTarget:
         timeout_seconds: float = 300.0,
         clock: Callable[[], float] = perf_counter,
     ):
-        self._project_endpoint = project_endpoint.rstrip("/")
+        self._project = FoundryProject(project_endpoint, credential=credential, timeout_seconds=timeout_seconds)
+        self._project_endpoint = self._project.endpoint
         self._agent_name = agent_name
-        self._agent_url = f"{self._project_endpoint}/agents/{agent_name}"
+        self._agent_path = f"/agents/{agent_name}"
         # What the project said about the agent, once it has been looked up. Its settings are not kept.
         self._agent: AgentDetails | None = None
-        self._credential = credential or AzureCliCredential()
         self._compose_input = compose_input
         self._timeout_seconds = timeout_seconds
         self._clock = clock
@@ -155,13 +107,13 @@ class FoundryHostedAgentTarget:
             # Identifies the Attempt on the platform. The response returns it.
             "metadata": {"attempt_id": request.attempt_id, "task_id": request.task_id},
         }
-        # Held as a BearerToken from here on, which shows itself in no error and no traceback.
-        token = BearerToken(self._credential())
-        self._require_supported_agent(token)
+        self._require_supported_agent()
         # The time limit the customer declared for the Attempt comes before the target's own.
         limit = self._timeout_seconds if request.timeout_seconds is None else request.timeout_seconds
+        # Before the clock starts: getting the token is no part of the Attempt's elapsed time.
+        self._project.sign_in()
         started = self._clock()
-        answer = _send("POST", f"{self._agent_url}/endpoint/protocols/openai/responses", token, limit, body)
+        answer = self._send("POST", f"{self._agent_path}/endpoint/protocols/openai/responses", limit, body)
         elapsed = self._clock() - started
         if answer.status != 200:
             raise InvocationFailed(
@@ -192,7 +144,7 @@ class FoundryHostedAgentTarget:
         is made. The project does not report the model of a hosted agent. Its settings, which
         the project returns with its details, are not copied: they can hold secrets.
         """
-        agent = self._require_supported_agent(BearerToken(self._credential()))
+        agent = self._require_supported_agent()
         return {
             "agent_target": AGENT_TARGET,
             "project_endpoint": self._project_endpoint,
@@ -203,7 +155,7 @@ class FoundryHostedAgentTarget:
             "version_selection_rules": agent.version_selection_rules,
         }
 
-    def _require_supported_agent(self, token: BearerToken) -> AgentDetails:
+    def _require_supported_agent(self) -> AgentDetails:
         """What the project says about the agent, when it is a hosted agent that serves the Responses protocol.
 
         Raises otherwise. The agent is looked up once. An agent that is not supported is never sent a request.
@@ -211,7 +163,7 @@ class FoundryHostedAgentTarget:
         answer is read, so no error and no record of the target holds them.
         """
         if self._agent is None:
-            answer = _send("GET", self._agent_url, token, self._timeout_seconds, awaited="the Foundry project")
+            answer = self._send("GET", self._agent_path, self._timeout_seconds, awaited="the Foundry project")
             if answer.status != 200 or not isinstance(answer.json, dict):
                 raise InvocationFailed(
                     f"agent {self._agent_name!r} could not be looked up in the Foundry project: "
@@ -231,31 +183,25 @@ class FoundryHostedAgentTarget:
             )
         return self._agent
 
-
-def _send(
-    method: str,
-    url: str,
-    token: BearerToken,
-    timeout_seconds: float,
-    body: dict[str, Any] | None = None,
-    awaited: str = "the hosted agent",
-) -> Answer:
-    """Send one request to the project. It is sent once: a request that may have reached the agent is not repeated."""
-    try:
-        return send(
-            method,
-            f"{url}?api-version={API_VERSION}",
-            bearer=token,
-            content=None if body is None else json.dumps(body).encode(),
-            headers={"Content-Type": "application/json"},
-            timeout_seconds=timeout_seconds,
-        )
-    except NotAnswered as unanswered:
-        # No answer came back, so nothing is known about what the agent did.
-        if unanswered.timed_out:
-            # The sweep records a TimeoutError as an Attempt that timed out.
-            raise TimeoutError(f"{awaited} did not answer within {timeout_seconds:g} seconds") from None
-        raise InvocationFailed(f"the Foundry project could not be reached: {unanswered.reason}") from None
+    def _send(
+        self,
+        method: str,
+        path: str,
+        timeout_seconds: float,
+        body: dict[str, Any] | None = None,
+        awaited: str = "the hosted agent",
+    ) -> Answer:
+        """Send one request to the project. It is sent once: a request that may have reached the agent is not repeated."""
+        try:
+            return self._project.send_once(
+                method, f"{path}?api-version={API_VERSION}", body, timeout_seconds=timeout_seconds
+            )
+        except NotAnswered as unanswered:
+            # No answer came back, so nothing is known about what the agent did.
+            if unanswered.timed_out:
+                # The sweep records a TimeoutError as an Attempt that timed out.
+                raise TimeoutError(f"{awaited} did not answer within {timeout_seconds:g} seconds") from None
+            raise InvocationFailed(f"the Foundry project could not be reached: {unanswered.reason}") from None
 
 
 def _request_ids(answer: Answer) -> dict[str, str]:
@@ -269,27 +215,28 @@ def _invocation(answer: Answer, response: dict[str, Any], composed_input: str | 
     `response` is the response object of the answer, or empty when the answer has none.
     `composed_input` is what the agent was sent when that was not the Attempt's prompt as it is.
     """
-    usage = response.get("usage")
-    return {
-        "agent_target": AGENT_TARGET,
-        "entry_point": CUSTOMER_CODE,
-        "protocol": RESPONSES_PROTOCOL,
-        "api_version": API_VERSION,
-        "composed_input": composed_input,
-        "http_status": answer.status,
-        "request_ids": _request_ids(answer),
-        "agent": response.get("agent_reference"),
-        "response_id": response.get("id"),
-        "agent_session_id": response.get("agent_session_id"),
-        "status": response.get("status"),
-        "metadata": response.get("metadata"),
-        "error": response.get("error") if response else _error_of(answer),
+    return InvocationEvidence.with_usage(
         # As the platform reported it. Usage that was not reported is missing, never zero.
-        "token_usage": usage,
-        "token_usage_missing": NO_USAGE if usage is None else None,
-        "token_usage_source": None if usage is None else USAGE_SOURCE,
-        "tool_calls": _tool_calls(response),
-    }
+        response.get("usage"),
+        source=USAGE_SOURCE,
+        missing=NO_USAGE,
+        agent_target=AGENT_TARGET,
+        entry_point=CUSTOMER_CODE,
+        response_id=response.get("id"),
+        tool_calls=_tool_calls(response),
+        identifiers={
+            "protocol": RESPONSES_PROTOCOL,
+            "api_version": API_VERSION,
+            "composed_input": composed_input,
+            "http_status": answer.status,
+            "request_ids": _request_ids(answer),
+            "agent": response.get("agent_reference"),
+            "agent_session_id": response.get("agent_session_id"),
+            "status": response.get("status"),
+            "metadata": response.get("metadata"),
+            "error": response.get("error") if response else _error_of(answer),
+        },
+    ).to_dict()
 
 
 def _failure_of(response: dict[str, Any]) -> str | None:
