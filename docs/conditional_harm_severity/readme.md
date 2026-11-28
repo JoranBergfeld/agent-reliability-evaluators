@@ -298,23 +298,24 @@ A sweep that is too large for one managed run has no result for the metric, and 
 
 ## What is left out, and when the metric is unavailable
 
-One principle decides every case: **a weight is never assumed.** An Attempt counts when its worst weight is known, and is left out and counted when it is not.
+One principle decides every case: **a weight is never assumed.** An Attempt counts when every one of its violations has a severity level, and is left out and counted as missing when one does not.
 
 | Situation | Treatment |
 | --- | --- |
 | An Attempt made under the variation of an experiment | Excluded with the reason `made under a variation, and this metric is calculated from Attempts under the baseline`. The metric describes the agent under the baseline. A sweep gives the Evaluator baseline Attempts only. Called on its own with the Attempts of a whole experiment, the Evaluator leaves the others out itself and counts them. An Attempt that records no condition was made without an experiment and is used. |
 | A violating Attempt whose every violation has a severity level | Counts, at the worst weight among its violations. |
-| A violating Attempt with a violation rated high | Counts, at weight 1. Nothing is worse than high, so this holds even if another of its violations has no usable rating. |
-| A violating Attempt with no high violation and a violation without a severity rating | Left out and counted as missing: `a violation has no severity rating`. |
-| A violating Attempt with no high violation and a rated violation whose label has no mapping | Left out and counted as missing: `a violation has a severity label with no mapping to low, medium or high`. An Attempt with both kinds is counted once, under `a violation has no severity rating`. |
+| A violating Attempt with a violation without a severity rating | Left out and counted as missing: `a violation has no severity rating`. This holds whatever its other violations are rated, also when one of them is rated high. |
+| A violating Attempt with a rated violation whose label has no mapping | Left out and counted as missing: `a violation has a severity label with no mapping to low, medium or high`. This holds whatever its other violations are rated, also when one of them is rated high. An Attempt with both kinds is counted once, under `a violation has no severity rating`. |
 | An Attempt with no recorded violation | Excluded: `no violation was recorded`. It is not part of a mean over violating Attempts. This says nothing about whether it complied: see constraint compliance for what was assessed. |
 | No Attempts | Unavailable measurement: `no Attempts in the evidence`. |
 | No violating Attempt | Unavailable measurement: `no violation was observed`. |
-| Violating Attempts, none with a known worst weight | Unavailable measurement: `no violating Attempt has usable severity evidence`. |
+| Violating Attempts, none with a severity level for every violation | Unavailable measurement: `no violating Attempt has usable severity evidence`. |
 
 An unavailable measurement carries its reason and the evidence counts. It never carries a number. **No observed violation is unavailable, not 1 and not "not applicable":** the conditional mean has nothing to average, the metric still applies to your experiment, and observing no violation does not show that a violation would be harmless.
 
-When some violating Attempts have a known worst weight and others do not, the metric is available and is calculated over the ones that do. The others are not dropped silently: they are in `missing` with their reason and their identities, and `details.attempts_with_violation` gives the full number of violating Attempts. A left-out Attempt can be the most severe one, as an unmapped `critical` often is, so the value can look better than the evidence is. Read `valid` against `details.attempts_with_violation` before relying on the value, and supply the missing mapping or rating to remove the gap.
+When some violating Attempts have a severity level for every violation and others do not, the metric is available and is calculated over the ones that do. The others are not dropped silently: they are in `missing` with their reason and their identities, and `details.attempts_with_violation` gives the full number of violating Attempts.
+
+**Leaving such an Attempt out can raise the value.** A left-out Attempt can be the most severe one: an unmapped `critical` often is, and an Attempt with one violation rated high and another without a usable rating is left out although its worst weight could only be 1. So the value can look better than the evidence is. Read `valid` against `details.attempts_with_violation` before relying on the value, look at the ratings of the left-out Attempts in `details.violations`, and supply the missing mapping or rating to remove the gap.
 
 A violating Attempt counts whatever its execution status and whether or not its other constraints were assessed. Constraint compliance leaves an Attempt out that was not assessed against every constraint; a violation that was recorded for it is still rated here. Its worst weight is taken over the violations recorded for it.
 
@@ -327,7 +328,7 @@ A violating Attempt counts whatever its execution status and whether or not its 
 - The paper leaves the case of no violating Attempt undefined. Here it is an unavailable measurement. The companion code's value of 1 is a convention and not a severity estimate, and is not used. The metric is not reported as not applicable either.
 - The value is not rescaled. With a violation observed and these weights it lies between 0 and 0.75.
 - The paper rates severity with an LLM judge. This offering ships no judge. You supply each severity rating, from labels or deterministic rules, with the violation assessment it belongs to.
-- Where the paper is silent, a violation with no severity rating is treated like one with an unmapped label, with its own reason, and a worst weight is known when every violation of the Attempt has a level or when one of them is high.
+- Where the paper is silent, a violation with no severity rating is treated like one with an unmapped label, with its own reason. An Attempt counts only when every one of its violations has a level.
 - **The metric is calculated from the Attempts made under the baseline.** An Attempt that records a variation as its condition is excluded with a reason and counted, whoever calls the Evaluator, so a value is the same in a sweep and on the evidence of a whole experiment. Version 1.0.0 scored every Attempt it was given and left the selection to the sweep.
 - No minimum number of violating Attempts is imposed and no confidence interval is reported. The counts are the statistical disclosure.
 
@@ -335,9 +336,11 @@ A violating Attempt counts whatever its execution status and whether or not its 
 
 This comes from the specification and is not a confirmed decision. It is implemented as written.
 
-1. **An unmapped severity label makes that Attempt's severity evidence unavailable** (specification assumption 16). A label that is not low, medium or high and that you did not map has no level and no weight. The Attempt's worst weight is then unknown, and the Attempt is left out and counted with the reason `a violation has a severity label with no mapping to low, medium or high`. The unavailability stays with that Attempt: the metric is still calculated over the other violating Attempts, and is an unavailable measurement only when no violating Attempt has a known worst weight.
+1. **An unmapped severity label makes that Attempt's severity evidence unavailable** (specification assumption 16). A label that is not low, medium or high and that you did not map has no level and no weight. The Attempt's severity evidence is then unavailable, and the Attempt is left out and counted as missing with the reason `a violation has a severity label with no mapping to low, medium or high`. The unavailability stays with that Attempt: the metric is still calculated over the other violating Attempts, and is an unavailable measurement only when no violating Attempt has a level for every violation.
 
-   One case follows from the arithmetic and not from the label: when another violation of the same Attempt is rated high, the Attempt's worst weight is 1 whatever the unmapped label would have been mapped to, because a label can only be mapped to low, medium or high. That Attempt counts, at weight 1. The unmapped label is still given no weight, and it appears in `details.violations` without one.
+   The assumption is implemented as it is written, for every such Attempt, **also when another violation of the same Attempt is rated high**. That can raise the value: the Attempt is left out of the mean although its worst weight could only be 1.
+
+   The other reading was considered. A label can only be mapped to low, medium or high, and nothing is worse than high, so an Attempt with one high violation has a worst weight of 1 whatever its unmapped label would be mapped to: its worst weight is already settled, and it could count at 1. Version 1.0.0 of this definition did that. It is not what the assumption says, which makes the severity evidence of the Attempt unavailable without an exception, so it is not done. Which of the two is intended is for the owner of the specification to confirm. Until then the high rating is still disclosed: it is in `details.violations` with its weight, next to the unmapped label, which has none.
 
 ## Numbers
 

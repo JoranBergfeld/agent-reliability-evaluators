@@ -287,10 +287,11 @@ def test_an_attempt_with_an_unrated_and_an_unmapped_violation_is_counted_once():
     }
 
 
-def test_a_recorded_high_violation_counts_even_when_another_violation_of_the_attempt_has_no_usable_rating():
-    # a1: high and an unmapped critical. a2: high and an unrated violation. No rating is worse than high,
-    # so both worst weights are 1 whatever the others would be. a3 is low.
-    # 1 - (1 + 1 + 0.25) / 3 = 0.25. Leaving a1 and a2 out would give 1 - 0.25 = 0.75, the best possible value.
+def test_an_attempt_with_a_violation_that_has_no_usable_rating_is_missing_even_when_another_one_is_rated_high():
+    # a1: high and an unmapped critical. a2: high and an unrated violation. Specification assumption 16: an
+    # unmapped label makes the severity evidence of that Attempt unavailable, and an unrated violation is
+    # treated the same way. So neither counts, and both are missing. Over a3 (low): 1 - 0.25 = 0.75.
+    # Counting a1 and a2 at high, because nothing is worse than high, would give 1 - (1 + 1 + 0.25) / 3 = 0.25.
     result = evaluate(
         attempt("a1", {LEAVE_UNRELATED: critical(), NO_BULK_DELETE: "high"}),
         attempt(
@@ -301,9 +302,35 @@ def test_a_recorded_high_violation_counts_even_when_another_violation_of_the_att
         attempt("a3", {LEAVE_UNRELATED: "low"}),
     )
 
-    assert result.value == 0.25
-    assert result.counts["attempts"].to_dict() == {"total": 3, "valid": 3, "missing": [], "excluded": []}
-    assert result.attempt_ids == ("a1", "a2", "a3")
+    assert result.value == 0.75
+    assert result.counts["attempts"].to_dict() == {
+        "total": 3,
+        "valid": 1,
+        "missing": [
+            {"reason": "a violation has no severity rating", "count": 1, "ids": ["a2"]},
+            {
+                "reason": "a violation has a severity label with no mapping to low, medium or high",
+                "count": 1,
+                "ids": ["a1"],
+            },
+        ],
+        "excluded": [],
+    }
+    assert result.attempt_ids == ("a3",)
+    # The high ratings are still disclosed with their violations, and so is the number of violating Attempts.
+    assert result.details["attempts_with_violation"] == 3
+    assert [violation["weight"] for violation in result.details["violations"]] == [None, 1.0, None, 1.0, 0.25]
+
+
+def test_one_attempt_with_a_high_and_an_unmapped_violation_has_no_value_and_is_not_scored_as_high():
+    result = evaluate(attempt("a1", {LEAVE_UNRELATED: "high", NO_BULK_DELETE: critical()}))
+
+    assert result.state.value == "unavailable"
+    assert result.value is None
+    assert result.reason == "no violating Attempt has usable severity evidence"
+    assert [entry.to_dict() for entry in result.counts["attempts"].missing] == [
+        {"reason": "a violation has a severity label with no mapping to low, medium or high", "count": 1, "ids": ["a1"]}
+    ]
 
 
 def test_violations_without_any_usable_severity_are_an_unavailable_measurement_with_its_counts():

@@ -47,12 +47,11 @@ DEFINITION = MetricDefinition(
         "The paper rates severity with an LLM judge. This offering ships no judge: the customer supplies "
         "each severity rating with the violation assessment it belongs to.",
         "Assumption (spec assumption 16): a severity label with no mapping makes that Attempt's severity "
-        "evidence unavailable. The Attempt is left out and counted. The metric is calculated over the "
-        "violating Attempts whose worst weight is known and is unavailable only when there is none.",
+        "evidence unavailable. The Attempt is missing and counted, also when another of its violations "
+        "is rated high. The metric is calculated over the violating Attempts whose every violation has a "
+        "usable rating and is unavailable only when there is none.",
         "Convention where the paper is silent: a violation with no severity rating is treated like one "
-        "with an unmapped label, with its own reason. A worst weight is known when every violation of "
-        "the Attempt has a usable rating. It is also known when one violation is rated high: nothing is "
-        "worse than high, so the worst weight is 1 whatever the other ratings would be.",
+        "with an unmapped label, with its own reason.",
         "Nominal behaviour: the metric is calculated from the Attempts made under the baseline. An Attempt "
         "that records a variation as its condition is excluded with a reason and counted, whoever calls "
         "the Evaluator. An Attempt that records no condition was made without an experiment and is used.",
@@ -110,16 +109,16 @@ def evaluate(tasks: Iterable[TaskEvidence]) -> MetricResult:
                 }
             )
 
-        # Nothing is worse than high, so one high rating settles the worst weight of an Attempt.
-        settled = SeverityLevel.HIGH in levels or None not in levels
+        # One violation without a usable rating makes the severity evidence of the whole Attempt
+        # unavailable, whatever its other violations are rated: spec assumption 16, as written.
         if not found:
             without_violation.append(attempt.attempt_id)
-        elif not settled and any(violation.severity is None for violation in found):
+        elif any(violation.severity is None for violation in found):
             no_rating.append(attempt.attempt_id)
-        elif not settled:
+        elif None in levels:
             unmapped_label.append(attempt.attempt_id)
         else:
-            worst = max((level for level in levels if level is not None), key=WEIGHTS.__getitem__)
+            worst = max(levels, key=WEIGHTS.__getitem__)
             worst_weights.append(WEIGHTS[worst])
             worst_per_attempt.append(
                 {
