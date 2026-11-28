@@ -12,6 +12,7 @@ The twelve Evaluators can be combined with two agent types, two entry points and
 | Live check | [`tests/live/test_full_matrix_live.py`](../../tests/live/test_full_matrix_live.py), declared in [`tests/full_matrix/`](../../tests/full_matrix/) |
 | Verified on | 2026-11-27 (UTC), Sweden Central, `gpt-4.1-mini` (`2025-04-14`). Interfaces and versions: [environment](#environment-and-resources) |
 | Result | **72 worked, 16 unsupported, 8 unverified, 0 failed**: [the matrix](#the-matrix), [what the offering claims](#what-the-offering-claims) |
+| Since then | The source changed after a review, and the matrix was **not** run again. Eight live checks were, on 2026-11-28: [after the review](#after-the-review-what-was-run-again) |
 
 ## Declared before execution
 
@@ -350,6 +351,39 @@ Dated notes, as the declaration asks. The declaration itself is as it was commit
 - **2026-11-27, the source the runs were made with.** The first run was made with the source at commit `7fa8d73`. Before the second, the token usage verification ([#52](https://github.com/JoranBergfeld/agent-reliability-evaluators/issues/52)) was merged into this work, and the cloud evaluation target was changed for the follow-up. The other three runs and the supplements were made with the source as it is after both, which did not change again. For the prompt agent target, the difference between the two is one recorded field, the source of a usage count.
 - **2026-11-27, the code of the check.** The reference and the rules by which a cell gets its status are as they were when the declaration was committed. What changed afterwards: a run reads the commit of the source before its first Attempt and not after its last, the check learned to make a supplement, which chooses other Tasks and two metrics, and a record now loses every path that names a subscription, where it lost the subscription identifier before.
 - **2026-11-27, a case the table of statuses does not spell out.** A cell that is declared unsupported, and whose measurement is unavailable for another reason than the declared one, is recorded as unverified and not as unsupported. The check did so from the start. No cell was in that case.
+
+## After the review: what was run again
+
+Written on 2026-11-28. Nothing above this section was changed by it, except the one row of the table at the top that points here.
+
+**The matrix was verified with the source at commits `7fa8d73` to `70ca9c4`**, on 2026-11-27, and merged as `e62b127`. Every value, status and count above is of that source.
+
+**Review fixes followed.** A review of the whole first iteration found defects, and they were fixed in the commits from `7734986` to `b95737f`. Those that change what a cell of the matrix calculates or how it reaches Foundry:
+
+- Nine canonical metric definitions changed and are now version `2.0.0`: outcome consistency, the two trajectory consistency metrics, resource consistency, calibration, strict confidence discrimination, the Brier-based score, constraint compliance and conditional harm severity. Each now leaves out an Attempt made under a variation, in whatever evidence it is given. Constraint compliance counts an Attempt by whether its constraints were assessed and not by how its execution ended. A Task with an Attempt that used a tool of no declared action type is excluded from the trajectory metrics. Conditional harm severity treats an unrated violation as missing also beside a rated one. The two safety metrics can be not applicable. The three robustness metrics are unchanged, at `1.0.0`.
+- The three agent targets and Foundry-managed scoring send their requests through one `FoundryProject` (`foundry/`), with one credential parameter, and record one typed invocation evidence.
+- No failure shows a bearer token or a key, and nothing keeps the settings of a hosted agent.
+
+**The matrix was not run again.** So no cell above was verified with the source as it is now. In particular the recorded values of the nine metrics are values of their definitions at version `1.0.0`, calculated from the Attempts of 2026-11-27. They were not recalculated with the definitions as they are now, and nothing here says what they would be.
+
+**What was run again**, on 2026-11-28 between 02:50 and 04:05 UTC, with the source at commit `b95737f`, against one new disposable fixture in Sweden Central (`gpt-4.1-mini`, `2025-04-14`), provisioned with the source at `9e82262`, between which and `b95737f` nothing that is deployed changed:
+
+| Live check | What it exercises | Result |
+| --- | --- | --- |
+| [`tests/fixture/test_live_fixture.py`](../../tests/fixture/test_live_fixture.py) | The fixture: the service, both agents | 5 passed |
+| [`tests/live/test_foundry_prompt_agent_live.py`](../../tests/live/test_foundry_prompt_agent_live.py) | The prompt agent target | 5 passed |
+| [`tests/live/test_foundry_hosted_agent_live.py`](../../tests/live/test_foundry_hosted_agent_live.py) | The hosted agent target | 2 passed |
+| [`tests/live/test_foundry_cloud_evaluation_live.py`](../../tests/live/test_foundry_cloud_evaluation_live.py) | The cloud evaluation target, both agent types | 13 passed |
+| [`tests/live/test_confidence_follow_up_live.py`](../../tests/live/test_confidence_follow_up_live.py) | The confidence follow-up | 5 passed |
+| [`tests/live/test_token_usage_live.py`](../../tests/live/test_token_usage_live.py) | Token usage of Attempts and of scoring | 24 passed, 2 skipped. The two are skipped by the check itself: only a cloud evaluation run has usage rows of its own |
+| [`tests/live/test_scorecard_delivery_live.py`](../../tests/live/test_scorecard_delivery_live.py) | Delivery of the scorecard alongside Foundry | 8 passed |
+| [`tests/live/test_managed_twelve_evaluators.py`](../../tests/live/test_managed_twelve_evaluators.py) | Foundry-managed scoring of all twelve Evaluators as they are now, on synthetic Attempts with hand-calculated values | **4 passed and 1 failed** in the first run. The one that failed passed when it was run again, alone, at the same commit |
+
+**The check that failed, and what was observed.** `test_every_evaluator_returns_an_unavailable_measurement_from_the_live_project` expects a complete scorecard and got a partial one. Foundry ended one of its twelve runs, the run for the encoded result of prompt robustness, with the status `failed` after 9 minutes 32 seconds, with no row graded and with no error on the run. The offering reported that metric as a failure of Foundry-managed scoring and scored nothing in this process, which is what it is meant to do. The run was made while the other live checks made evaluation runs in the same project. Run again alone, with the same evidence and the same registered evaluator, all twelve runs completed and the check passed. Why Foundry failed the run is not known: it said nothing. The check was not changed.
+
+**Not run again:** the full matrix ([`tests/live/test_full_matrix_live.py`](../../tests/live/test_full_matrix_live.py)), and the live checks of managed fidelity, of managed outcome consistency and of the failures of managed scoring.
+
+The fixture was torn down afterwards and its resource group confirmed absent.
 
 ## Not verified
 
