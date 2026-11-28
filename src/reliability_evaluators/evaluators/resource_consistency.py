@@ -9,13 +9,21 @@ from __future__ import annotations
 from math import exp, frexp, fsum, ldexp, sqrt
 from typing import Any, Iterable, Sequence
 
-from ..evidence import Attempt, ExecutionStatus, ResourceType, TaskEvidence, require_unambiguous
+from ..evidence import (
+    NOT_UNDER_THE_BASELINE,
+    Attempt,
+    ExecutionStatus,
+    ResourceType,
+    TaskEvidence,
+    require_unambiguous,
+    under_the_baseline,
+)
 from .catalogue import RESOURCE_CONSISTENCY
 from .result import EvidenceCount, MetricDefinition, MetricResult, Scale, counted
 
 DEFINITION = MetricDefinition(
     metric=RESOURCE_CONSISTENCY,
-    version="1.0.0",
+    version="2.0.0",
     measures="Whether repeated Attempts at the same Task use similar resources.",
     calculation=(
         "Per Task and resource type, the coefficient of variation (CV) is the population standard "
@@ -50,6 +58,9 @@ DEFINITION = MetricDefinition(
         "excluded with whatever it measured, because that is not a measurement of a whole Attempt.",
         "Assumption (made by this definition): a Task needs at least two Attempts whose execution "
         "completed. With one, every CV is 0 and the Task would score 1 with no repeated Attempt behind it.",
+        "Nominal behaviour: the metric is calculated from the Attempts made under the baseline. An Attempt "
+        "that records a variation as its condition is excluded with a reason and counted, whoever calls "
+        "the Evaluator. An Attempt that records no condition was made without an experiment and is used.",
     ),
     scale=Scale(
         minimum=0.0,
@@ -80,8 +91,9 @@ MIXED_BOUNDARIES = "measured with more than one measurement boundary across the 
 
 def evaluate(tasks: Iterable[TaskEvidence]) -> MetricResult:
     """Calculate resource consistency from Attempts grouped by Task."""
-    tasks = tuple(tasks)
-    require_unambiguous(tasks)
+    given = tuple(tasks)
+    require_unambiguous(given)
+    tasks, under_a_variation = under_the_baseline(given)
     per_task = []
     excluded_tasks = []
     used_attempts: list[str] = []
@@ -141,9 +153,10 @@ def evaluate(tasks: Iterable[TaskEvidence]) -> MetricResult:
                 + counted(NO_USABLE_RESOURCE_TYPE, tasks_excluded_for(NO_USABLE_RESOURCE_TYPE)),
             ),
             "attempts": EvidenceCount(
-                total=sum(len(task.attempts) for task in tasks),
+                total=sum(len(task.attempts) for task in given),
                 valid=len(used_attempts),
-                excluded=counted("execution status is not completed", not_completed)
+                excluded=counted(NOT_UNDER_THE_BASELINE, under_a_variation)
+                + counted("execution status is not completed", not_completed)
                 + counted(f"its Task has {TOO_FEW_ATTEMPTS}", attempts_of_small_tasks)
                 + counted(IN_TASK_WITHOUT_RESOURCE_TYPE, attempts_without_resource_type),
             ),

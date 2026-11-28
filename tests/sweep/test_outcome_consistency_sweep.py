@@ -68,7 +68,7 @@ def test_the_scorecard_says_how_outcome_consistency_is_defined_and_how_to_read_i
     outcome_consistency = metric(sweep({"close": FOUR_IN_FIVE, "archive": ALWAYS_FAILS}))
 
     definition = outcome_consistency["definition"]
-    assert definition["version"] == "1.0.0"
+    assert definition["version"] == "2.0.0"
     assert "(2p - 1)^2" in definition["calculation"]
     assert "weighted equally" in definition["calculation"]
     assert any("companion code" in convention for convention in definition["fidelity_conventions"])

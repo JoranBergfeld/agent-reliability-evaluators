@@ -54,6 +54,9 @@ DEFINITION = MetricDefinition(
         "dropped: its Task is excluded with a reason that names the tool names, and counted like any "
         "other excluded Task. Dropping the Attempt would leave the Attempts that are alike, which could "
         "only raise the value.",
+        "Nominal behaviour: the metric is calculated from the Attempts made under the baseline. An Attempt "
+        "that records a variation as its condition is excluded with a reason and counted, whoever calls "
+        "the Evaluator. An Attempt that records no condition was made without an experiment and is used.",
     ),
     scale=Scale(
         minimum=0.0,

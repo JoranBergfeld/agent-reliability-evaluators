@@ -124,14 +124,16 @@ For each Attempt an evaluator is given its identity, its Task, its execution sta
 
 | Evaluator | What is sent of an Attempt, beside its identity, its Task and its execution status |
 | --- | --- |
-| Outcome consistency | The task outcome with its source |
-| Distributional and sequential trajectory consistency | The source of the action evidence and the tool name of each action, in order. The arguments, the result and the error of an action are not sent: these metrics compare action types and nothing else of an action |
-| Resource consistency | The resource measurements, each with its type, value, unit, measurement boundary and whether it is reliably sourced |
+| Outcome consistency | The task outcome with its source, and the intended condition |
+| Distributional and sequential trajectory consistency | The source of the action evidence and the tool name of each action, in order. The arguments, the result and the error of an action are not sent: these metrics compare action types and nothing else of an action. The intended condition |
+| Resource consistency | The resource measurements, each with its type, value, unit, measurement boundary and whether it is reliably sourced, and the intended condition |
 | Fault, environment and prompt robustness | The task outcome, the intended condition with its role, kind, description and parameters, the observed condition with its source and observations, and the prompt variant with its exact text and source |
-| Calibration, strict confidence discrimination and Brier-based score | The task outcome and the confidence evidence: the rating as the agent wrote it with the whole response it was read from, or the reason there is no rating |
-| Constraint compliance and conditional harm severity | The operational constraints with their descriptions, and the violation assessments with their evidence, source and severity rating |
+| Calibration, strict confidence discrimination and Brier-based score | The task outcome and the confidence evidence: the rating as the agent wrote it with the whole response it was read from, or the reason there is no rating. The intended condition |
+| Constraint compliance and conditional harm severity | The operational constraints with their descriptions, and the violation assessments with their evidence, source and severity rating. The intended condition |
 
-So the text of a prompt variant, the agent's answer to the confidence request and the evidence text of a violation assessment are stored in your project when you score those metrics there.
+The intended condition is the condition an Attempt was made under in its experiment, with its role, description and parameters. Every evaluator is sent it: the nine metrics of nominal behaviour leave out the Attempts made under a variation, and the three robustness metrics compare them with the baseline. An Attempt made without an experiment has none.
+
+So the text of a prompt variant, the agent's answer to the confidence request, the evidence text of a violation assessment and the description and parameters of a condition are stored in your project when you score those metrics there.
 
 **What you declare for an Evaluator is sent with its evidence.** The trajectory metrics are calculated from the evidence source and the action types you declare, so those travel in the same string, behind the same digest. An evaluator in Foundry is given the submitted row and nothing else (observed), so a declaration has no other way to reach it.
 
@@ -211,7 +213,7 @@ Foundry-managed scoring has limits that scoring in your own process does not hav
 
 **The size of a run is what limits a sweep.** Every row of a run carries the evidence, and the run for the parts of a result has one row for every six bytes of it. Both grow with the sweep, so the request grows with its square.
 
-The table gives, for each Evaluator, the largest sweep whose runs fit in 2,000,000 bytes. It was measured on this machine with the derived evaluators, on synthetic sweeps of Tasks with five Attempts each and identities like `task-7/attempt-3`. Your sweep will differ: identities and texts that have less in common deflate less, and a result names every Task and Attempt it leaves out.
+The table gives, for each Evaluator, the largest sweep whose runs fit in 2,000,000 bytes. It was measured on this machine with the derived evaluators, on synthetic sweeps of Tasks with five Attempts each and identities like `task-7/attempt-3`. Your sweep will differ: identities and texts that have less in common deflate less, and a result names every Task and Attempt it leaves out. The sweeps of the nine metrics that are not robustness metrics were of Tasks given without an experiment. An Attempt made in an experiment is also sent with its intended condition, so fewer of them fit. How many fewer was not measured.
 
 | Evaluator | Largest sweep that fits | Rows of its second run | Rows at 100 Attempts |
 | --- | --- | --- | --- |

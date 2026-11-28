@@ -7,7 +7,7 @@ The Brier-based score measures how close the agent's confidence rating was to wh
 | | |
 | --- | --- |
 | Metric identity | `brier_based_score` |
-| Definition version | 1.0.0 |
+| Definition version | 2.0.0 |
 | Source | [Towards a Science of AI Agent Reliability, version 3](https://arxiv.org/html/2602.16666v3), Table 2 |
 | Canonical definition | [`src/reliability_evaluators/evaluators/brier_based_score.py`](../../src/reliability_evaluators/evaluators/brier_based_score.py) |
 | Scale | 0 to 1 |
@@ -156,7 +156,7 @@ print(to_json(scorecard))
 
 The Brier-based score can also be calculated by a custom evaluator in your own Foundry project. That evaluator is derived from the canonical definition above; there is no second formula. Select the metric as `ConfiguredEvaluator(metric_id="brier_based_score", scoring_path="foundry_managed")` and give the sweep your project as `managed_scoring`. Everything else is declared as above.
 
-For each Attempt the evaluator is sent its identity, its Task, its execution status, and its task outcome and its confidence evidence: the rating as the agent wrote it with the whole response it was read from, or the reason there is no rating. The rating travels as text, so the evaluator calculates from the same exact fractions as your own process. Nothing else about the Attempt leaves your process.
+For each Attempt the evaluator is sent its identity, its Task, its execution status, and its task outcome and its confidence evidence: the rating as the agent wrote it with the whole response it was read from, or the reason there is no rating. With it goes the condition the Attempt was intended for, with its role, description and parameters, when the Attempt was made in an experiment: the evaluator leaves out an Attempt made under a variation, as the canonical definition does. The rating travels as text, so the evaluator calculates from the same exact fractions as your own process. Nothing else about the Attempt leaves your process.
 
 The value is then the number Foundry returned. It is reported with `scoring_path` `foundry_managed`. Its `fidelity` is `authoritative` when it equals the value the evaluator returned with it in encoded form, and `unverified`, with its limitation, when it does not: see [the fidelity check](../managed_scoring/readme.md#the-fidelity-check) for what that establishes. An unverified result cannot be met or not met by an acceptance criterion. Only the metric value is compared in that way. The state, the reason, the counts and the details, with the mean squared error and every raw pair, are the ones the evaluator returned from Foundry in the encoded result, and they are what your own process gives for the same evidence. An unavailable measurement comes back as one.
 
@@ -305,6 +305,7 @@ Every Attempt is counted once in `counts.confidence_outcome_pairs`, under the fi
 
 | Situation | Treatment |
 | --- | --- |
+| An Attempt made under the variation of an experiment | Excluded with the reason `made under a variation, and this metric is calculated from Attempts under the baseline`. The metric describes the agent under the baseline. A sweep gives the Evaluator baseline Attempts only. Called on its own with the Attempts of a whole experiment, the Evaluator leaves the others out itself and counts them. An Attempt that records no condition was made without an experiment and is used. |
 | The execution status is not `completed` | Excluded: `execution status is not completed`. It is not a task failure. |
 | A completed Attempt with no task outcome | Missing: `no task outcome recorded`. |
 | A completed Attempt with an outcome and no confidence evidence | Missing: `no confidence rating recorded`. |
@@ -321,6 +322,7 @@ An unavailable measurement carries its reason and the counts. It never carries a
 - The confidence is the agent's own estimate after the fact. It is not an independently verified probability.
 - No minimum number of pairs is imposed and no confidence interval is reported. The counts are the statistical disclosure.
 - This metric is separate from [calibration](../calibration/readme.md) and from [strict confidence discrimination](../strict_confidence_discrimination/readme.md). It is not combined with them.
+- **The metric is calculated from the Attempts made under the baseline.** An Attempt that records a variation as its condition is excluded with a reason and counted, whoever calls the Evaluator, so a value is the same in a sweep and on the evidence of a whole experiment. Version 1.0.0 scored every Attempt it was given and left the selection to the sweep.
 
 ## Assumptions
 

@@ -34,10 +34,11 @@ from .experiment import (
     VariationKind,
     json_data,
 )
-from .grouping import TaskEvidence, group_by_task, require_unambiguous
+from .grouping import NOT_UNDER_THE_BASELINE, TaskEvidence, group_by_task, require_unambiguous, under_the_baseline
 from .reading import read_attempts
 
 __all__ = [
+    "NOT_UNDER_THE_BASELINE",
     "ActionEvent",
     "ActionEvidence",
     "ActionTypeMapping",
@@ -70,4 +71,5 @@ __all__ = [
     "read_attempts",
     "read_confidence_response",
     "require_unambiguous",
+    "under_the_baseline",
 ]

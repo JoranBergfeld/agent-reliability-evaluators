@@ -141,14 +141,22 @@ TOOL_NAMES_IN_ORDER = {
     ],
 }
 COMPARED_CONDITIONS = ("task_outcome", "intended_condition", "observed_condition", "prompt_variant")
-CONFIDENCE_OUTCOME_PAIR = ("task_outcome", "confidence")
-ASSESSED_CONSTRAINTS = ("operational_constraints", "violation_assessments")
+# A metric of nominal behaviour leaves out the Attempts under a variation, so every Attempt is sent with
+# the condition it was intended for.
+CONFIDENCE_OUTCOME_PAIR = ("task_outcome", "confidence", "intended_condition")
+ASSESSED_CONSTRAINTS = ("operational_constraints", "violation_assessments", "intended_condition")
 # The evidence of an Attempt that each Evaluator is sent, by the names the Attempt record writes it under.
 SUBMITTED = {
-    "outcome_consistency": {"task_outcome": RECORDED["task_outcome"]},
-    "distributional_trajectory_consistency": {"action_evidence": TOOL_NAMES_IN_ORDER},
-    "sequential_trajectory_consistency": {"action_evidence": TOOL_NAMES_IN_ORDER},
-    "resource_consistency": {"resource_measurements": RECORDED["resource_measurements"]},
+    "outcome_consistency": {name: RECORDED[name] for name in ("task_outcome", "intended_condition")},
+    "distributional_trajectory_consistency": {
+        "action_evidence": TOOL_NAMES_IN_ORDER,
+        "intended_condition": RECORDED["intended_condition"],
+    },
+    "sequential_trajectory_consistency": {
+        "action_evidence": TOOL_NAMES_IN_ORDER,
+        "intended_condition": RECORDED["intended_condition"],
+    },
+    "resource_consistency": {name: RECORDED[name] for name in ("resource_measurements", "intended_condition")},
     "fault_robustness": {name: RECORDED[name] for name in COMPARED_CONDITIONS},
     "environment_robustness": {name: RECORDED[name] for name in COMPARED_CONDITIONS},
     "prompt_robustness": {name: RECORDED[name] for name in COMPARED_CONDITIONS},

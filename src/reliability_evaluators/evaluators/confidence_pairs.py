@@ -11,12 +11,14 @@ from fractions import Fraction
 from typing import Any, Iterable
 
 from ..evidence import (
+    NOT_UNDER_THE_BASELINE,
     ConfidenceRating,
     ConfidenceUnavailable,
     ExecutionStatus,
     TaskEvidence,
     TaskOutcome,
     require_unambiguous,
+    under_the_baseline,
 )
 from .result import EvidenceCount, counted
 
@@ -78,9 +80,13 @@ def pair_confidence_with_outcome(tasks: Iterable[TaskEvidence]) -> ConfidenceOut
     Both are read from the one Attempt record, so they are matched by Attempt identity and
     never by position. An Attempt gives a valid pair only when it completed and has both.
     Every other Attempt is counted once, under the first reason that applies to it.
+
+    The pairs are those of the Attempts made under the baseline. An Attempt made under a
+    variation is excluded and counted.
     """
-    tasks = tuple(tasks)
-    require_unambiguous(tasks)
+    given = tuple(tasks)
+    require_unambiguous(given)
+    tasks, under_a_variation = under_the_baseline(given)
     pairs: list[ConfidenceOutcomePair] = []
     not_completed: list[str] = []
     without_outcome: list[str] = []
@@ -108,9 +114,9 @@ def pair_confidence_with_outcome(tasks: Iterable[TaskEvidence]) -> ConfidenceOut
     return ConfidenceOutcomePairs(
         pairs=tuple(pairs),
         count=EvidenceCount(
-            total=sum(len(task.attempts) for task in tasks),
+            total=sum(len(task.attempts) for task in given),
             valid=len(pairs),
             missing=missing,
-            excluded=counted(NOT_COMPLETED, not_completed),
+            excluded=counted(NOT_UNDER_THE_BASELINE, under_a_variation) + counted(NOT_COMPLETED, not_completed),
         ),
     )

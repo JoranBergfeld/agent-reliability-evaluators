@@ -204,7 +204,7 @@ Each Attempt under `attempts` carries its `action_evidence`: the source and the 
 
 Sequential trajectory consistency can also be calculated by a custom evaluator in your own Foundry project. That evaluator is derived from the canonical definition above; there is no second formula. Select the metric as `ConfiguredEvaluator(metric_id="sequential_trajectory_consistency", scoring_path="foundry_managed")` and give the sweep your project as `managed_scoring`. Everything else is declared as above.
 
-For each Attempt the evaluator is sent its identity, its Task, its execution status, and the source of its action evidence and the tool name of each action, in order. The arguments, the result and the error of an action are not sent. The evidence source and the action types you declare are sent with it. Nothing else about the Attempt leaves your process.
+For each Attempt the evaluator is sent its identity, its Task, its execution status, and the source of its action evidence and the tool name of each action, in order. With it goes the condition the Attempt was intended for, with its role, description and parameters, when the Attempt was made in an experiment: the evaluator leaves out an Attempt made under a variation, as the canonical definition does. The arguments, the result and the error of an action are not sent. The evidence source and the action types you declare are sent with it. Nothing else about the Attempt leaves your process.
 
 The value is then the number Foundry returned. It is reported with `scoring_path` `foundry_managed`. Its `fidelity` is `authoritative` when it equals the value the evaluator returned with it in encoded form, and `unverified`, with its limitation, when it does not: see [the fidelity check](../managed_scoring/readme.md#the-fidelity-check) for what that establishes. An unverified result cannot be met or not met by an acceptance criterion. Only the metric value is compared in that way. The state, the reason, the counts and the details, with the value and the mean distance of each Task, are the ones the evaluator returned from Foundry in the encoded result, and they are what your own process gives for the same evidence. An unavailable measurement comes back as one.
 
@@ -225,6 +225,7 @@ An event without a tool name is rejected with an error. So are arguments or a re
 
 | Situation | Treatment |
 | --- | --- |
+| An Attempt made under the variation of an experiment | Excluded with the reason `made under a variation, and this metric is calculated from Attempts under the baseline`. The metric describes the agent under the baseline. A sweep gives the Evaluator baseline Attempts only. Called on its own with the Attempts of a whole experiment, the Evaluator leaves the others out itself and counts them. An Attempt that records no condition was made without an experiment and is used. |
 | An Attempt whose execution status is not `completed` | Excluded with the reason `execution status is not completed`. Its trajectory was cut short by something other than the agent. |
 | An Attempt with no action recording | Counted as missing with the reason `no action recording`. It is not compared as an empty sequence. |
 | An Attempt recorded from another source than the declared one | Excluded with the reason `its action recording is not from the declared evidence source`. Sources are never mixed. |
@@ -244,6 +245,7 @@ An Attempt that called an undeclared tool is unlike the others by construction, 
 - **Two confirmed empty sequences are identical.** The paper's formula is 0 / 0 for them.
 - **An empty and a non-empty sequence are maximally different.** This follows from the formula: every action of the non-empty sequence is an insertion.
 - No minimum number of Attempts beyond two is imposed and no confidence interval is reported. The counts are the statistical disclosure.
+- **The metric is calculated from the Attempts made under the baseline.** An Attempt that records a variation as its condition is excluded with a reason and counted, whoever calls the Evaluator, so a value is the same in a sweep and on the evidence of a whole experiment. Version 1.0.0 scored every Attempt it was given and left the selection to the sweep.
 
 ## Assumptions
 

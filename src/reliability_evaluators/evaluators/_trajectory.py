@@ -13,7 +13,14 @@ from fractions import Fraction
 from itertools import combinations
 from typing import Callable, Iterable, Sequence
 
-from ..evidence import ActionTypeMapping, ExecutionStatus, TaskEvidence, require_unambiguous
+from ..evidence import (
+    NOT_UNDER_THE_BASELINE,
+    ActionTypeMapping,
+    ExecutionStatus,
+    TaskEvidence,
+    require_unambiguous,
+    under_the_baseline,
+)
 from .result import EvidenceCount, MetricDefinition, MetricResult, counted
 
 ActionTypes = Sequence[str]
@@ -48,8 +55,9 @@ def evaluate_attempt_pairs(
             "the trajectory metrics need a declared ActionTypeMapping: the evidence source and the "
             f"action type of each tool name have no default. Got {action_types!r}"
         )
-    tasks = tuple(tasks)
-    require_unambiguous(tasks)
+    given = tuple(tasks)
+    require_unambiguous(given)
+    tasks, under_a_variation = under_the_baseline(given)
     declared = action_types.action_types
     per_task = []
     task_values: list[Fraction] = []
@@ -115,10 +123,11 @@ def evaluate_attempt_pairs(
                 ),
             ),
             "attempts": EvidenceCount(
-                total=sum(len(task.attempts) for task in tasks),
+                total=sum(len(task.attempts) for task in given),
                 valid=len(used_attempts),
                 missing=counted("no action recording", not_recorded),
-                excluded=counted("execution status is not completed", not_completed)
+                excluded=counted(NOT_UNDER_THE_BASELINE, under_a_variation)
+                + counted("execution status is not completed", not_completed)
                 + counted("its action recording is not from the declared evidence source", other_source)
                 + tuple(
                     entry

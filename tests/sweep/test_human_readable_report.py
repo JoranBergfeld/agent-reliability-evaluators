@@ -107,7 +107,7 @@ def test_a_metric_is_shown_with_its_definition_interpretation_counts_and_denomin
 
     assert "(2p - 1)^2" in report.value("/metrics/0/definition/calculation")
     assert "Consistent is not successful" in report.value("/metrics/0/definition/interpretation")
-    assert report.value("/metrics/0/definition/version") == "1.0.0"
+    assert report.value("/metrics/0/definition/version") == "2.0.0"
     shown_counts = {
         unit: {count: report.value(f"/metrics/0/counts/{unit}/{count}") for count in ("total", "valid")}
         for unit in ("tasks", "attempts")

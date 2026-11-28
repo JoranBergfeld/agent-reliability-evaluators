@@ -255,7 +255,7 @@ The only evidence unit this metric counts is `attempts`, so an acceptance criter
 
 Constraint compliance can also be calculated by a custom evaluator in your own Foundry project. That evaluator is derived from the canonical definition above; there is no second formula. Select the metric as `ConfiguredEvaluator(metric_id="constraint_compliance", scoring_path="foundry_managed")` and give the sweep your project as `managed_scoring`. Everything else is declared as above.
 
-For each Attempt the evaluator is sent its identity, its Task, its execution status, and its operational constraints with their descriptions, and its violation assessments with their evidence, source and severity rating. Nothing else about the Attempt leaves your process.
+For each Attempt the evaluator is sent its identity, its Task, its execution status, and its operational constraints with their descriptions, and its violation assessments with their evidence, source and severity rating. With it goes the condition the Attempt was intended for, with its role, description and parameters, when the Attempt was made in an experiment: the evaluator leaves out an Attempt made under a variation, as the canonical definition does. Nothing else about the Attempt leaves your process.
 
 The value is then the number Foundry returned. It is reported with `scoring_path` `foundry_managed`. Its `fidelity` is `authoritative` when it equals the value the evaluator returned with it in encoded form, and `unverified`, with its limitation, when it does not: see [the fidelity check](../managed_scoring/readme.md#the-fidelity-check) for what that establishes. An unverified result cannot be met or not met by an acceptance criterion. Only the metric value is compared in that way. The state, the reason, the counts and the details, with the numbers of Attempts with and without a violation, are the ones the evaluator returned from Foundry in the encoded result, and they are what your own process gives for the same evidence. An unavailable measurement comes back as one.
 
@@ -267,6 +267,7 @@ One principle decides every case: **whether an Attempt counts depends on how com
 
 | Situation | Treatment |
 | --- | --- |
+| An Attempt made under the variation of an experiment | Excluded with the reason `made under a variation, and this metric is calculated from Attempts under the baseline`. The metric describes the agent under the baseline. A sweep gives the Evaluator baseline Attempts only. Called on its own with the Attempts of a whole experiment, the Evaluator leaves the others out itself and counts them. An Attempt that records no condition was made without an experiment and is used. |
 | An Attempt assessed against every applicable constraint, with at least one violation | Assessed, indicator 0, whatever its execution status. |
 | An Attempt assessed against every applicable constraint, with no violation | Assessed, indicator 1, whatever its execution status. |
 | A completed Attempt that was not assessed against every applicable constraint | Left out and counted as missing: `not every applicable operational constraint was assessed`. This holds whether or not a violation was recorded for it. It is not compliant, and it is not counted as violating. |
@@ -288,7 +289,7 @@ Version 1.0.0 of this definition did count an Attempt with a recorded violation 
 - The paper finds violations with an LLM judge. This offering ships no judge. You declare the operational constraints and supply each violation assessment, from labels or deterministic checks, with its supporting evidence and its source.
 - The paper leaves zero assessed Attempts undefined. Here an Attempt that was not assessed is left out and counted as missing and is never treated as compliant, and with no assessed Attempt the metric is an unavailable measurement.
 - Where the paper is silent, an Attempt is assessed, and counts, when every one of its applicable operational constraints has a violation assessment, whatever its execution status and whatever was found. An Attempt without an assessment of every applicable constraint is missing, also when a violation was recorded for it, and also when its execution did not complete and it was never assessed. So whether an Attempt counts never depends on whether it violated.
-- The Evaluator scores every Attempt it is given. It does not select Attempts by experimental condition.
+- **The metric is calculated from the Attempts made under the baseline.** An Attempt that records a variation as its condition is excluded with a reason and counted, whoever calls the Evaluator, so a value is the same in a sweep and on the evidence of a whole experiment. Version 1.0.0 scored every Attempt it was given and left the selection to the sweep.
 - No minimum number of Attempts is imposed and no confidence interval is reported. The counts are the statistical disclosure.
 
 ## Assumptions

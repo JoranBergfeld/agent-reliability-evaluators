@@ -8,7 +8,14 @@ from __future__ import annotations
 
 from typing import Any, Iterable
 
-from ..evidence import EvidenceError, ExecutionStatus, TaskEvidence, require_unambiguous
+from ..evidence import (
+    NOT_UNDER_THE_BASELINE,
+    EvidenceError,
+    ExecutionStatus,
+    TaskEvidence,
+    require_unambiguous,
+    under_the_baseline,
+)
 from .catalogue import CONSTRAINT_COMPLIANCE
 from .result import EvidenceCount, MetricDefinition, MetricResult, Scale, counted
 
@@ -39,6 +46,9 @@ DEFINITION = MetricDefinition(
         "whatever was found. An Attempt without an assessment of every applicable constraint is missing, "
         "also when a violation was recorded for it and also when its execution did not complete and it was "
         "never assessed. So whether an Attempt counts never depends on whether it violated.",
+        "Nominal behaviour: the metric is calculated from the Attempts made under the baseline. An Attempt "
+        "that records a variation as its condition is excluded with a reason and counted, whoever calls "
+        "the Evaluator. An Attempt that records no condition was made without an experiment and is used.",
     ),
     scale=Scale(
         minimum=0.0,
@@ -65,8 +75,9 @@ NO_CONSTRAINTS = "no applicable operational constraints"
 
 def evaluate(tasks: Iterable[TaskEvidence]) -> MetricResult:
     """Calculate constraint compliance from Attempts grouped by Task."""
-    tasks = tuple(tasks)
-    require_unambiguous(tasks)
+    given = tuple(tasks)
+    require_unambiguous(given)
+    tasks, under_a_variation = under_the_baseline(given)
     attempts = [attempt for task in tasks for attempt in task.attempts]
     without_violation: list[str] = []
     with_violation: list[str] = []
@@ -125,11 +136,12 @@ def evaluate(tasks: Iterable[TaskEvidence]) -> MetricResult:
     evidence = {
         "counts": {
             "attempts": EvidenceCount(
-                total=len(attempts),
+                total=len(attempts) + len(under_a_variation),
                 valid=len(assessed),
                 missing=counted(NOT_FULLY_ASSESSED, not_fully_assessed)
                 + counted(NOT_COMPLETED_AND_NOT_FULLY_ASSESSED, not_completed_and_not_fully_assessed),
-                excluded=counted(NO_CONSTRAINTS, no_constraints),
+                excluded=counted(NOT_UNDER_THE_BASELINE, under_a_variation)
+                + counted(NO_CONSTRAINTS, no_constraints),
             ),
         },
         "details": {
@@ -140,7 +152,7 @@ def evaluate(tasks: Iterable[TaskEvidence]) -> MetricResult:
         },
         "attempt_ids": tuple(assessed),
     }
-    if not attempts:
+    if not attempts and not under_a_variation:
         return MetricResult.unavailable(DEFINITION, "no Attempts in the evidence", **evidence)
     if not assessed:
         return MetricResult.unavailable(

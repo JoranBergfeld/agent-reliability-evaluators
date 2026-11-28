@@ -13,7 +13,8 @@ import json
 
 import pytest
 
-from reliability_evaluators.evidence import TaskOutcome
+from reliability_evaluators.evaluators import outcome_consistency
+from reliability_evaluators.evidence import TaskOutcome, group_by_task, read_attempts
 from reliability_evaluators.scorecard import AcceptanceCriterion, to_json
 from reliability_evaluators.sweep import Condition, Experiment, Task, run_sweep
 from tests.fakes import FakeControls, FakeScriptedTodoAgent, FakeTodoService, todo_list
@@ -477,3 +478,36 @@ def test_an_experiment_that_was_stopped_or_never_started_still_counts_as_a_task_
         ],
     }
     assert fault_robustness["counts"]["fault_attempts"] == {"total": 0, "valid": 0, "missing": [], "excluded": []}
+
+
+def test_a_metric_of_the_baseline_gives_the_same_value_in_the_sweep_and_called_on_the_evidence_of_the_whole_experiment():
+    # Baseline: the agent adds its item in both Attempts, p = 2/2, outcome consistency 1.
+    # Under the fault the service refuses the item in both. Pooled with those, p = 2/4 and the value 0.
+    fixture = Fixture()
+    scorecard = fixture.sweep(fixture.experiment(attempts=2), metrics=["outcome_consistency", "fault_robustness"])
+    under_the_fault = ["add-item/add-fails/attempt-1", "add-item/add-fails/attempt-2"]
+
+    in_the_sweep = metric(scorecard, "outcome_consistency")
+    on_its_own = outcome_consistency.evaluate(
+        group_by_task(read_attempts(json.loads(to_json(scorecard))["attempts"]))
+    ).to_dict()
+
+    assert in_the_sweep["value"] == 1
+    # The sweep gave the Evaluator the baseline Attempts only.
+    assert in_the_sweep["attempts_used"]["attempt_ids"] == ["add-item/baseline/attempt-1", "add-item/baseline/attempt-2"]
+    assert in_the_sweep["counts"]["attempts"] == {"total": 2, "valid": 2, "missing": [], "excluded": []}
+    # Given every Attempt of the experiment, the Evaluator leaves the others out itself, and says so.
+    assert on_its_own["value"] == 1
+    assert on_its_own["evidence"] == in_the_sweep["evidence"]
+    assert on_its_own["counts"]["attempts"] == {
+        "total": 4,
+        "valid": 2,
+        "missing": [],
+        "excluded": [
+            {
+                "reason": "made under a variation, and this metric is calculated from Attempts under the baseline",
+                "count": 2,
+                "ids": under_the_fault,
+            }
+        ],
+    }
