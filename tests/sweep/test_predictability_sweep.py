@@ -13,6 +13,7 @@ from reliability_evaluators.evidence import TaskOutcome
 from reliability_evaluators.scorecard import AcceptanceCriterion, to_json
 from reliability_evaluators.sweep import Task, run_sweep
 from tests.fakes import FakeAgentTarget
+from tests.fakes import fake_baseline_experiments
 
 SOURCE = "final state of the fake service"
 RULE = "The item is marked done in the to-do service."
@@ -44,7 +45,7 @@ def sweep(script, confidence, metrics=ALL_THREE, **options):
         )
         for task_id, behaviours in script.items()
     ]
-    return run_sweep(tasks=tasks, agent_target=target, metrics=metrics, **options)
+    return run_sweep(experiments=fake_baseline_experiments(tasks), agent_target=target, metrics=metrics, **options)
 
 
 def metric(scorecard, metric_id):
@@ -61,14 +62,14 @@ def metric(scorecard, metric_id):
 #     not strictly higher: 5 / 6.
 DOCUMENTED = {"close": ["success", "success", "failure"], "archive": ["success", "failure", "success"]}
 DOCUMENTED_ANSWERS = {
-    "close/attempt-1": "95",
-    "close/attempt-2": "90",
-    "close/attempt-3": "80",
-    "archive/attempt-1": "62.5",
-    "archive/attempt-2": "30",
-    "archive/attempt-3": "Fairly sure.",
+    "close/baseline/attempt-1": "95",
+    "close/baseline/attempt-2": "90",
+    "close/baseline/attempt-3": "80",
+    "archive/baseline/attempt-1": "62.5",
+    "archive/baseline/attempt-2": "30",
+    "archive/baseline/attempt-3": "Fairly sure.",
 }
-RATED = ["close/attempt-1", "close/attempt-2", "close/attempt-3", "archive/attempt-1", "archive/attempt-2"]
+RATED = ["close/baseline/attempt-1", "close/baseline/attempt-2", "close/baseline/attempt-3", "archive/baseline/attempt-1", "archive/baseline/attempt-2"]
 
 
 def test_one_sweep_reports_the_three_predictability_metrics_as_separate_results_from_the_same_attempts():
@@ -91,7 +92,7 @@ def test_one_sweep_reports_the_three_predictability_metrics_as_separate_results_
                 {
                     "reason": "confidence rating unavailable: no number in the confidence response",
                     "count": 1,
-                    "ids": ["archive/attempt-3"],
+                    "ids": ["archive/baseline/attempt-3"],
                 },
             ],
             "excluded": [],
@@ -103,7 +104,7 @@ def test_the_three_predictability_metrics_share_their_attempts_and_say_so_in_the
     scorecard = sweep(DOCUMENTED, DOCUMENTED_ANSWERS)
 
     made = [attempt["attempt_id"] for attempt in scorecard["attempts"]]
-    assert made == [*RATED, "archive/attempt-3"]
+    assert made == [*RATED, "archive/baseline/attempt-3"]
     for metric_id in ALL_THREE:
         assert metric(scorecard, metric_id)["attempts_used"] == {
             "attempt_ids": made,
@@ -121,7 +122,7 @@ def test_the_agent_is_asked_once_per_attempt_however_many_metrics_use_its_rating
 
     scorecard = sweep(
         {"close": ["success", "failure"]},
-        {"close/attempt-1": times_asked, "close/attempt-2": times_asked},
+        {"close/baseline/attempt-1": times_asked, "close/baseline/attempt-2": times_asked},
     )
 
     assert [entry["confidence"]["rating"] for entry in scorecard["attempts"]] == ["1", "1"]
@@ -132,7 +133,7 @@ def test_the_agent_is_asked_once_per_attempt_however_many_metrics_use_its_rating
 def test_either_metric_selected_on_its_own_has_the_agent_asked_for_its_confidence(selected, value):
     # Calibration: 0.8 on a success and 0.2 on a failure are each alone in a bin, both with a gap of 0.2.
     # Strict confidence discrimination: the one success/failure pair has 80 > 20.
-    scorecard = sweep({"close": ["success", "failure"]}, {"close/attempt-1": "80", "close/attempt-2": "20"}, (selected,))
+    scorecard = sweep({"close": ["success", "failure"]}, {"close/baseline/attempt-1": "80", "close/baseline/attempt-2": "20"}, (selected,))
 
     assert [entry["confidence"]["rating"] for entry in scorecard["attempts"]] == ["80", "20"]
     assert metric(scorecard, selected)["state"] == "available"
@@ -144,7 +145,7 @@ def test_the_bin_boundaries_and_counts_are_in_the_scorecard_alongside_every_raw_
     # 0.875 on a success is alone in [0.8, 0.9), bin 9, and 0.125 on a failure in [0.1, 0.2), bin 2.
     # Both gaps are 0.125: expected calibration error 0.125, calibration 0.875.
     scorecard = sweep(
-        {"close": ["success", "failure"]}, {"close/attempt-1": "87.50", "close/attempt-2": "12.5"}, (CALIBRATION,)
+        {"close": ["success", "failure"]}, {"close/baseline/attempt-1": "87.50", "close/baseline/attempt-2": "12.5"}, (CALIBRATION,)
     )
 
     calibration = metric(scorecard, CALIBRATION)
@@ -167,7 +168,7 @@ def test_the_bin_boundaries_and_counts_are_in_the_scorecard_alongside_every_raw_
     assert [entry["count"] for entry in bins] == [0, 1, 0, 0, 0, 0, 0, 0, 1, 0]
     assert calibration["details"]["pairs"] == [
         {
-            "attempt_id": "close/attempt-1",
+            "attempt_id": "close/baseline/attempt-1",
             "task_id": "close",
             "rating": "87.50",
             "confidence": 0.875,
@@ -175,7 +176,7 @@ def test_the_bin_boundaries_and_counts_are_in_the_scorecard_alongside_every_raw_
             "bin": 9,
         },
         {
-            "attempt_id": "close/attempt-2",
+            "attempt_id": "close/baseline/attempt-2",
             "task_id": "close",
             "rating": "12.5",
             "confidence": 0.125,
@@ -187,7 +188,7 @@ def test_the_bin_boundaries_and_counts_are_in_the_scorecard_alongside_every_raw_
 
 
 ALL_TIED = {"close": ["success", "success", "failure", "failure"]}
-ALL_TIED_ANSWERS = {f"close/attempt-{number}": "50" for number in (1, 2, 3, 4)}
+ALL_TIED_ANSWERS = {f"close/baseline/attempt-{number}": "50" for number in (1, 2, 3, 4)}
 
 
 def test_all_ratings_tied_scores_0_for_strict_discrimination_with_the_tied_pairs_counted():
@@ -230,7 +231,7 @@ def test_without_a_failure_strict_discrimination_is_unavailable_while_the_other_
     # Two successes rated 90 and 70, no failure: there is no success/failure pair.
     #   Calibration: each alone in a bin, gaps 0.1 and 0.3: expected calibration error 0.2, value 0.8.
     #   Brier-based score: squared errors 0.01 and 0.09: mean 0.05, score 0.95.
-    scorecard = sweep({"close": ["success", "success"]}, {"close/attempt-1": "90", "close/attempt-2": "70"})
+    scorecard = sweep({"close": ["success", "success"]}, {"close/baseline/attempt-1": "90", "close/baseline/attempt-2": "70"})
 
     discrimination = metric(scorecard, DISCRIMINATION)
     assert discrimination["state"] == "unavailable"
@@ -250,7 +251,7 @@ def test_without_a_failure_strict_discrimination_is_unavailable_while_the_other_
 def test_without_a_readable_rating_calibration_and_strict_discrimination_are_unavailable_with_their_counts():
     scorecard = sweep(
         {"close": ["success", "failure"]},
-        {"close/attempt-1": "Quite confident.", "close/attempt-2": "150"},
+        {"close/baseline/attempt-1": "Quite confident.", "close/baseline/attempt-2": "150"},
         (CALIBRATION, DISCRIMINATION),
     )
 
@@ -258,12 +259,12 @@ def test_without_a_readable_rating_calibration_and_strict_discrimination_are_una
         {
             "reason": "confidence rating unavailable: no number in the confidence response",
             "count": 1,
-            "ids": ["close/attempt-1"],
+            "ids": ["close/baseline/attempt-1"],
         },
         {
             "reason": "confidence rating unavailable: the rating is outside 0 to 100",
             "count": 1,
-            "ids": ["close/attempt-2"],
+            "ids": ["close/baseline/attempt-2"],
         },
     ]
     for metric_id in (CALIBRATION, DISCRIMINATION):

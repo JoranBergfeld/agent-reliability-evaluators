@@ -11,6 +11,7 @@ list then holds exactly one item. Neither the agent nor the service ever resets 
 from reliability_evaluators.evidence import ObservedCondition, TaskOutcome
 from reliability_evaluators.sweep import Condition, ExecutionLimits, Experiment, Task, run_sweep
 from tests.fakes import (
+    FakeAgentTarget,
     FakeControls,
     FakeSelfAssessingTodoAgent,
     FakeTodoAgent,
@@ -352,22 +353,164 @@ def test_the_attempts_of_an_experiment_run_one_after_another_whatever_concurrenc
     assert scorecard["concurrency"] == {"mode": "concurrent", "max_concurrent_attempts": 2}
 
 
-def test_a_task_given_without_an_experiment_is_not_listed_as_an_experiment():
-    fixture = Fixture()
-    bare = Task(
-        task_id="close",
-        prompt="Close the item.",
-        success_rule=lambda attempt, response: TaskOutcome(success=True, source=OUTCOME_SOURCE),
-        attempts=2,
+def test_independent_experiments_can_run_concurrently_when_declared():
+    experiments = [
+        Experiment(
+            experiment_id=f"{task_id}-item",
+            task=Task(
+                task_id=task_id,
+                prompt=f"Do {task_id}.",
+                success_rule=lambda attempt, response: TaskOutcome(success=True, source=OUTCOME_SOURCE),
+                attempts=2,
+            ),
+            agent_configuration={"agent": "meeting"},
+            starting_state="fresh",
+            baseline=BASELINE,
+            variation=None,
+            controls=NoControls(),
+            write_capable=False,
+        )
+        for task_id in ("close", "archive")
+    ]
+
+    scorecard = run_sweep(
+        experiments=experiments,
+        agent_target=MeetingAgentTarget(wait_seconds=1),
+        metrics=["outcome_consistency"],
+        max_concurrent_attempts=2,
     )
 
-    scorecard = fixture.sweep(fixture.experiment(attempts=2, starting_state="fresh"), tasks=[bare])
+    assert scorecard["concurrency"] == {"mode": "concurrent", "max_concurrent_attempts": 2}
+    assert [(attempt["attempt_id"], attempt["execution_status"]) for attempt in scorecard["attempts"]] == [
+        ("close-item/baseline/attempt-1", "completed"),
+        ("close-item/baseline/attempt-2", "completed"),
+        ("archive-item/baseline/attempt-1", "completed"),
+        ("archive-item/baseline/attempt-2", "completed"),
+    ]
+    assert scorecard["status"] == "complete"
+    assert metric(scorecard)["value"] == 1
 
-    assert [entry["experiment_id"] for entry in scorecard["experiments"]] == ["add-item"]
-    assert [entry["task_id"] for entry in scorecard["tasks_without_experiment"]] == ["close"]
+
+def test_a_read_only_experiment_does_not_overlap_a_write_capable_one():
+    # A read-only experiment cannot name resources, so its dependencies on a writer are unknown.
+    def experiment(task_id, write_capable):
+        return Experiment(
+            experiment_id=task_id,
+            task=Task(
+                task_id=task_id,
+                prompt=f"Do {task_id}.",
+                success_rule=lambda attempt, response: TaskOutcome(success=True, source=OUTCOME_SOURCE),
+                attempts=1,
+            ),
+            agent_configuration={"agent": "meeting"},
+            starting_state="fresh",
+            baseline=BASELINE,
+            variation=None,
+            controls=NoControls(),
+            write_capable=write_capable,
+            authorized_resources=["shared"] if write_capable else [],
+        )
+
+    read_only = experiment("reader", False)
+    writable = experiment("writer", True)
+    for ordered in ([read_only, writable], [writable, read_only]):
+        scorecard = run_sweep(
+            experiments=ordered,
+            agent_target=MeetingAgentTarget(wait_seconds=0.1),
+            metrics=["outcome_consistency"],
+            max_concurrent_attempts=2,
+        )
+        assert [attempt["execution_status"] for attempt in scorecard["attempts"]] == ["failed", "failed"]
+
+
+def test_experiments_that_share_a_resource_do_not_overlap():
+    experiments = [
+        Experiment(
+            experiment_id=task_id,
+            task=Task(
+                task_id=task_id,
+                prompt=f"Do {task_id}.",
+                success_rule=lambda attempt, response: TaskOutcome(success=True, source=OUTCOME_SOURCE),
+                attempts=1,
+            ),
+            agent_configuration={"agent": "meeting"},
+            starting_state="fresh",
+            baseline=BASELINE,
+            variation=None,
+            controls=NoControls(),
+            write_capable=True,
+            authorized_resources=["shared"],
+        )
+        for task_id in ("close", "archive")
+    ]
+
+    scorecard = run_sweep(
+        experiments=experiments,
+        agent_target=MeetingAgentTarget(wait_seconds=0.1),
+        metrics=["outcome_consistency"],
+        max_concurrent_attempts=2,
+    )
+
+    assert [attempt["execution_status"] for attempt in scorecard["attempts"]] == ["failed", "failed"]
+
+
+def test_an_unrestored_resource_stops_a_reader_with_unknown_dependencies_but_not_an_unrelated_writer():
+    class FailedCleanup(NoControls):
+        def clean_up(self, context):
+            raise RuntimeError("could not restore the resource")
+
+    def experiment(task_id, *, resource=None, controls=None):
+        return Experiment(
+            experiment_id=task_id,
+            task=Task(
+                task_id=task_id,
+                prompt=f"Do {task_id}.",
+                success_rule=lambda attempt, response: TaskOutcome(success=True, source=OUTCOME_SOURCE),
+                attempts=1,
+            ),
+            agent_configuration={"agent": "synthetic"},
+            starting_state="fresh",
+            baseline=BASELINE,
+            variation=None,
+            controls=controls or NoControls(),
+            write_capable=resource is not None,
+            authorized_resources=[] if resource is None else [resource],
+        )
+
+    for concurrency in (1, 2):
+        scorecard = run_sweep(
+            experiments=[
+                experiment("writer", resource="shared", controls=FailedCleanup()),
+                experiment("reader"),
+                experiment("unrelated", resource="other"),
+            ],
+            agent_target=FakeAgentTarget({"writer": ["success"], "reader": ["success"], "unrelated": ["success"]}),
+            metrics=["outcome_consistency"],
+            max_concurrent_attempts=concurrency,
+        )
+        assert [(attempt["task_id"], attempt["execution_status"]) for attempt in scorecard["attempts"]] == [
+            ("writer", "cleanup_failed"),
+            ("unrelated", "completed"),
+        ]
+        reader = experiment_record(scorecard, "reader")["execution"]
+        assert (reader["status"], reader["attempts_recorded"]) == ("stopped", 0)
+        assert "did not restore" in reader["reason"]
+        assert scorecard["status"] == "partial"
+
+
+def test_every_task_is_listed_under_its_declared_experiment():
+    fixture = Fixture()
+
+    scorecard = fixture.sweep(
+        fixture.experiment("close", attempts=2, starting_state="fresh"),
+        fixture.experiment(attempts=2, starting_state="fresh"),
+    )
+
+    assert [entry["experiment_id"] for entry in scorecard["experiments"]] == ["close-item", "add-item"]
+    assert scorecard["tasks_without_experiment"] == []
     assert [(entry["task_id"], entry["experiment_id"]) for entry in scorecard["attempts"]] == [
-        ("close", None),
-        ("close", None),
+        ("close", "close-item"),
+        ("close", "close-item"),
         ("add", "add-item"),
         ("add", "add-item"),
     ]

@@ -81,12 +81,12 @@ result.attempt_ids                 # the ten Attempts the value rests on
 
 ## Running it through an Evaluator sweep
 
-Declare Tasks with a task-success rule and a number of Attempts, and select the metric. The sweep makes the Attempts against the agent target, scores in your own process, and returns the reliability scorecard:
+Declare an experiment with a Task, its task-success rule, configuration, policy and controls, and select the metric. The sweep makes the Attempts against the agent target, scores in your own process, and returns the reliability scorecard:
 
 ```python
 from reliability_evaluators.evidence import TaskOutcome
 from reliability_evaluators.scorecard import to_json
-from reliability_evaluators.sweep import Task, run_sweep
+from reliability_evaluators.sweep import Condition, Experiment, Task, run_sweep
 
 
 def item_is_closed(attempt, response):
@@ -96,14 +96,24 @@ def item_is_closed(attempt, response):
 
 
 scorecard = run_sweep(
-    tasks=[Task(task_id="close", prompt="Close the item.", success_rule=item_is_closed, attempts=5)],
+    experiments=[Experiment(
+        experiment_id="close",
+        task=Task(task_id="close", prompt="Close the item.", success_rule=item_is_closed, attempts=5),
+        agent_configuration={"agent": "my-agent", "version": "1"},
+        starting_state="fresh",
+        baseline=Condition(condition_id="baseline", description="The normal test environment."),
+        variation=None,
+        controls=my_controls,
+        write_capable=True,
+        authorized_resources=["to-do service test data"],
+    )],
     agent_target=my_agent_target,
     metrics=["outcome_consistency"],
 )
 print(to_json(scorecard))
 ```
 
-`my_agent_target` is any object with an `invoke(request)` method that returns an `AgentResponse`; see [`agent_target`](../../src/reliability_evaluators/agent_target/interface.py).
+`my_agent_target` is any object with an `invoke(request)` method that returns an `AgentResponse`; see [`agent_target`](../../src/reliability_evaluators/agent_target/interface.py). Implement `my_controls` to prepare, apply, verify and clean up your own test state, as in [controlled experiments](../sweep/controlled-experiments.md).
 
 The metric's entry in the scorecard carries:
 
@@ -111,7 +121,7 @@ The metric's entry in the scorecard carries:
 | --- | --- |
 | `state`, `value`, `reason` | `available` with a value, or `unavailable` with a reason and no value |
 | `execution_failure` | `null`, unless the metric has no result because the Attempts that supply its evidence were cut short; see [execution limits and partial scorecards](../sweep/execution-limits.md#metrics-in-a-partial-scorecard) |
-| `cut_short` | The experiments, and the Tasks given without one, whose Attempts for this metric were cut short. Both lists are empty when none were |
+| `cut_short` | The experiments whose Attempts for this metric were cut short. `task_ids` is retained for earlier scorecards |
 | `definition` | version, what it measures, the calculation, the fidelity conventions, the scale and the interpretation |
 | `scoring_path`, `fidelity` | `customer_process` and `authoritative` for a value scored in your own process. For Foundry-managed scoring see below |
 | `counts` | Tasks and Attempts: total, valid (the denominator used), missing and excluded with reasons and identities |
@@ -143,7 +153,7 @@ A fractional or otherwise non-binary task outcome is rejected with an error. So 
 
 | Situation | Treatment |
 | --- | --- |
-| An Attempt made under the variation of an experiment | Excluded with the reason `made under a variation, and this metric is calculated from Attempts under the baseline`. The metric describes the agent under the baseline. A sweep gives the Evaluator baseline Attempts only. Called on its own with the Attempts of a whole experiment, the Evaluator leaves the others out itself and counts them. An Attempt that records no condition was made without an experiment and is used. |
+| An Attempt made under the variation of an experiment | Excluded with the reason `made under a variation, and this metric is calculated from Attempts under the baseline`. The metric describes the agent under the baseline. A sweep gives the Evaluator baseline Attempts only. Called on its own with the Attempts of a whole experiment, the Evaluator leaves the others out itself and counts them. Standalone Evaluators and earlier scorecards can contain Attempts without a recorded condition; these are used. |
 | An Attempt whose execution status is not `completed` | Excluded with the reason `execution status is not completed`. It is not a task failure. |
 | A completed Attempt with no task outcome | Counted as missing with the reason `no task outcome recorded`. |
 | A Task with fewer than two Attempts that have a task outcome | The Task is excluded with a reason and its Attempts are counted as excluded. |

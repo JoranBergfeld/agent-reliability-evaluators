@@ -13,6 +13,7 @@ from reliability_evaluators.evidence import EvidenceError, TaskOutcome
 from reliability_evaluators.scorecard import to_json
 from reliability_evaluators.sweep import Task, run_sweep
 from tests.fakes import FakeAgentTarget, attempt_evidence
+from tests.fakes import fake_baseline_experiments
 
 SOURCE = "final state of the fake service"
 
@@ -28,7 +29,7 @@ def sweep(script, metrics=("outcome_consistency",)):
         Task(task_id=task_id, prompt=f"Do {task_id}.", success_rule=item_is_done, attempts=len(behaviours))
         for task_id, behaviours in script.items()
     ]
-    return run_sweep(tasks=tasks, agent_target=target, metrics=metrics)
+    return run_sweep(experiments=fake_baseline_experiments(tasks), agent_target=target, metrics=metrics)
 
 
 def metric(scorecard, metric_id="outcome_consistency"):
@@ -36,13 +37,27 @@ def metric(scorecard, metric_id="outcome_consistency"):
     return entry
 
 
-# What an Attempt records about its experiment when its Task was given without one.
-NO_EXPERIMENT = {
-    "experiment_id": None,
-    "starting_state": None,
-    "intended_condition": None,
-    "observed_condition": None,
-    "lifecycle": [],
+# What each Attempt of the "close" experiment records about its declared baseline.
+EXPERIMENT_EVIDENCE = {
+    "experiment_id": "close",
+    "starting_state": "fresh",
+    "intended_condition": {
+        "role": "baseline",
+        "condition_id": "baseline",
+        "description": "The synthetic target has no injected variation.",
+        "parameters": {},
+    },
+    "observed_condition": {
+        "met": True,
+        "source": "parameters applied by the fake control",
+        "observations": {"parameters": {}},
+    },
+    "lifecycle": [
+        {"point": "prepare_state", "succeeded": True, "error": None},
+        {"point": "apply_condition", "succeeded": True, "error": None},
+        {"point": "verify_condition", "succeeded": True, "error": None},
+        {"point": "clean_up", "succeeded": True, "error": None},
+    ],
 }
 
 FOUR_IN_FIVE = ["success", "success", "success", "success", "failure"]
@@ -96,23 +111,23 @@ def test_the_scorecard_gives_the_counts_and_denominators_behind_the_value():
 def test_the_value_refers_to_attempt_level_evidence_in_the_scorecard():
     scorecard = sweep({"close": ["success", "failure"]})
 
-    assert metric(scorecard)["evidence"] == {"attempt_ids": ["close/attempt-1", "close/attempt-2"]}
-    assert [attempt_evidence(attempt, *NO_EXPERIMENT) for attempt in scorecard["attempts"]] == [
+    assert metric(scorecard)["evidence"] == {"attempt_ids": ["close/baseline/attempt-1", "close/baseline/attempt-2"]}
+    assert [attempt_evidence(attempt, *EXPERIMENT_EVIDENCE) for attempt in scorecard["attempts"]] == [
         {
-            "attempt_id": "close/attempt-1",
+            "attempt_id": "close/baseline/attempt-1",
             "task_id": "close",
             "execution_status": "completed",
             "execution_error": None,
             "task_outcome": {"success": True, "source": SOURCE},
-            **NO_EXPERIMENT,
+            **EXPERIMENT_EVIDENCE,
         },
         {
-            "attempt_id": "close/attempt-2",
+            "attempt_id": "close/baseline/attempt-2",
             "task_id": "close",
             "execution_status": "completed",
             "execution_error": None,
             "task_outcome": {"success": False, "source": SOURCE},
-            **NO_EXPERIMENT,
+            **EXPERIMENT_EVIDENCE,
         },
     ]
 
@@ -186,13 +201,13 @@ def test_an_invocation_that_fails_is_an_execution_status_and_not_a_task_failure(
     # Scoring the failed invocation as a task failure would give (2 * 2/3 - 1)^2 = 0.111...
     scorecard = sweep({"close": ["success", "error", "success"]})
 
-    assert attempt_evidence(scorecard["attempts"][1], *NO_EXPERIMENT) == {
-        "attempt_id": "close/attempt-2",
+    assert attempt_evidence(scorecard["attempts"][1], *EXPERIMENT_EVIDENCE) == {
+        "attempt_id": "close/baseline/attempt-2",
         "task_id": "close",
         "execution_status": "failed",
         "execution_error": "ConnectionError: the agent endpoint returned 503",
         "task_outcome": None,
-        **NO_EXPERIMENT,
+        **EXPERIMENT_EVIDENCE,
     }
     outcome_consistency = metric(scorecard)
     assert outcome_consistency["value"] == 1
@@ -201,10 +216,10 @@ def test_an_invocation_that_fails_is_an_execution_status_and_not_a_task_failure(
         "valid": 2,
         "missing": [],
         "excluded": [
-            {"reason": "execution status is not completed", "count": 1, "ids": ["close/attempt-2"]},
+            {"reason": "execution status is not completed", "count": 1, "ids": ["close/baseline/attempt-2"]},
         ],
     }
-    assert outcome_consistency["evidence"] == {"attempt_ids": ["close/attempt-1", "close/attempt-3"]}
+    assert outcome_consistency["evidence"] == {"attempt_ids": ["close/baseline/attempt-1", "close/baseline/attempt-3"]}
 
 
 def test_a_task_with_one_attempt_is_excluded_from_the_metric_with_a_reason():
@@ -252,14 +267,14 @@ def test_a_task_success_rule_that_returns_no_sourced_task_outcome_is_rejected(re
     tasks = [one_task(success_rule=lambda attempt, response: returned)]
 
     with pytest.raises(EvidenceError, match="TaskOutcome"):
-        run_sweep(tasks=tasks, agent_target=FakeAgentTarget({"close": ["success"] * 2}), metrics=["outcome_consistency"])
+        run_sweep(experiments=fake_baseline_experiments(tasks), agent_target=FakeAgentTarget({"close": ["success"] * 2}), metrics=["outcome_consistency"])
 
 
 def test_a_task_success_rule_that_decides_a_fractional_outcome_is_rejected():
     tasks = [one_task(success_rule=lambda attempt, response: TaskOutcome(success=0.5, source=SOURCE))]
 
     with pytest.raises(EvidenceError, match="binary"):
-        run_sweep(tasks=tasks, agent_target=FakeAgentTarget({"close": ["success"] * 2}), metrics=["outcome_consistency"])
+        run_sweep(experiments=fake_baseline_experiments(tasks), agent_target=FakeAgentTarget({"close": ["success"] * 2}), metrics=["outcome_consistency"])
 
 
 @pytest.mark.parametrize(
@@ -273,7 +288,7 @@ def test_a_task_success_rule_that_decides_a_fractional_outcome_is_rejected():
 )
 def test_a_declaration_the_sweep_cannot_run_is_rejected(tasks, metrics, problem):
     with pytest.raises(ValueError, match=problem):
-        run_sweep(tasks=tasks(), agent_target=FakeAgentTarget({"close": ["success"] * 4}), metrics=metrics)
+        run_sweep(experiments=fake_baseline_experiments(tasks()), agent_target=FakeAgentTarget({"close": ["success"] * 4}), metrics=metrics)
 
 
 def test_every_one_of_the_twelve_metrics_has_an_evaluator():

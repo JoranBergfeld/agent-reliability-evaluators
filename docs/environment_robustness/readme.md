@@ -232,7 +232,7 @@ The sweep makes `attempts` Attempts under the baseline and as many under the pre
 
 The same Attempts can feed other metrics in the same sweep. Outcome consistency and the other metrics of repeated Attempts are scored on the baseline Attempts only: see [several Evaluators in one sweep](../sweep/several-evaluators.md).
 
-The sweep rejects the selection of `environment_robustness` before any Attempt is made when no experiment declares a variation of the kind `environment`. Environment robustness uses only the experiments that do. Experiments that declare a fault or a prompt variation are not part of it, and neither are Tasks given without an experiment.
+The sweep rejects the selection of `environment_robustness` before any Attempt is made when no experiment declares a variation of the kind `environment`. Environment robustness uses only the experiments that do. Experiments that declare a fault or a prompt variation are not part of it.
 
 To measure fault robustness, environment robustness and prompt robustness for the same work, declare one experiment for each kind of variation. A Task can be declared in one experiment only, so each of the three has a Task of its own, with the same prompt and the same task-success rule and its own task identity.
 

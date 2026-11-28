@@ -27,6 +27,7 @@ from tests.fake_foundry import FakeFoundryProject
 from tests.fakes import FakeAgentTarget, cancelling
 from tests.managed_artifact import unpacked
 from tests.report_reader import assert_faithful_rendering
+from tests.fakes import fake_baseline_experiments
 
 SOURCE = "final state of the fake service"
 
@@ -52,7 +53,7 @@ def sweep(script, foundry, metrics=(MANAGED,), target=None, **declared):
     ]
     managed_scoring = None if foundry is None else FoundryManagedScoring(project=foundry, poll_interval_seconds=0)
     return run_sweep(
-        tasks=tasks, agent_target=target, metrics=metrics, managed_scoring=managed_scoring, **declared
+        experiments=fake_baseline_experiments(tasks), agent_target=target, metrics=metrics, managed_scoring=managed_scoring, **declared
     )
 
 
@@ -111,8 +112,8 @@ def test_the_counts_and_details_of_a_value_are_the_ones_the_evaluator_returned_f
         ]
     }
     assert outcome_consistency["evidence"] == {
-        "attempt_ids": [f"close/attempt-{number}" for number in range(1, 6)]
-        + [f"archive/attempt-{number}" for number in range(1, 4)]
+        "attempt_ids": [f"close/baseline/attempt-{number}" for number in range(1, 6)]
+        + [f"archive/baseline/attempt-{number}" for number in range(1, 4)]
     }
 
 
@@ -120,10 +121,10 @@ def test_the_scorecard_names_the_attempts_the_managed_evaluator_was_given():
     scorecard = sweep({"close": ["success", "failure"]}, FakeFoundryProject())
 
     assert metric(scorecard)["attempts_used"] == {
-        "attempt_ids": ["close/attempt-1", "close/attempt-2"],
+        "attempt_ids": ["close/baseline/attempt-1", "close/baseline/attempt-2"],
         "shared_with": [],
     }
-    assert [attempt["attempt_id"] for attempt in scorecard["attempts"]] == ["close/attempt-1", "close/attempt-2"]
+    assert [attempt["attempt_id"] for attempt in scorecard["attempts"]] == ["close/baseline/attempt-1", "close/baseline/attempt-2"]
 
 
 def test_the_scorecard_says_which_evaluator_and_which_run_the_value_came_from():
@@ -226,8 +227,8 @@ def test_only_the_evidence_the_metric_is_calculated_from_is_submitted():
         (attempt["attempt_id"], attempt["execution_status"], attempt["task_outcome"], attempt["resource_measurements"])
         for attempt in task["attempts"]
     ] == [
-        ("close/attempt-1", "completed", {"success": True, "source": SOURCE}, []),
-        ("close/attempt-2", "completed", {"success": False, "source": SOURCE}, []),
+        ("close/baseline/attempt-1", "completed", {"success": True, "source": SOURCE}, []),
+        ("close/baseline/attempt-2", "completed", {"success": False, "source": SOURCE}, []),
     ]
 
 
@@ -263,7 +264,7 @@ def test_an_unavailable_measurement_comes_back_from_foundry_with_its_reason_and_
                 {
                     "reason": "its Task has fewer than two Attempts with a task outcome",
                     "count": 2,
-                    "ids": ["close/attempt-1", "archive/attempt-1"],
+                    "ids": ["close/baseline/attempt-1", "archive/baseline/attempt-1"],
                 }
             ],
         },
@@ -377,7 +378,7 @@ def test_a_part_of_the_result_that_foundry_did_not_grade_is_asked_for_again():
 
     assert outcome_consistency["state"] == "unavailable"
     assert outcome_consistency["reason"] == "no Task has at least two Attempts with a task outcome"
-    assert outcome_consistency["counts"]["attempts"]["excluded"][0]["ids"] == ["close/attempt-1", "archive/attempt-1"]
+    assert outcome_consistency["counts"]["attempts"]["excluded"][0]["ids"] == ["close/baseline/attempt-1", "archive/baseline/attempt-1"]
     # The second run returned every part but one. A third run was asked for that part and for nothing else.
     encoded = outcome_consistency["managed_scoring"]["encoded_result"]
     assert encoded["run_ids"] == ["evalrun_2", "evalrun_3"]
@@ -474,7 +475,7 @@ def test_a_run_that_takes_a_while_is_waited_for():
 
 
 CORRECTED = OutcomeCorrection(
-    attempt_id="close/attempt-5",
+    attempt_id="close/baseline/attempt-5",
     task_outcome=TaskOutcome(success=True, source="label added after the run"),
     provenance="synthetic correction",
 )
@@ -489,7 +490,7 @@ AT_LEAST_0_9 = AcceptanceCriterion(metric_id="outcome_consistency", condition={"
 
 def test_a_recalculation_without_a_foundry_project_carries_the_managed_result_and_marks_it_as_not_recalculated():
     # As run: close p = 4/5 gives 0.36 and archive p = 0/3 gives 1, so 0.68, scored by Foundry.
-    # close/attempt-5 is corrected to a success: scored again, close would be p = 5/5 and the metric 1.
+    # close/baseline/attempt-5 is corrected to a success: scored again, close would be p = 5/5 and the metric 1.
     # Foundry is not asked, and the customer's own process never scores a Foundry-managed metric instead:
     # the entry keeps 0.68, says that it was not recalculated, and cannot be met or not met.
     earlier = json.loads(to_json(sweep(TWO_TASKS, FakeFoundryProject(), acceptance_criteria=[AT_LEAST_0_9])))
@@ -502,12 +503,12 @@ def test_a_recalculation_without_a_foundry_project_carries_the_managed_result_an
     assert was["acceptance"]["status"] == "not_met"
     assert (now["state"], now["value"], now["scoring_path"]) == ("available", was["value"], "foundry_managed")
     assert now["managed_scoring"] == was["managed_scoring"]
-    assert now["not_recalculated"]["corrected_attempt_ids"] == ["close/attempt-5"]
+    assert now["not_recalculated"]["corrected_attempt_ids"] == ["close/baseline/attempt-5"]
     assert "was not recalculated" in now["not_recalculated"]["meaning"]
     assert now["acceptance"]["status"] == "not_assessed"
     assert now["acceptance"]["reason"] == NOT_RECALCULATED_BECAUSE
     # The correction itself is applied, and the earlier results are kept as superseded.
-    corrected = [attempt for attempt in recalculated["attempts"] if attempt["attempt_id"] == "close/attempt-5"]
+    corrected = [attempt for attempt in recalculated["attempts"] if attempt["attempt_id"] == "close/baseline/attempt-5"]
     assert corrected[0]["task_outcome"] == {"success": True, "source": "label added after the run"}
     assert recalculated["superseded_results"][0]["metrics"] == earlier["metrics"]
     # What the managed runs used stays as it was reported.
@@ -520,7 +521,7 @@ def test_a_recalculation_without_a_foundry_project_carries_the_managed_result_an
 
 
 def test_a_recalculation_with_a_foundry_project_has_foundry_score_the_managed_metric_from_the_corrected_outcomes():
-    # close/attempt-5 corrected to a success: close p = 5/5 gives 1, archive p = 0/3 gives 1: (1 + 1) / 2 = 1.
+    # close/baseline/attempt-5 corrected to a success: close p = 5/5 gives 1, archive p = 0/3 gives 1: (1 + 1) / 2 = 1.
     foundry = FakeFoundryProject()
     earlier = json.loads(to_json(sweep(TWO_TASKS, foundry, acceptance_criteria=[AT_LEAST_0_9])))
     runs_of_the_sweep = len(foundry.runs)
@@ -570,7 +571,7 @@ def test_a_managed_result_that_was_not_recalculated_stays_marked_until_foundry_s
     earlier = json.loads(to_json(sweep(TWO_TASKS, FakeFoundryProject())))
     once = json.loads(to_json(recalculate(earlier_scorecard=earlier, outcome_corrections=[CORRECTED])))
     another = OutcomeCorrection(
-        attempt_id="archive/attempt-1",
+        attempt_id="archive/baseline/attempt-1",
         task_outcome=TaskOutcome(success=True, source="label added after the run"),
         provenance="synthetic correction",
     )
@@ -580,7 +581,7 @@ def test_a_managed_result_that_was_not_recalculated_stays_marked_until_foundry_s
         earlier_scorecard=twice,
         outcome_corrections=[
             OutcomeCorrection(
-                attempt_id="archive/attempt-2",
+                attempt_id="archive/baseline/attempt-2",
                 task_outcome=TaskOutcome(success=True, source="label added after the run"),
                 provenance="synthetic correction",
             )
@@ -589,7 +590,7 @@ def test_a_managed_result_that_was_not_recalculated_stays_marked_until_foundry_s
     )
 
     assert metric(twice)["value"] == pytest.approx(0.68, abs=1e-12)
-    assert metric(twice)["not_recalculated"]["corrected_attempt_ids"] == ["close/attempt-5", "archive/attempt-1"]
+    assert metric(twice)["not_recalculated"]["corrected_attempt_ids"] == ["close/baseline/attempt-5", "archive/baseline/attempt-1"]
     # All three corrections: close p = 5/5 gives 1, archive p = 2/3 gives (4/3 - 1)^2 = 1/9: (1 + 1/9) / 2 = 5/9.
     assert metric(scored_again)["value"] == pytest.approx(5 / 9, abs=1e-12)
     assert "not_recalculated" not in metric(scored_again)

@@ -16,7 +16,7 @@ Attempts cost money, so the sweep does not make an Attempt twice when one Attemp
 from reliability_evaluators.sweep import run_sweep
 
 scorecard = run_sweep(
-    tasks=tasks,
+    experiments=experiments,
     agent_target=my_agent_target,
     metrics=[
         "outcome_consistency",
@@ -46,7 +46,7 @@ Each Evaluator declares what it needs. The sweep reads two things from that.
 | Distributional and sequential trajectory consistency | Action evidence from one declared evidence source, read by one declared recorder. |
 | Calibration, strict confidence discrimination, Brier-based score | A confidence follow-up after each completed Attempt. |
 
-**Which experimental conditions it is calculated from.** Each robustness metric compares two conditions: it is calculated from the Attempts of the experiments whose variation declares its kind, under the baseline and under that variation. The kind is `fault` for fault robustness, `environment` for environment robustness and `prompt` for prompt robustness. No robustness metric is given an Attempt of an experiment that declares another kind. Every other Evaluator is calculated from Attempts under the baseline. For those, an Attempt at a Task given without an experiment had no variation applied to it and is used as a baseline Attempt.
+**Which experimental conditions it is calculated from.** Each robustness metric compares two conditions: it is calculated from the Attempts of the experiments whose variation declares its kind, under the baseline and under that variation. The kind is `fault` for fault robustness, `environment` for environment robustness and `prompt` for prompt robustness. No robustness metric is given an Attempt of an experiment that declares another kind. Every other Evaluator is calculated from Attempts under the baseline.
 
 ## When Attempts are shared
 
@@ -73,7 +73,7 @@ service_side_effects = ActionEvidenceDeclaration(
 )
 
 scorecard = run_sweep(
-    tasks=tasks,
+    experiments=experiments,
     agent_target=my_agent_target,
     metrics=[
         "outcome_consistency",
@@ -89,19 +89,18 @@ An Attempt holds one action recording from one source. Sequential trajectory con
 The rule, in the order the metrics are given:
 
 1. An Evaluator joins the first set of Attempts whose requirements match its own.
-2. Otherwise it starts a set of its own. Every Task and every experiment is attempted again for it, as often as declared.
+2. Otherwise it starts a set of its own. Every experiment is attempted again for it, as often as declared.
 
-The sets are made one after another: every Task and experiment for the first set, then every Task and experiment for the second.
+The sets are made one after another: every experiment for the first set, then every experiment for the second.
 
 | | First set | Later sets |
 | --- | --- | --- |
-| Attempt at a Task | `<task>/attempt-<n>` | `<task>/set-2/attempt-<n>` |
 | Experiment | `<experiment>` | `<experiment>/set-2` |
 | Attempt of an experiment | `<experiment>/<condition>/attempt-<n>` | `<experiment>/set-2/<condition>/attempt-<n>` |
 
 The first set is identified exactly as in a sweep with one set. An Attempt's `task_id` is the Task either way.
 
-A Task given without an experiment that is attempted again has an entry of its own under `tasks_without_experiment`, with its `attempt_set`. An experiment that is run again is a run of its own. It has its own entry under `experiments` in the scorecard, with its `attempt_set` too, and your controls are invoked around each of its Attempts with the experiment identity `<experiment>/set-2`. A test resource that an experiment did not restore stops every later experiment that may change it, in the same set and in later ones: an experiment is not run again on state its first run left behind.
+An experiment that is run again is a run of its own. It has its own entry under `experiments` in the scorecard, with its `attempt_set` too, and your controls are invoked around each of its Attempts with the experiment identity `<experiment>/set-2`. A test resource that an experiment did not restore stops every later writable experiment that names it, in the same set and in later ones; a read-only experiment is also stopped because its dependencies cannot be named.
 
 Two recordings are the same when they have the same `evidence_source` and the same `record` callable. A different callable is a different requirement, also when it happens to read the same data.
 

@@ -21,7 +21,7 @@ from reliability_evaluators.agent_target.foundry_hosted import (
 )
 from reliability_evaluators.evidence import OutcomeCorrection, TaskOutcome
 from reliability_evaluators.scorecard import render_report, to_json
-from reliability_evaluators.sweep import ActionEvidenceDeclaration, ExecutionLimits, Task, recalculate, run_sweep
+from reliability_evaluators.sweep import ActionEvidenceDeclaration, ExecutionLimits, recalculate, run_sweep
 from tests.fake_foundry_hosted import FakeHostedAgent, FakeTodoHostedAgent, completed_response, fake_foundry_project
 from tests.report_reader import assert_faithful_rendering
 from tests.todo_experiment import ALL_TOOLS_WORK, TodoSetup, update_fails_on
@@ -566,9 +566,6 @@ def test_the_report_shows_what_the_platform_returned_for_each_attempt(project, s
 
 
 def test_the_agent_is_sent_the_prompt_exactly_as_it_is_unless_the_customer_composes_the_input(project, setup):
-    def never_decided(attempt, response):
-        return TaskOutcome(success=False, source="not decided in this test")
-
     agent = project.agents["todo-hosted"]
     agent.respond = lambda request: (200, completed_response("todo-hosted", 1, [], "Done."))
     target = FoundryHostedAgentTarget(
@@ -576,7 +573,7 @@ def test_the_agent_is_sent_the_prompt_exactly_as_it_is_unless_the_customer_compo
     )
 
     (attempt,) = run_sweep(
-        tasks=[Task(task_id="close", prompt="Close the item.  ", success_rule=never_decided, attempts=1)],
+        experiments=[setup.experiment("close", 1, ALL_TOOLS_WORK, AGENT, prompt="Close the item.  ")],
         agent_target=target,
         metrics=["outcome_consistency"],
     )["attempts"]

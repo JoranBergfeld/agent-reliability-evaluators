@@ -146,7 +146,7 @@ Declare where action evidence is recorded from and the action type of each tool 
 ```python
 from reliability_evaluators.evidence import ActionEvent, TaskOutcome
 from reliability_evaluators.scorecard import to_json
-from reliability_evaluators.sweep import ActionEvidenceDeclaration, Task, run_sweep
+from reliability_evaluators.sweep import ActionEvidenceDeclaration, Condition, Experiment, Task, run_sweep
 
 
 def item_is_closed(attempt, response):
@@ -166,7 +166,17 @@ def calls_seen_by_the_service(attempt, response):
 
 
 scorecard = run_sweep(
-    tasks=[Task(task_id="close", prompt="Close the item.", success_rule=item_is_closed, attempts=5)],
+    experiments=[Experiment(
+        experiment_id="close",
+        task=Task(task_id="close", prompt="Close the item.", success_rule=item_is_closed, attempts=5),
+        agent_configuration={"agent": "my-agent", "version": "1"},
+        starting_state="fresh",
+        baseline=Condition(condition_id="baseline", description="The normal test environment."),
+        variation=None,
+        controls=my_controls,
+        write_capable=True,
+        authorized_resources=["to-do service test data"],
+    )],
     agent_target=my_agent_target,
     metrics=["distributional_trajectory_consistency", "sequential_trajectory_consistency"],
     action_evidence=ActionEvidenceDeclaration(
@@ -178,7 +188,7 @@ scorecard = run_sweep(
 print(to_json(scorecard))
 ```
 
-Both trajectory metrics are scored from the same Attempts: selecting both does not make the agent run twice. Selecting either without `action_evidence` is rejected before any Attempt is made.
+Implement `my_controls` for your test resources as in [controlled experiments](../sweep/controlled-experiments.md). Both trajectory metrics are scored from the same Attempts: selecting both does not make the agent run twice. Selecting either without `action_evidence` is rejected before any Attempt is made.
 
 The metric's entry in the scorecard carries:
 
@@ -186,7 +196,7 @@ The metric's entry in the scorecard carries:
 | --- | --- |
 | `state`, `value`, `reason` | `available` with a value, or `unavailable` with a reason and no value |
 | `execution_failure` | `null`, unless the metric has no result because the Attempts that supply its evidence were cut short; see [execution limits and partial scorecards](../sweep/execution-limits.md#metrics-in-a-partial-scorecard) |
-| `cut_short` | The experiments, and the Tasks given without one, whose Attempts for this metric were cut short. Both lists are empty when none were |
+| `cut_short` | The experiments whose Attempts for this metric were cut short. `task_ids` is retained for earlier scorecards |
 | `definition` | version, what it measures, the calculation, the fidelity conventions, the scale and the interpretation |
 | `scoring_path`, `fidelity` | `customer_process` and `authoritative` for a value scored in your own process |
 | `counts.tasks`, `counts.attempts` | total, valid (the denominator used), missing and excluded with reasons and identities |
@@ -225,7 +235,7 @@ An event without a tool name is rejected with an error. So are arguments or a re
 
 | Situation | Treatment |
 | --- | --- |
-| An Attempt made under the variation of an experiment | Excluded with the reason `made under a variation, and this metric is calculated from Attempts under the baseline`. The metric describes the agent under the baseline. A sweep gives the Evaluator baseline Attempts only. Called on its own with the Attempts of a whole experiment, the Evaluator leaves the others out itself and counts them. An Attempt that records no condition was made without an experiment and is used. |
+| An Attempt made under the variation of an experiment | Excluded with the reason `made under a variation, and this metric is calculated from Attempts under the baseline`. The metric describes the agent under the baseline. A sweep gives the Evaluator baseline Attempts only. Called on its own with the Attempts of a whole experiment, the Evaluator leaves the others out itself and counts them. Standalone Evaluators and earlier scorecards can contain Attempts without a recorded condition; these are used. |
 | An Attempt whose execution status is not `completed` | Excluded with the reason `execution status is not completed`. Its trajectory was cut short by something other than the agent. |
 | An Attempt with no action recording | Counted as missing with the reason `no action recording`. It is not compared as an empty sequence. |
 | An Attempt recorded from another source than the declared one | Excluded with the reason `its action recording is not from the declared evidence source`. Sources are never mixed. |

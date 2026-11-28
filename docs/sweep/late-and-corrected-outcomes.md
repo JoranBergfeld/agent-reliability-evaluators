@@ -34,7 +34,7 @@ try:
         earlier_scorecard=earlier,
         outcome_corrections=[
             OutcomeCorrection(
-                attempt_id="close/attempt-3",
+                attempt_id="close/baseline/attempt-3",
                 task_outcome=TaskOutcome(success=True, source="manual review of the service audit log"),
                 provenance="J. Jansen on 2026-11-27: the check ran before the service had saved the item",
             ),
@@ -99,7 +99,7 @@ The new scorecard has the shape of any scorecard, and one more part: `superseded
 
 ```json
 {
-  "attempt_id": "close/attempt-3",
+  "attempt_id": "close/baseline/attempt-3",
   "task_outcome": {"success": true, "source": "manual review of the service audit log"},
   "superseded_task_outcomes": [
     {
@@ -118,7 +118,7 @@ The new scorecard has the shape of any scorecard, and one more part: `superseded
     "status": "superseded",
     "outcome_corrections": [
       {
-        "attempt_id": "close/attempt-3",
+        "attempt_id": "close/baseline/attempt-3",
         "task_id": "close",
         "task_outcome": {"success": true, "source": "manual review of the service audit log"},
         "provenance": "J. Jansen on 2026-11-27: the check ran before the service had saved the item",

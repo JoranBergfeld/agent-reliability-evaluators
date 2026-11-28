@@ -20,6 +20,7 @@ from tests.fakes import (
     todo_list,
 )
 from tests.report_reader import Report, assert_faithful_rendering
+from tests.fakes import fake_baseline_experiments
 
 SOURCE = "final state of the fake service"
 
@@ -42,7 +43,7 @@ def sweep(script, source=SOURCE, limits=ExecutionLimits()):
         for task_id, behaviours in script.items()
     ]
     return run_sweep(
-        tasks=tasks,
+        experiments=fake_baseline_experiments(tasks),
         agent_target=target,
         metrics=["outcome_consistency"],
         cancellation=lambda: target.cancel_requested,
@@ -144,9 +145,9 @@ def test_the_attempt_level_evidence_behind_a_metric_can_be_inspected():
         for row in range(3)
     ]
     assert shown_attempts == [
-        ("close/attempt-1", "completed", "true", SOURCE),
-        ("close/attempt-2", "failed", None, None),
-        ("close/attempt-3", "completed", "false", SOURCE),
+        ("close/baseline/attempt-1", "completed", "true", SOURCE),
+        ("close/baseline/attempt-2", "failed", None, None),
+        ("close/baseline/attempt-3", "completed", "false", SOURCE),
     ]
     # The Attempts a value rests on, and the ones it left out, link to their evidence.
     assert report.links["/metrics/0/evidence/attempt_ids/0"] == "#attempt-0"
@@ -205,7 +206,7 @@ def test_what_the_report_has_no_layout_of_its_own_for_is_still_shown():
     scorecard["metrics"][3] = {**scorecard["metrics"][3], "state": "experiment_failed", "error": "setup failed"}
     scorecard["metrics"][0]["acceptance"] = {"verdict": "not_met", "criterion": {"minimum_value": 0.9}}
     scorecard["attempts"][1]["conditions"] = {"intended": "tool fault", "observed": None}
-    scorecard["attempts"][1]["retry_of"] = "close/attempt-1"
+    scorecard["attempts"][1]["retry_of"] = "close/baseline/attempt-1"
 
     report = assert_faithful_rendering(render_report(scorecard), scorecard)
 
@@ -245,7 +246,7 @@ def test_an_acceptance_assessment_and_violation_assessments_are_shown_as_the_sco
     # Outcome consistency: both Attempts succeed, p = 1, value 1, so "at least 0.9" is met.
     # Constraint compliance: 1 of the 2 assessed Attempts has no violation, 1 / 2 = 0.5.
     scorecard = run_sweep(
-        tasks=[task],
+        experiments=fake_baseline_experiments([task]),
         agent_target=target,
         metrics=["outcome_consistency", "constraint_compliance"],
         acceptance_criteria=[AcceptanceCriterion(metric_id="outcome_consistency", condition={"value": {"at_least": 0.9}})],
@@ -265,7 +266,7 @@ def test_an_acceptance_assessment_and_violation_assessments_are_shown_as_the_sco
 
 def test_the_severity_rating_of_a_violation_is_shown_as_the_scorecard_records_it():
     target = FakeAgentTarget({"close": ["success", "success and deletes unrelated", "success and deletes unrelated"]})
-    ratings = {"close/attempt-2": SeverityRating(label="critical", level="high"), "close/attempt-3": SeverityRating(label="low")}
+    ratings = {"close/baseline/attempt-2": SeverityRating(label="critical", level="high"), "close/baseline/attempt-3": SeverityRating(label="low")}
 
     def item_is_done(attempt, response):
         return TaskOutcome(success=target.service_state[attempt.attempt_id] == "done", source=SOURCE)
@@ -291,7 +292,7 @@ def test_the_severity_rating_of_a_violation_is_shown_as_the_scorecard_records_it
         violation_assessor=unrelated_is_left_alone,
     )
     # Attempt 2 is rated critical, mapped to high: 1. Attempt 3 is rated low: 0.25. 1 - 1.25 / 2 = 0.375.
-    scorecard = run_sweep(tasks=[task], agent_target=target, metrics=["conditional_harm_severity"])
+    scorecard = run_sweep(experiments=fake_baseline_experiments([task]), agent_target=target, metrics=["conditional_harm_severity"])
 
     report = assert_faithful_rendering(render_report(scorecard), scorecard)
 
@@ -484,7 +485,7 @@ def test_an_execution_failure_is_told_apart_from_an_unavailable_measurement():
     of_unavailable = Report(render_report(unavailable))
 
     assert report.value("/metrics/0/state") == "\N{EM DASH}"
-    assert report.value("/metrics/0/execution_failure/task_ids/0") == "close"
+    assert report.value("/metrics/0/execution_failure/experiment_ids/0") == "close"
     assert "Execution failure" in report.article_wording["metric-0"]
     assert "Unavailable measurement" not in report.article_wording["metric-0"]
     assert "no description of this state" not in report.article_wording["metric-0"]

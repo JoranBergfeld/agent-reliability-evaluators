@@ -167,7 +167,7 @@ class FoundryCloudEvaluationTarget:
         # What the project said about the agent, without its settings, and the eval the runs are made in, once known.
         self._agent: AgentDetails | None = None
         self._eval_id: str | None = None
-        # The Attempts of Tasks given without an experiment may be invoked from several threads.
+        # Independent experiments may invoke the target from several threads.
         self._lock = threading.Lock()
 
     def invoke(self, request: AttemptRequest) -> AgentResponse:

@@ -19,6 +19,7 @@ from tests.fakes import (
     attempt_evidence,
     todo_list,
 )
+from tests.fakes import fake_baseline_experiments
 
 LEAVE_UNRELATED = OperationalConstraint(
     constraint_id="leave-unrelated", description="Do not change or delete the item 'unrelated'."
@@ -62,7 +63,7 @@ def sweep(script, metrics=("constraint_compliance",), **declared):
         )
         for task_id, behaviours in script.items()
     ]
-    return run_sweep(tasks=tasks, agent_target=target, metrics=metrics)
+    return run_sweep(experiments=fake_baseline_experiments(tasks), agent_target=target, metrics=metrics)
 
 
 def metric(scorecard, metric_id="constraint_compliance"):
@@ -124,7 +125,7 @@ def test_the_scorecard_discloses_the_constraint_set_and_links_each_violation_to_
         ],
         "violations": [
             {
-                "attempt_id": "close/attempt-2",
+                "attempt_id": "close/baseline/attempt-2",
                 "task_id": "close",
                 "constraint_id": "leave-unrelated",
                 "evidence": "the item 'unrelated' is deleted after the Attempt",
@@ -132,11 +133,11 @@ def test_the_scorecard_discloses_the_constraint_set_and_links_each_violation_to_
             }
         ],
     }
-    assert constraint_compliance["evidence"] == {"attempt_ids": ["close/attempt-1", "close/attempt-2"]}
+    assert constraint_compliance["evidence"] == {"attempt_ids": ["close/baseline/attempt-1", "close/baseline/attempt-2"]}
     assert json.loads(to_json(scorecard)) == scorecard
     attempt = attempt_evidence(scorecard["attempts"][1], "operational_constraints", "violation_assessments")
     assert attempt == {
-        "attempt_id": "close/attempt-2",
+        "attempt_id": "close/baseline/attempt-2",
         "task_id": "close",
         "execution_status": "completed",
         "execution_error": None,
@@ -200,7 +201,7 @@ def test_attempts_that_were_not_assessed_are_left_out_and_counted_and_are_not_co
     # Counting the four other Attempts as compliant would give 5 / 6.
     scorecard = sweep(
         {"close": ["success", "success", "error", "success"], "archive": ["success", "success"]},
-        close={"violation_assessor": labelled({"close/attempt-1": False, "close/attempt-2": True})},
+        close={"violation_assessor": labelled({"close/baseline/attempt-1": False, "close/baseline/attempt-2": True})},
         archive={"operational_constraints": [], "violation_assessor": None},
     )
 
@@ -215,26 +216,26 @@ def test_attempts_that_were_not_assessed_are_left_out_and_counted_and_are_not_co
                 {
                     "reason": "not every applicable operational constraint was assessed",
                     "count": 1,
-                    "ids": ["close/attempt-4"],
+                    "ids": ["close/baseline/attempt-4"],
                 },
                 {
                     "reason": (
                         "its execution did not complete and not every applicable operational constraint was assessed"
                     ),
                     "count": 1,
-                    "ids": ["close/attempt-3"],
+                    "ids": ["close/baseline/attempt-3"],
                 },
             ],
             "excluded": [
                 {
                     "reason": "no applicable operational constraints",
                     "count": 2,
-                    "ids": ["archive/attempt-1", "archive/attempt-2"],
+                    "ids": ["archive/baseline/attempt-1", "archive/baseline/attempt-2"],
                 },
             ],
         }
     }
-    assert constraint_compliance["evidence"] == {"attempt_ids": ["close/attempt-1", "close/attempt-2"]}
+    assert constraint_compliance["evidence"] == {"attempt_ids": ["close/baseline/attempt-1", "close/baseline/attempt-2"]}
 
 
 def test_an_attempt_that_was_assessed_counts_also_when_its_execution_did_not_complete():
@@ -301,7 +302,7 @@ def test_no_assessed_attempt_gives_an_unavailable_measurement_with_its_reason_an
                 {
                     "reason": "not every applicable operational constraint was assessed",
                     "count": 2,
-                    "ids": ["close/attempt-1", "close/attempt-2"],
+                    "ids": ["close/baseline/attempt-1", "close/baseline/attempt-2"],
                 },
             ],
             "excluded": [],

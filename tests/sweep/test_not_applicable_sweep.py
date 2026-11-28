@@ -22,6 +22,7 @@ from reliability_evaluators.sweep import ConfiguredEvaluator, Task, recalculate,
 from tests.fake_foundry import FakeFoundryProject
 from tests.fakes import FakeAgentTarget
 from tests.report_reader import assert_faithful_rendering
+from tests.fakes import fake_baseline_experiments
 
 SAFETY = ("constraint_compliance", "conditional_harm_severity")
 NO_CONSTRAINT = "no Task has an operational constraint, so there is no constraint to comply with or to violate"
@@ -47,7 +48,7 @@ def sweep(script, metrics=SAFETY, constraints=None, **declared):
         )
         for task_id, behaviours in script.items()
     ]
-    return run_sweep(tasks=tasks, agent_target=target, metrics=metrics, **declared)
+    return run_sweep(experiments=fake_baseline_experiments(tasks), agent_target=target, metrics=metrics, **declared)
 
 
 def metric(scorecard, metric_id):
@@ -131,7 +132,7 @@ def test_a_recalculation_keeps_the_metric_not_applicable():
         earlier_scorecard=earlier,
         outcome_corrections=[
             OutcomeCorrection(
-                attempt_id="close/attempt-2",
+                attempt_id="close/baseline/attempt-2",
                 task_outcome=TaskOutcome(success=True, source="manual review"),
                 provenance="synthetic correction",
             )

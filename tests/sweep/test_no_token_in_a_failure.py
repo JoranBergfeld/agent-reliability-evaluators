@@ -20,9 +20,10 @@ from reliability_evaluators.agent_target.foundry_prompt_agent import FoundryProm
 from reliability_evaluators.evidence import TaskOutcome
 from reliability_evaluators.managed_scoring import FoundryProject, FoundryRequestError
 from reliability_evaluators.scorecard import to_json
-from reliability_evaluators.sweep import Task, run_sweep
+from reliability_evaluators.sweep import Condition, Experiment, Task, run_sweep
 from tests.fake_foundry_hosted import FakeHostedAgent, FakeTodoHostedAgent, fake_foundry_project
 from tests.fake_foundry_prompt_agent import fake_prompt_agent_project
+from tests.fakes import FakeBaselineControls
 from tests.shown import shown_by
 
 # Not a token of anything. The fake projects do not accept it, so they answer HTTP 401.
@@ -52,12 +53,23 @@ def raised_by(call, expected):
     return raised.value
 
 
-def sweep_of_one_attempt(target):
+def sweep_of_one_attempt(target, agent_name):
     def never_decided(attempt, response):
         return TaskOutcome(success=True, source="synthetic")
 
     return run_sweep(
-        tasks=[Task(task_id="close", prompt="Close the item.", success_rule=never_decided, attempts=1)],
+        experiments=[
+            Experiment(
+                experiment_id="close",
+                task=Task(task_id="close", prompt="Close the item.", success_rule=never_decided, attempts=1),
+                agent_configuration={"agent": agent_name},
+                starting_state="fresh",
+                baseline=Condition(condition_id="baseline", description="The synthetic target has no mutable state."),
+                variation=None,
+                controls=FakeBaselineControls(),
+                write_capable=False,
+            )
+        ],
         agent_target=target,
         metrics=["outcome_consistency"],
     )
@@ -92,7 +104,7 @@ def test_a_hosted_agent_in_a_project_that_cannot_be_reached_does_not_show_the_to
 
 
 def test_a_failed_invocation_of_a_hosted_agent_is_kept_in_the_scorecard_without_the_token(hosted_project, capsys):
-    scorecard = sweep_of_one_attempt(hosted_agent(hosted_project.endpoint))
+    scorecard = sweep_of_one_attempt(hosted_agent(hosted_project.endpoint), "todo-hosted")
 
     (attempt,) = scorecard["attempts"]
     assert attempt["execution_status"] == "failed" and "HTTP 401" in attempt["execution_error"]
@@ -112,7 +124,7 @@ def test_a_prompt_agent_in_a_project_that_cannot_be_reached_does_not_show_the_to
     target = prompt_agent(nothing_listens())
 
     error = raised_by(lambda: target.invoke(ATTEMPT), InvocationFailed)
-    scorecard = sweep_of_one_attempt(target)
+    scorecard = sweep_of_one_attempt(target, "todo-prompt")
 
     assert "could not be reached" in str(error)
     assert TOKEN not in shown_by(error)

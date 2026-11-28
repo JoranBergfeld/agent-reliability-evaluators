@@ -371,7 +371,7 @@ def test_fault_robustness_rests_only_on_the_experiments_that_declare_a_fault():
         fixture.experiment("add", attempts=2),
         fixture.experiment("tidy", attempts=2, variation=reworded),
         fixture.experiment("archive", attempts=2, variation=None),
-        tasks=[fixture.task("plain", attempts=2)],
+        fixture.experiment("plain", attempts=2, variation=None),
     )
 
     assert len(scorecard["attempts"]) == 12
@@ -392,7 +392,7 @@ def test_fault_robustness_is_rejected_before_any_attempt_when_no_experiment_decl
     needs_a_fault = "'fault_robustness' needs an experiment whose variation declares the kind 'fault'"
 
     with pytest.raises(ValueError, match=needs_a_fault):
-        fixture.sweep(tasks=[fixture.task("plain", attempts=2)])
+        fixture.sweep(fixture.experiment("plain", attempts=2, variation=None))
     with pytest.raises(ValueError, match=needs_a_fault):
         fixture.sweep(fixture.experiment(attempts=2, variation=None))
     with pytest.raises(ValueError, match=needs_a_fault):

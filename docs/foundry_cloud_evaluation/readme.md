@@ -8,7 +8,7 @@ The sweep still runs in your process, from your code or your CI. It decides whic
 from reliability_evaluators.agent_target.foundry_cloud_evaluation import FoundryCloudEvaluationTarget
 from reliability_evaluators.evidence import TaskOutcome
 from reliability_evaluators.managed_scoring import FoundryProject
-from reliability_evaluators.sweep import Task, run_sweep
+from reliability_evaluators.sweep import Condition, Experiment, Task, run_sweep
 
 target = FoundryCloudEvaluationTarget(
     project=FoundryProject("https://<account>.services.ai.azure.com/api/projects/<project>"),
@@ -22,13 +22,23 @@ def item_is_closed(attempt, response):
 
 
 scorecard = run_sweep(
-    tasks=[Task(task_id="close", prompt="Close the item.", success_rule=item_is_closed, attempts=5)],
+    experiments=[Experiment(
+        experiment_id="close",
+        task=Task(task_id="close", prompt="Close the item.", success_rule=item_is_closed, attempts=5),
+        agent_configuration={"agent": "my-agent"},
+        starting_state="fresh",
+        baseline=Condition(condition_id="baseline", description="The normal test environment."),
+        variation=None,
+        controls=my_controls,
+        write_capable=True,
+        authorized_resources=["todo-list/reliability-test"],
+    )],
     agent_target=target,
     metrics=["outcome_consistency"],
 )
 ```
 
-`my_test_service` stands for your own code.
+`my_test_service` stands for your own code. Implement `my_controls` for the named resources as in [controlled experiments](../sweep/controlled-experiments.md).
 
 To invoke the same agents from your own code instead, use the [Foundry prompt agent target](../foundry_prompt_agent/readme.md) or the [Foundry hosted agent target](../foundry_hosted_agent/readme.md). [What differs between the entry points](#what-differs-from-the-customer-code-entry-point) is listed below.
 
@@ -55,7 +65,7 @@ A cloud evaluation run takes rows of data and invokes the agent once for every r
 
 - **Repetition and grouping are the sweep's.** Five Attempts are five runs. Nothing relies on Foundry to repeat an invocation, to order rows, to group results or to reset anything. A run's counts and usage describe one Attempt.
 - **Your customer controls run around every Attempt**, exactly as from customer code: prepare and apply before the run is made, verify and clean up after it has ended. See [controlled experiments](../sweep/controlled-experiments.md).
-- **Sequential by default.** The next run is made only after the one before has ended and the controls of its Attempt have run. With `max_concurrent_attempts` above 1, the Attempts of Tasks given without an experiment are several runs at once. That was not tried.
+- **Sequential by default.** The next run is made only after the one before has ended and the controls of its Attempt have run. With `max_concurrent_attempts` above 1, independent experiments may have runs in flight at once; Attempts within an experiment stay sequential. Concurrent experiments were not tried live.
 - **The starting-state policy is yours to declare and the sweep's to follow.** Foundry starts a new conversation for every run. That resets nothing outside the conversation: whatever the agent's tools changed stays changed. State is fresh only when you declare `starting_state="fresh"` and your prepare control makes it so. Under continuing state the Attempts are still separate runs, each starting from what the one before left.
 - **Every Attempt pays the overhead of a run.** When observed, the target returned about 25 seconds later than the latency Foundry reported for the agent. A sweep through this entry point is slower than the same sweep from customer code: see [Observed live](#observed-live).
 

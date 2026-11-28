@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import os
-from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, replace
 from functools import partial
 from time import perf_counter
@@ -15,7 +14,6 @@ from ..evidence import (
     ACTION_TYPE_DECLARATION,
     ActionEvidence,
     Attempt,
-    ConditionRole,
     ConfidenceUnavailable,
     EvidenceError,
     ExecutionStatus,
@@ -39,15 +37,7 @@ from ..scorecard import (
 )
 from .confidence import ATTEMPT_NOT_COMPLETED, SWEEP_CANCELLED, elicit_confidence
 from .declaration import ActionEvidenceDeclaration, ConfiguredEvaluator, Experiment, NoTaskOutcomeYet, Task
-from .execution import (
-    AttemptGate,
-    Cancellation,
-    Execution,
-    execution_identity,
-    execution_of,
-    group_under,
-    has_a_retry_left,
-)
+from .execution import AttemptGate, Cancellation, Execution, group_under
 from .lifecycle import ConfidenceFollowUp, planned_attempt_ids, run_experiments
 from .reuse import SharedAttempts, share_attempts
 
@@ -59,8 +49,7 @@ ELAPSED_TIME_BOUNDARY = (
 
 def run_sweep(
     *,
-    tasks: Sequence[Task] = (),
-    experiments: Sequence[Experiment] = (),
+    experiments: Sequence[Experiment],
     agent_target: AgentTarget,
     metrics: Sequence[str | ConfiguredEvaluator],
     action_evidence: ActionEvidenceDeclaration | None = None,
@@ -94,21 +83,21 @@ def run_sweep(
     never scores such an Evaluator in this process instead. `rescore_in_customer_process`
     does, when the customer asks for it, and reports that result beside the managed one.
 
-    `experiments` are controlled experiments: the sweep invokes their customer controls
-    around every Attempt and follows their starting-state policy. `tasks` are Tasks given
-    without an experiment: nothing prepares or restores their state, and their Attempts
-    record no starting-state policy and no condition. The sweep never assumes that the
-    agent target resets conversation or external state.
+    `experiments` are controlled experiments: each declares its Task, agent configuration,
+    starting-state policy and customer controls. The sweep invokes those controls around
+    every Attempt and never assumes that the agent target resets conversation or external state.
 
-    Attempts run one after another, Task by Task and then experiment by experiment. With
-    `max_concurrent_attempts` above 1, up to that many Attempts of the Tasks given without
-    an experiment are in flight at once, and the agent target and everything the customer
-    supplies for those Tasks are called from several threads, `cancellation` included.
-    The Attempts of an experiment always run one after another, after those Tasks, because
-    each depends on the state the customer controls prepare. The scorecard records what
-    was declared. Shared state and timing are the caller's to control.
+    Attempts run one after another by default. With `max_concurrent_attempts` above 1,
+    experiments with disjoint authorized resources can run concurrently, while Attempts
+    within each experiment remain sequential. An experiment that shares a resource with
+    another waits for it to finish and is not started if that resource was not restored.
+    Read-only experiments cannot name their resource dependencies, so they never overlap
+    with writable experiments and do not start after any resource was left unrestored.
+    The agent target, controls, task-success rules, evidence recorders and clock may be
+    called from several threads and must be safe for that. Shared state and timing are the
+    caller's to control.
 
-    Every Task has its own execution limits, in an experiment or without one. A planned
+    Every Task has its own execution limits. A planned
     Attempt whose invocation failed or timed out is made again while it has retries left.
     `cancellation` is asked before every Attempt and retry; once it returns True no further
     one is started and no further request is sent to the agent. Attempts that are in flight
@@ -183,7 +172,6 @@ def run_sweep(
     try:
         scorecard = _sweep(
             attempts,
-            tasks=tasks,
             experiments=experiments,
             agent_target=agent_target,
             metrics=metrics,
@@ -211,7 +199,6 @@ def run_sweep(
 def _sweep(
     attempts: list[Attempt],
     *,
-    tasks: Sequence[Task],
     experiments: Sequence[Experiment],
     agent_target: AgentTarget,
     metrics: Sequence[str | ConfiguredEvaluator],
@@ -230,7 +217,7 @@ def _sweep(
     _require_one_evaluator_per_metric(selected)
     for evaluator in selected:
         _require_compared_variation(evaluator.evaluator, experiments)
-    _require_distinct_tasks([*tasks, *(experiment.task for experiment in experiments)])
+    _require_distinct_tasks([experiment.task for experiment in experiments])
     # Called for its check: a second criterion for one metric is rejected here, not after the Attempts.
     criteria_by_metric(acceptance_criteria)
     _require_prepared_variations(preparation_usage, experiments)
@@ -244,7 +231,7 @@ def _sweep(
         managed_scoring.register(managed)
     # With no Evaluator selected the planned Attempts are still made, once.
     sharing = share_attempts((evaluator, evaluator.requirements()) for evaluator in selected) or [SharedAttempts()]
-    planned = [_plan(tasks, experiments, set_number) for set_number in range(1, len(sharing) + 1)]
+    planned = [_plan(experiments, set_number) for set_number in range(1, len(sharing) + 1)]
     _require_distinct_identities(planned)
     made: list[tuple[list[Attempt], list[Execution]]] = []
     # The test resources an experiment did not restore. No later set runs an experiment on them either.
@@ -260,33 +247,15 @@ def _sweep(
             cancellation=cancelled,
             clock=clock,
         )
-        # Each set makes the planned Attempts of a Task anew, under the Task's limits anew.
-        gates = {task.task_id: AttemptGate(task, cancelled, clock) for task in tasks}
-        at_tasks = _run_planned_attempts(
-            [
-                partial(_run_planned_attempt, task, attempt_id, make_attempt, gates[task.task_id], attempts)
-                for task, attempt_id in plan.attempts_at_tasks
-            ],
-            max_concurrent_attempts,
-        )
-        # In the order planned, whatever the order they finished in.
-        attempts[first:] = [attempt for executions in at_tasks for attempt in executions]
-        executions = []
-        for task in tasks:
-            of_task, at_tasks = at_tasks[: task.attempts], at_tasks[task.attempts :]
-            executions.append(
-                execution_of(
-                    task, [made_for for made_for in of_task if made_for], gates[task.task_id], attempt_set=set_number
-                )
-            )
-        executions += run_experiments(
-            plan.experiments,
+        executions = run_experiments(
+            plan,
             make_attempt,
             ask_confidence,
             lambda task: AttemptGate(task, cancelled, clock),
             attempts,
             unrestored,
             set_number,
+            max_concurrent_attempts,
         )
         made.append((attempts[first:], executions))
     # Each Evaluator with the evidence it is calculated from and where its Attempts were cut short.
@@ -429,22 +398,6 @@ def score_in_foundry(
     return {metric_id: returned.get(metric_id, not_returned) for metric_id in evidence}
 
 
-def _run_planned_attempts(
-    planned: Sequence[Callable[[], list[Attempt]]], max_concurrent_attempts: int
-) -> list[list[Attempt]]:
-    """Run every planned Attempt and give their executions in the order they were planned."""
-    if max_concurrent_attempts == 1:
-        return [run() for run in planned]
-    with ThreadPoolExecutor(max_workers=max_concurrent_attempts) as pool:
-        futures = [pool.submit(run) for run in planned]
-        try:
-            return [future.result() for future in futures]
-        except BaseException:
-            for future in futures:
-                future.cancel()
-            raise
-
-
 # What an Evaluator is called with for a declaration it names, given what the customer declared for it.
 _EVALUATED_WITH = {ACTION_TYPE_DECLARATION: lambda action_evidence: action_evidence.mapping}
 
@@ -481,7 +434,7 @@ class SelectedEvaluator:
     def evidence(self, attempts: Sequence[Attempt], executions: Sequence[Execution]) -> tuple[TaskEvidence, ...]:
         """The Attempts of one set that this Evaluator is calculated from, grouped by Task.
 
-        `executions` are the Tasks and experiments of that set. Only Attempts made under an
+        `executions` are the experiments of that set. Only Attempts made under an
         experimental condition the Evaluator is calculated from are given to it. A Task that
         Attempts were planned for under such a condition is a Task of its evidence even when
         none of them was made.
@@ -491,14 +444,12 @@ class SelectedEvaluator:
         used = {
             execution.task.task_id: roles for execution in executions if (roles := execution.conditions_for(kind))
         }
-        # An Attempt made outside an experiment had no variation applied to it, so it is used as
-        # a baseline Attempt.
         return group_under(
             used,
             (
                 attempt
                 for attempt in attempts
-                if (attempt.condition_role or ConditionRole.BASELINE) in used.get(attempt.task_id, ())
+                if attempt.condition_role in used.get(attempt.task_id, ())
             ),
         )
 
@@ -510,32 +461,16 @@ class SelectedEvaluator:
         return self.evaluator.evaluate(evidence, *self.evaluated_with())
 
 
-@dataclass(frozen=True)
-class _PlannedAttempts:
-    """One set of the Attempts the sweep declares: every Task and every experiment, as often as declared."""
-
-    # Each Attempt at a Task given without an experiment, with its identity.
-    attempts_at_tasks: tuple[tuple[Task, str], ...]
-    experiments: tuple[Experiment, ...]
-
-
-def _plan(tasks: Sequence[Task], experiments: Sequence[Experiment], set_number: int) -> _PlannedAttempts:
+def _plan(experiments: Sequence[Experiment], set_number: int) -> tuple[Experiment, ...]:
     """Plan one set of Attempts.
 
     The first set is identified as it is in a sweep with one set. A later set carries its
     number in the identity of its Attempts and of its experiments, which are run again.
     """
     again = _again(set_number)
-    return _PlannedAttempts(
-        attempts_at_tasks=tuple(
-            (task, f"{task.task_id}{again}/attempt-{number}")
-            for task in tasks
-            for number in range(1, task.attempts + 1)
-        ),
-        experiments=tuple(
-            replace(experiment, experiment_id=f"{experiment.experiment_id}{again}") if again else experiment
-            for experiment in experiments
-        ),
+    return tuple(
+        replace(experiment, experiment_id=f"{experiment.experiment_id}{again}") if again else experiment
+        for experiment in experiments
     )
 
 
@@ -613,12 +548,12 @@ def _require_distinct_tasks(tasks: Sequence[Task]) -> None:
         seen.add(task.task_id)
 
 
-def _require_distinct_identities(planned: Sequence[_PlannedAttempts]) -> None:
+def _require_distinct_identities(planned: Sequence[Sequence[Experiment]]) -> None:
     """Reject a sweep in which two experiments or two Attempts would be identified alike."""
     experiments: set[str] = set()
     attempts: set[str] = set()
     for set_number, plan in enumerate(planned, start=1):
-        for experiment in plan.experiments:
+        for experiment in plan:
             if experiment.experiment_id in experiments:
                 raise ValueError(
                     f"more than one experiment is declared as {experiment.experiment_id!r}"
@@ -626,10 +561,7 @@ def _require_distinct_identities(planned: Sequence[_PlannedAttempts]) -> None:
                     else f"more than one experiment would have the identity {experiment.experiment_id!r}"
                 )
             experiments.add(experiment.experiment_id)
-        for attempt_id in (
-            *(attempt_id for _, attempt_id in plan.attempts_at_tasks),
-            *(attempt_id for experiment in plan.experiments for attempt_id in planned_attempt_ids(experiment)),
-        ):
+        for attempt_id in (attempt_id for experiment in plan for attempt_id in planned_attempt_ids(experiment)):
             if attempt_id in attempts:
                 raise ValueError(f"more than one Attempt would have the identity {attempt_id!r}")
             attempts.add(attempt_id)
@@ -652,36 +584,6 @@ def _recorded_with(
         ),
         action_evidence,
     )
-
-
-def _run_planned_attempt(
-    task: Task,
-    first: str,
-    make_attempt: Callable[..., tuple[Attempt, ConfidenceFollowUp]],
-    gate: AttemptGate,
-    attempts: list[Attempt],
-) -> list[Attempt]:
-    """Make one planned Attempt of a Task given without an experiment, and its retries.
-
-    `first` is the identity of the planned Attempt. Every execution is returned, in order,
-    and added to `attempts` as it is made. Nothing is returned for a planned Attempt that
-    may no longer start.
-    """
-    executions: list[Attempt] = []
-    retries = gate.may_start()
-    while retries:
-        retry = len(executions)
-        attempt, follow_up = make_attempt(
-            task, execution_identity(first, retry), executions[-1].attempt_id if executions else None
-        )
-        attempt = follow_up(attempt)
-        retries = has_a_retry_left(attempt, task, retry) and gate.may_start()
-        if retries:
-            # The Attempt stays in the evidence with why it did not complete. The retry is another Attempt.
-            attempt = replace(attempt, execution_status=ExecutionStatus.RETRIED)
-        executions.append(attempt)
-        attempts.append(attempt)
-    return executions
 
 
 def _invoke_agent(

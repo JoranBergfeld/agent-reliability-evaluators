@@ -15,6 +15,7 @@ from reliability_evaluators.evidence import TaskOutcome
 from reliability_evaluators.scorecard import to_json
 from reliability_evaluators.sweep import Task, run_sweep
 from tests.fakes import FakeAgentTarget
+from tests.fakes import fake_baseline_experiments
 
 SOURCE = "final state of the fake service"
 RULE = "The item is marked done in the to-do service."
@@ -43,7 +44,7 @@ def sweep(script, confidence, metrics=("brier_based_score",), rules=None, **targ
         )
         for task_id, behaviours in script.items()
     ]
-    return run_sweep(tasks=tasks, agent_target=target, metrics=metrics)
+    return run_sweep(experiments=fake_baseline_experiments(tasks), agent_target=target, metrics=metrics)
 
 
 def metric(scorecard, metric_id="brier_based_score"):
@@ -58,10 +59,10 @@ def attempt(scorecard, attempt_id):
 
 TWO_TASKS = {"close": ["success", "success", "failure"], "archive": ["failure"]}
 TWO_TASKS_RATINGS = {
-    "close/attempt-1": "80",
-    "close/attempt-2": "60",
-    "close/attempt-3": "40",
-    "archive/attempt-1": "20",
+    "close/baseline/attempt-1": "80",
+    "close/baseline/attempt-2": "60",
+    "close/baseline/attempt-3": "40",
+    "archive/baseline/attempt-1": "20",
 }
 
 
@@ -79,10 +80,10 @@ def test_a_sweep_scores_the_brier_based_score_in_the_scorecard():
 
 def test_every_raw_pair_is_in_the_scorecard_with_the_rating_as_written_and_the_source_of_the_outcome():
     # (0.875 - 1)^2 = 0.015625 and (0.125 - 0)^2 = 0.015625. Mean 0.015625, score 0.984375.
-    scorecard = sweep({"close": ["success", "failure"]}, {"close/attempt-1": "87.50", "close/attempt-2": "12.5"})
+    scorecard = sweep({"close": ["success", "failure"]}, {"close/baseline/attempt-1": "87.50", "close/baseline/attempt-2": "12.5"})
 
     first, second = scorecard["attempts"]
-    assert (first["attempt_id"], second["attempt_id"]) == ("close/attempt-1", "close/attempt-2")
+    assert (first["attempt_id"], second["attempt_id"]) == ("close/baseline/attempt-1", "close/baseline/attempt-2")
     assert first["task_outcome"] == {"success": True, "source": SOURCE}
     assert first["confidence"] == {
         "rating": "87.50",
@@ -103,7 +104,7 @@ def test_every_raw_pair_is_in_the_scorecard_with_the_rating_as_written_and_the_s
         "mean_squared_error": 0.015625,
         "pairs": [
             {
-                "attempt_id": "close/attempt-1",
+                "attempt_id": "close/baseline/attempt-1",
                 "task_id": "close",
                 "rating": "87.50",
                 "confidence": 0.875,
@@ -111,7 +112,7 @@ def test_every_raw_pair_is_in_the_scorecard_with_the_rating_as_written_and_the_s
                 "squared_error": 0.015625,
             },
             {
-                "attempt_id": "close/attempt-2",
+                "attempt_id": "close/baseline/attempt-2",
                 "task_id": "close",
                 "rating": "12.5",
                 "confidence": 0.125,
@@ -123,16 +124,16 @@ def test_every_raw_pair_is_in_the_scorecard_with_the_rating_as_written_and_the_s
     assert brier["counts"] == {
         "confidence_outcome_pairs": {"total": 2, "valid": 2, "missing": [], "excluded": []},
     }
-    assert brier["evidence"] == {"attempt_ids": ["close/attempt-1", "close/attempt-2"]}
+    assert brier["evidence"] == {"attempt_ids": ["close/baseline/attempt-1", "close/baseline/attempt-2"]}
 
 
 def test_the_rating_as_written_survives_the_machine_readable_scorecard():
-    scorecard = sweep({"close": ["success", "failure"]}, {"close/attempt-1": "87.50", "close/attempt-2": "12.5"})
+    scorecard = sweep({"close": ["success", "failure"]}, {"close/baseline/attempt-1": "87.50", "close/baseline/attempt-2": "12.5"})
 
     read_back = json.loads(to_json(scorecard))
 
     assert read_back == scorecard
-    assert attempt(read_back, "close/attempt-1")["confidence"]["rating"] == "87.50"
+    assert attempt(read_back, "close/baseline/attempt-1")["confidence"]["rating"] == "87.50"
 
 
 @pytest.mark.parametrize(
@@ -150,9 +151,9 @@ def test_the_rating_as_written_survives_the_machine_readable_scorecard():
     ],
 )
 def test_an_answer_that_is_one_number_from_0_to_100_is_accepted_and_normalized_to_0_to_1(response, rating, normalized):
-    scorecard = sweep({"close": ["success"]}, {"close/attempt-1": response})
+    scorecard = sweep({"close": ["success"]}, {"close/baseline/attempt-1": response})
 
-    assert attempt(scorecard, "close/attempt-1")["confidence"] == {
+    assert attempt(scorecard, "close/baseline/attempt-1")["confidence"] == {
         "rating": rating,
         "normalized": normalized,
         "original_response": response,
@@ -180,11 +181,11 @@ def test_an_answer_that_is_one_number_from_0_to_100_is_accepted_and_normalized_t
     ],
 )
 def test_a_missing_unreadable_ambiguous_or_out_of_range_rating_is_unavailable_with_a_reason(response, reason):
-    scorecard = sweep({"close": ["success"]}, {"close/attempt-1": response})
+    scorecard = sweep({"close": ["success"]}, {"close/baseline/attempt-1": response})
 
     # No number is invented: 150 is not clamped to 100, -5 is not clamped to 0, no number is picked
     # from two, and a number is not lifted out of a sentence that may mean the opposite.
-    assert attempt(scorecard, "close/attempt-1")["confidence"] == {
+    assert attempt(scorecard, "close/baseline/attempt-1")["confidence"] == {
         "rating": None,
         "normalized": None,
         "original_response": response,
@@ -199,7 +200,7 @@ def test_a_missing_unreadable_ambiguous_or_out_of_range_rating_is_unavailable_wi
             "total": 1,
             "valid": 0,
             "missing": [
-                {"reason": f"confidence rating unavailable: {reason}", "count": 1, "ids": ["close/attempt-1"]},
+                {"reason": f"confidence rating unavailable: {reason}", "count": 1, "ids": ["close/baseline/attempt-1"]},
             ],
             "excluded": [],
         },
@@ -219,14 +220,14 @@ def test_a_target_that_cannot_isolate_the_follow_up_gives_no_rating_and_an_in_re
     # The agent rates itself inside its task response, and would answer a follow-up as well. Neither is used.
     scorecard = sweep(
         {"close": ["success", "failure"]},
-        {"close/attempt-1": "90", "close/attempt-2": "90"},
+        {"close/baseline/attempt-1": "90", "close/baseline/attempt-2": "90"},
         isolated_follow_up=IsolatedFollowUp(supported=False, reason="the agent keeps its tools in a follow-up"),
         output="Done. CONFIDENCE=90",
     )
 
     reason = "the agent target does not support an isolated follow-up: the agent keeps its tools in a follow-up"
-    assert attempt(scorecard, "close/attempt-1")["confidence"] == unavailable(reason)
-    assert attempt(scorecard, "close/attempt-2")["confidence"] == unavailable(reason)
+    assert attempt(scorecard, "close/baseline/attempt-1")["confidence"] == unavailable(reason)
+    assert attempt(scorecard, "close/baseline/attempt-2")["confidence"] == unavailable(reason)
     brier = metric(scorecard)
     assert brier["state"] == "unavailable"
     assert brier["value"] is None
@@ -239,7 +240,7 @@ def test_a_target_that_cannot_isolate_the_follow_up_gives_no_rating_and_an_in_re
                 {
                     "reason": f"confidence rating unavailable: {reason}",
                     "count": 2,
-                    "ids": ["close/attempt-1", "close/attempt-2"],
+                    "ids": ["close/baseline/attempt-1", "close/baseline/attempt-2"],
                 },
             ],
             "excluded": [],
@@ -256,9 +257,9 @@ def test_a_target_that_cannot_isolate_the_follow_up_gives_no_rating_and_an_in_re
     ],
 )
 def test_a_target_that_does_not_declare_an_isolated_follow_up_is_not_asked(declaration, reason):
-    scorecard = sweep({"close": ["success"]}, {"close/attempt-1": "90"}, isolated_follow_up=declaration)
+    scorecard = sweep({"close": ["success"]}, {"close/baseline/attempt-1": "90"}, isolated_follow_up=declaration)
 
-    assert attempt(scorecard, "close/attempt-1")["confidence"] == unavailable(reason)
+    assert attempt(scorecard, "close/baseline/attempt-1")["confidence"] == unavailable(reason)
     assert metric(scorecard)["state"] == "unavailable"
 
 
@@ -268,13 +269,13 @@ def test_a_task_whose_success_rule_cannot_be_shared_gives_no_rating():
     # (0.04 + 0.16 + 0) / 3 and a score of 0.9333...
     scorecard = sweep(
         {"close": ["success", "failure"], "archive": ["success"]},
-        {"close/attempt-1": "80", "close/attempt-2": "40", "archive/attempt-1": "100"},
+        {"close/baseline/attempt-1": "80", "close/baseline/attempt-2": "40", "archive/baseline/attempt-1": "100"},
         rules={"close": RULE},
     )
 
     reason = "the Task's success rule cannot be shared with the agent"
-    assert attempt(scorecard, "archive/attempt-1")["confidence"] == unavailable(reason)
-    assert attempt(scorecard, "archive/attempt-1")["task_outcome"] == {"success": True, "source": SOURCE}
+    assert attempt(scorecard, "archive/baseline/attempt-1")["confidence"] == unavailable(reason)
+    assert attempt(scorecard, "archive/baseline/attempt-1")["task_outcome"] == {"success": True, "source": SOURCE}
     brier = metric(scorecard)
     assert brier["value"] == 0.9
     assert brier["counts"] == {
@@ -282,22 +283,22 @@ def test_a_task_whose_success_rule_cannot_be_shared_gives_no_rating():
             "total": 3,
             "valid": 2,
             "missing": [
-                {"reason": f"confidence rating unavailable: {reason}", "count": 1, "ids": ["archive/attempt-1"]},
+                {"reason": f"confidence rating unavailable: {reason}", "count": 1, "ids": ["archive/baseline/attempt-1"]},
             ],
             "excluded": [],
         },
     }
-    assert brier["evidence"] == {"attempt_ids": ["close/attempt-1", "close/attempt-2"]}
+    assert brier["evidence"] == {"attempt_ids": ["close/baseline/attempt-1", "close/baseline/attempt-2"]}
 
 
 def test_a_confidence_request_that_fails_leaves_the_attempt_completed_with_its_outcome():
-    # Only close/attempt-2 gives a pair: (0.4 - 0)^2 = 0.16, score 0.84.
+    # Only close/baseline/attempt-2 gives a pair: (0.4 - 0)^2 = 0.16, score 0.84.
     scorecard = sweep(
         {"close": ["success", "failure"]},
-        {"close/attempt-1": TimeoutError("the follow-up timed out"), "close/attempt-2": "40"},
+        {"close/baseline/attempt-1": TimeoutError("the follow-up timed out"), "close/baseline/attempt-2": "40"},
     )
 
-    unasked = attempt(scorecard, "close/attempt-1")
+    unasked = attempt(scorecard, "close/baseline/attempt-1")
     assert (unasked["execution_status"], unasked["execution_error"]) == ("completed", None)
     assert unasked["task_outcome"] == {"success": True, "source": SOURCE}
     assert unasked["confidence"] == unavailable(
@@ -308,51 +309,51 @@ def test_a_confidence_request_that_fails_leaves_the_attempt_completed_with_its_o
 
 def test_the_agent_is_not_asked_again_after_an_answer_that_cannot_be_read():
     # A second request would be answered with 95.
-    scorecard = sweep({"close": ["success"]}, {"close/attempt-1": ["Not sure.", "95"]})
+    scorecard = sweep({"close": ["success"]}, {"close/baseline/attempt-1": ["Not sure.", "95"]})
 
-    assert attempt(scorecard, "close/attempt-1")["confidence"] == unavailable(
+    assert attempt(scorecard, "close/baseline/attempt-1")["confidence"] == unavailable(
         "no number in the confidence response", original_response="Not sure."
     )
     assert metric(scorecard)["state"] == "unavailable"
 
 
 def test_an_answer_that_belongs_to_another_attempt_is_not_paired_with_this_one():
-    # close/attempt-1 succeeded and close/attempt-2 failed. The target returns, for the first
+    # close/baseline/attempt-1 succeeded and close/baseline/attempt-2 failed. The target returns, for the first
     # request, an answer it attributes to the second Attempt. It is paired with neither:
     # the only pair is (0.2, 0), squared error 0.04, score 0.96.
     scorecard = sweep(
         {"close": ["success", "failure"]},
         {
-            "close/attempt-1": ConfidenceResponse(attempt_id="close/attempt-2", output="100"),
-            "close/attempt-2": "20",
+            "close/baseline/attempt-1": ConfidenceResponse(attempt_id="close/baseline/attempt-2", output="100"),
+            "close/baseline/attempt-2": "20",
         },
     )
 
-    assert attempt(scorecard, "close/attempt-1")["confidence"] == unavailable(
-        "the confidence response belongs to Attempt 'close/attempt-2', not to this Attempt"
+    assert attempt(scorecard, "close/baseline/attempt-1")["confidence"] == unavailable(
+        "the confidence response belongs to Attempt 'close/baseline/attempt-2', not to this Attempt"
     )
-    assert attempt(scorecard, "close/attempt-2")["confidence"]["rating"] == "20"
+    assert attempt(scorecard, "close/baseline/attempt-2")["confidence"]["rating"] == "20"
     brier = metric(scorecard)
     assert brier["value"] == 0.96
-    assert brier["evidence"] == {"attempt_ids": ["close/attempt-2"]}
+    assert brier["evidence"] == {"attempt_ids": ["close/baseline/attempt-2"]}
 
 
 @pytest.mark.parametrize(
-    "answer", [ConfidenceResponse(attempt_id="close/attempt-1", output=None), lambda request, target: None]
+    "answer", [ConfidenceResponse(attempt_id="close/baseline/attempt-1", output=None), lambda request, target: None]
 )
 def test_a_target_that_returns_no_answer_gives_no_rating(answer):
-    scorecard = sweep({"close": ["success"]}, {"close/attempt-1": answer})
+    scorecard = sweep({"close": ["success"]}, {"close/baseline/attempt-1": answer})
 
-    assert attempt(scorecard, "close/attempt-1")["confidence"] == unavailable(
+    assert attempt(scorecard, "close/baseline/attempt-1")["confidence"] == unavailable(
         "the agent target returned no confidence response"
     )
 
 
 def test_an_attempt_that_did_not_complete_is_not_asked_and_is_not_a_task_failure():
-    # Only close/attempt-1 gives a pair: (0.8 - 1)^2 = 0.04, score 0.96.
-    scorecard = sweep({"close": ["success", "error"]}, {"close/attempt-1": "80", "close/attempt-2": "0"})
+    # Only close/baseline/attempt-1 gives a pair: (0.8 - 1)^2 = 0.04, score 0.96.
+    scorecard = sweep({"close": ["success", "error"]}, {"close/baseline/attempt-1": "80", "close/baseline/attempt-2": "0"})
 
-    failed = attempt(scorecard, "close/attempt-2")
+    failed = attempt(scorecard, "close/baseline/attempt-2")
     assert failed["execution_status"] == "failed"
     assert failed["execution_error"] == "ConnectionError: the agent endpoint returned 503"
     assert failed["task_outcome"] is None
@@ -365,7 +366,7 @@ def test_an_attempt_that_did_not_complete_is_not_asked_and_is_not_a_task_failure
             "valid": 1,
             "missing": [],
             "excluded": [
-                {"reason": "execution status is not completed", "count": 1, "ids": ["close/attempt-2"]},
+                {"reason": "execution status is not completed", "count": 1, "ids": ["close/baseline/attempt-2"]},
             ],
         },
     }
@@ -392,19 +393,19 @@ def test_the_agent_is_shown_its_completed_attempt_and_the_success_rule_and_nothi
 
     scorecard = sweep(
         {"close": ["failure", "success"]},
-        {"close/attempt-1": everything_it_was_given, "close/attempt-2": "100"},
+        {"close/baseline/attempt-1": everything_it_was_given, "close/baseline/attempt-2": "100"},
     )
 
-    original_response = attempt(scorecard, "close/attempt-1")["confidence"]["original_response"]
+    original_response = attempt(scorecard, "close/baseline/attempt-1")["confidence"]["original_response"]
     shown = json.loads(original_response)
     assert set(shown) == {"attempt", "response", "success_rule", "prompt"}
-    assert shown["attempt"]["attempt_id"] == "close/attempt-1"
+    assert shown["attempt"]["attempt_id"] == "close/baseline/attempt-1"
     assert shown["attempt"]["prompt"] == "Do close."
     assert shown["response"]["output"] == "Done."
     assert shown["success_rule"] == RULE
     assert shown["prompt"] == EXPECTED_PROMPT
     # Not the outcome, not where it came from, and not the Attempt that follows.
-    assert attempt(scorecard, "close/attempt-1")["task_outcome"] == {"success": False, "source": SOURCE}
+    assert attempt(scorecard, "close/baseline/attempt-1")["task_outcome"] == {"success": False, "source": SOURCE}
     assert SOURCE not in original_response
     assert '"success":' not in original_response
     assert "task_outcome" not in original_response
@@ -418,7 +419,7 @@ def test_the_agent_is_asked_after_its_own_attempt_and_before_the_next_one_is_mad
 
     scorecard = sweep(
         {"close": ["success", "success", "success"]},
-        {f"close/attempt-{number}": attempts_worked_on for number in (1, 2, 3)},
+        {f"close/baseline/attempt-{number}": attempts_worked_on for number in (1, 2, 3)},
     )
 
     assert [entry["confidence"]["rating"] for entry in scorecard["attempts"]] == ["1", "2", "3"]
@@ -437,12 +438,12 @@ def test_a_missing_rating_does_not_make_the_attempt_a_task_failure():
     # Brier-based score: one valid pair, (1.0 - 1)^2 = 0, score 1.
     scorecard = sweep(
         {"close": ["success", "success"]},
-        {"close/attempt-1": "100", "close/attempt-2": "No idea."},
+        {"close/baseline/attempt-1": "100", "close/baseline/attempt-2": "No idea."},
         metrics=("outcome_consistency", "brier_based_score"),
     )
 
-    assert attempt(scorecard, "close/attempt-2")["execution_status"] == "completed"
-    assert attempt(scorecard, "close/attempt-2")["task_outcome"] == {"success": True, "source": SOURCE}
+    assert attempt(scorecard, "close/baseline/attempt-2")["execution_status"] == "completed"
+    assert attempt(scorecard, "close/baseline/attempt-2")["task_outcome"] == {"success": True, "source": SOURCE}
     outcome_consistency = metric(scorecard, "outcome_consistency")
     assert outcome_consistency["value"] == 1
     assert outcome_consistency["counts"]["attempts"] == {"total": 2, "valid": 2, "missing": [], "excluded": []}
@@ -455,7 +456,7 @@ def test_a_missing_rating_does_not_make_the_attempt_a_task_failure():
             {
                 "reason": "confidence rating unavailable: no number in the confidence response",
                 "count": 1,
-                "ids": ["close/attempt-2"],
+                "ids": ["close/baseline/attempt-2"],
             },
         ],
         "excluded": [],
@@ -465,7 +466,7 @@ def test_a_missing_rating_does_not_make_the_attempt_a_task_failure():
 def test_the_task_outcome_does_not_follow_the_rating():
     # The agent is certain of the opposite of what happened. The outcomes stay what the service
     # state says, and the score is 1 - ((0 - 1)^2 + (1 - 0)^2) / 2 = 0.
-    scorecard = sweep({"close": ["success", "failure"]}, {"close/attempt-1": "0", "close/attempt-2": "100"})
+    scorecard = sweep({"close": ["success", "failure"]}, {"close/baseline/attempt-1": "0", "close/baseline/attempt-2": "100"})
 
     assert [entry["task_outcome"]["success"] for entry in scorecard["attempts"]] == [True, False]
     assert metric(scorecard)["value"] == 0

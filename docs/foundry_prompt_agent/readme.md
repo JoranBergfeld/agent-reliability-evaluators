@@ -5,7 +5,7 @@
 ```python
 from reliability_evaluators.agent_target.foundry_prompt_agent import FoundryPromptAgentTarget
 from reliability_evaluators.evidence import TaskOutcome
-from reliability_evaluators.sweep import Task, run_sweep
+from reliability_evaluators.sweep import Condition, Experiment, Task, run_sweep
 
 target = FoundryPromptAgentTarget(
     project_endpoint="https://<account>.services.ai.azure.com/api/projects/<project>",
@@ -19,13 +19,23 @@ def item_is_closed(attempt, response):
 
 
 scorecard = run_sweep(
-    tasks=[Task(task_id="close", prompt="Close the item.", success_rule=item_is_closed, attempts=5)],
+    experiments=[Experiment(
+        experiment_id="close",
+        task=Task(task_id="close", prompt="Close the item.", success_rule=item_is_closed, attempts=5),
+        agent_configuration={"agent": "my-prompt-agent"},
+        starting_state="fresh",
+        baseline=Condition(condition_id="baseline", description="The normal test environment."),
+        variation=None,
+        controls=my_controls,
+        write_capable=True,
+        authorized_resources=["todo-list/reliability-test"],
+    )],
     agent_target=target,
     metrics=["outcome_consistency"],
 )
 ```
 
-`my_test_service` stands for your own code.
+`my_test_service` stands for your own code. Implement `my_controls` for the named resources as in [controlled experiments](../sweep/controlled-experiments.md).
 
 It is the sibling of the [Foundry hosted agent target](../foundry_hosted_agent/readme.md) and takes the same arguments, apart from `agent_version`. What differs between the two agent types is under [a failing tool fails the whole invocation](#a-failing-tool-fails-the-whole-invocation) and [the confidence rating](#the-confidence-rating).
 
@@ -87,7 +97,7 @@ The request is sent once. The target never repeats a request that may have reach
 
 Every invocation is one request that refers to no earlier response, so the agent starts a new conversation for every Attempt. That resets nothing outside the conversation: whatever the agent's tools changed stays changed.
 
-The target never records a starting-state policy, and the sweep never infers one from it. State is fresh only when you declare `starting_state="fresh"` in an [experiment](../sweep/controlled-experiments.md) and your prepare control makes it so. Attempts of a Task given without an experiment record `"starting_state": null`.
+The target never supplies a starting-state policy, and the sweep never infers one from it. State is fresh only when you declare `starting_state="fresh"` in an [experiment](../sweep/controlled-experiments.md) and your prepare control makes it so. Every new sweep Attempt records that declared policy.
 
 ## What is recorded for each Attempt
 

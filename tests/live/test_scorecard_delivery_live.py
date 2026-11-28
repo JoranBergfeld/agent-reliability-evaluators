@@ -23,14 +23,13 @@ import zlib
 
 import pytest
 
-from live_fixture import TASK_PROMPT, connect, local_service, provision, strict_task_outcome, teardown
+from live_fixture import connect, local_service, provision, teardown
 from live_fixture.hidden import Secret, send
 from reliability_evaluators.agent_target.foundry_hosted import AzureCliCredential, FoundryHostedAgentTarget
-from reliability_evaluators.evidence import TaskOutcome
 from reliability_evaluators.managed_scoring import FoundryManagedScoring, FoundryProject
 from reliability_evaluators.scorecard import ReportingFailure, to_json
-from reliability_evaluators.sweep import ConfiguredEvaluator, Task, run_sweep
-from tests.live.test_managed_outcome_consistency import ScriptedTodoAgent, service_attempt
+from reliability_evaluators.sweep import ConfiguredEvaluator, run_sweep
+from tests.live.test_managed_outcome_consistency import ScriptedTodoAgent, scripted_experiments
 from tests.live.test_managed_scoring_failures import (  # noqa: F401  (the fixture is used by name)
     FAILING_EVALUATOR,
     RunsTheFailingEvaluator,
@@ -122,17 +121,10 @@ def sweep_the_scripted_agent(
         monkeypatch.setenv("TODO_SERVICE_URL", service.url)
         monkeypatch.setenv("TODO_API_KEY", service.api_key)
 
-        def strict_success(attempt, response):
-            outcome = strict_task_outcome(service.evidence(service_attempt(attempt.attempt_id)))
-            return TaskOutcome(success=outcome["success"], source=outcome["source"])
-
-        tasks = [
-            Task(task_id=task_id, prompt=TASK_PROMPT, success_rule=strict_success, attempts=len(behaviours))
-            for task_id, behaviours in script.items()
-        ]
+        setup, experiments = scripted_experiments(service, script)
         return run_sweep(
-            tasks=tasks,
-            agent_target=agent(service, script),
+            experiments=experiments,
+            agent_target=agent(script, setup),
             metrics=metrics,
             managed_scoring=managed_scoring,
             artifact_dir=location,

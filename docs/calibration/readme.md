@@ -152,7 +152,7 @@ Select the metric by its identity. Each Task needs a `shareable_success_rule`, a
 
 ```python
 scorecard = run_sweep(
-    tasks=tasks,
+    experiments=experiments,
     agent_target=MyAgentTarget(),
     metrics=["calibration", "strict_confidence_discrimination", "brier_based_score"],
 )
@@ -180,7 +180,7 @@ The metric's own entry carries:
 | --- | --- |
 | `state`, `value`, `reason` | `available` with a value, or `unavailable` with a reason and no value |
 | `execution_failure` | `null`, unless the metric has no result because the Attempts that supply its evidence were cut short; see [execution limits and partial scorecards](../sweep/execution-limits.md#metrics-in-a-partial-scorecard) |
-| `cut_short` | The experiments, and the Tasks given without one, whose Attempts for this metric were cut short. Both lists are empty when none were |
+| `cut_short` | The experiments whose Attempts for this metric were cut short. `task_ids` is retained for earlier scorecards |
 | `definition` | version, what it measures, the calculation, the fidelity conventions, the scale and the interpretation |
 | `scoring_path`, `fidelity` | `customer_process` and `authoritative` for a value scored in your own process |
 | `counts.confidence_outcome_pairs` | `total` is the number of Attempts, `valid` the number of valid pairs (the denominator), and `missing` and `excluded` the Attempts that gave no pair, by reason and by Attempt identity |
@@ -223,7 +223,7 @@ Every Attempt is counted once in `counts.confidence_outcome_pairs`, under the fi
 
 | Situation | Treatment |
 | --- | --- |
-| An Attempt made under the variation of an experiment | Excluded with the reason `made under a variation, and this metric is calculated from Attempts under the baseline`. The metric describes the agent under the baseline. A sweep gives the Evaluator baseline Attempts only. Called on its own with the Attempts of a whole experiment, the Evaluator leaves the others out itself and counts them. An Attempt that records no condition was made without an experiment and is used. |
+| An Attempt made under the variation of an experiment | Excluded with the reason `made under a variation, and this metric is calculated from Attempts under the baseline`. The metric describes the agent under the baseline. A sweep gives the Evaluator baseline Attempts only. Called on its own with the Attempts of a whole experiment, the Evaluator leaves the others out itself and counts them. Standalone Evaluators and earlier scorecards can contain Attempts without a recorded condition; these are used. |
 | The execution status is not `completed` | Excluded: `execution status is not completed`. It is not a task failure. |
 | A completed Attempt with no task outcome | Missing: `no task outcome recorded`. |
 | A completed Attempt with an outcome and no confidence evidence | Missing: `no confidence rating recorded`. |

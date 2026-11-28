@@ -6,6 +6,7 @@ on what the caller finds at the location it chose, and on the failure it is give
 
 import json
 import shutil
+import threading
 
 import pytest
 
@@ -14,6 +15,7 @@ from reliability_evaluators.scorecard import ReportingFailure
 from reliability_evaluators.sweep import Condition, Experiment, Task, run_sweep
 from tests.fakes import FakeAgentTarget, FakeControls, FakeTodoAgent, FakeTodoService, todo_list
 from tests.report_reader import assert_faithful_rendering
+from tests.fakes import fake_baseline_experiments
 
 SOURCE = "final state of the fake service"
 
@@ -26,7 +28,7 @@ def sweep(behaviours, artifact_dir, target=None, success_rule=None, metrics=("ou
         return TaskOutcome(success=target.service_state[attempt.attempt_id] == "done", source=SOURCE)
 
     task = Task(task_id="close", prompt="Close it.", success_rule=success_rule or item_is_done, attempts=len(behaviours))
-    return run_sweep(tasks=[task], agent_target=target, metrics=metrics, artifact_dir=artifact_dir)
+    return run_sweep(experiments=fake_baseline_experiments([task]), agent_target=target, metrics=metrics, artifact_dir=artifact_dir)
 
 
 def task_outcomes(attempts):
@@ -62,7 +64,7 @@ def test_the_scorecard_the_report_and_the_evidence_are_written_where_the_caller_
     assert_faithful_rendering((location / "report.html").read_text(encoding="utf-8"), delivered)
     evidence = read_json(location / "evidence.json")
     assert evidence == {"schema_version": 1, "attempts": delivered["attempts"]}
-    assert task_outcomes(evidence["attempts"]) == [completed("close/attempt-1", True), completed("close/attempt-2", False)]
+    assert task_outcomes(evidence["attempts"]) == [completed("close/baseline/attempt-1", True), completed("close/baseline/attempt-2", False)]
     assert files_in(working_directory) == []
 
 
@@ -72,7 +74,7 @@ def test_a_sweep_that_stops_is_a_reporting_failure_and_the_evidence_it_had_is_ke
     target = FakeAgentTarget({"close": behaviours})
 
     def breaks_on_the_third_attempt(attempt, response):
-        if attempt.attempt_id == "close/attempt-3":
+        if attempt.attempt_id == "close/baseline/attempt-3":
             return "closed"
         return TaskOutcome(success=target.service_state[attempt.attempt_id] == "done", source=SOURCE)
 
@@ -86,7 +88,7 @@ def test_a_sweep_that_stops_is_a_reporting_failure_and_the_evidence_it_had_is_ke
     # Nothing of the earlier, successful run is left to be read as this run's result.
     assert files_in(tmp_path) == ["evidence.json", "reporting-failure.json"]
     kept = read_json(tmp_path / "evidence.json")["attempts"]
-    assert task_outcomes(kept) == [completed("close/attempt-1", True), completed("close/attempt-2", False)]
+    assert task_outcomes(kept) == [completed("close/baseline/attempt-1", True), completed("close/baseline/attempt-2", False)]
     record = read_json(tmp_path / "reporting-failure.json")
     assert record["status"] == "reporting_failed"
     assert "TaskOutcome" in record["error"]
@@ -129,6 +131,41 @@ def test_an_experiment_that_stops_the_sweep_keeps_the_evidence_of_the_attempts_i
     assert raised.value.evidence == [kept]
 
 
+def test_a_failure_during_concurrent_experiments_keeps_the_evidence_from_each_one(tmp_path):
+    archive_finished = threading.Event()
+
+    def success_rule(attempt, response):
+        if attempt.task_id == "archive" and attempt.attempt_id.endswith("attempt-2"):
+            archive_finished.set()
+        if attempt.task_id == "close" and attempt.attempt_id.endswith("attempt-2"):
+            if not archive_finished.wait(timeout=2):
+                raise AssertionError("the independent experiment did not finish")
+            return "not a task outcome"
+        return TaskOutcome(success=True, source=SOURCE)
+
+    tasks = [
+        Task(task_id=task_id, prompt=f"Do {task_id}.", success_rule=success_rule, attempts=2)
+        for task_id in ("close", "archive")
+    ]
+    with pytest.raises(ReportingFailure) as raised:
+        run_sweep(
+            experiments=fake_baseline_experiments(tasks),
+            agent_target=FakeAgentTarget({"close": ["success"] * 2, "archive": ["success"] * 2}),
+            metrics=["outcome_consistency"],
+            max_concurrent_attempts=2,
+            artifact_dir=tmp_path,
+        )
+
+    assert isinstance(raised.value.__cause__, EvidenceError)
+    kept = read_json(tmp_path / "evidence.json")["attempts"]
+    assert task_outcomes(kept) == [
+        completed("close/baseline/attempt-1", True),
+        completed("archive/baseline/attempt-1", True),
+        completed("archive/baseline/attempt-2", True),
+    ]
+    assert raised.value.evidence == kept
+
+
 def test_a_declaration_that_is_rejected_is_a_reporting_failure_when_a_location_was_chosen(tmp_path):
     with pytest.raises(ReportingFailure) as raised:
         sweep(["success", "success"], artifact_dir=tmp_path, metrics=["overall_reliability"])
@@ -167,6 +204,6 @@ def test_a_location_lost_during_the_sweep_is_a_reporting_failure_that_carries_wh
     failure = raised.value
     assert failure.retained == ()
     assert "Nothing was kept" in str(failure)
-    assert task_outcomes(failure.evidence) == [completed("close/attempt-1", True), completed("close/attempt-2", True)]
+    assert task_outcomes(failure.evidence) == [completed("close/baseline/attempt-1", True), completed("close/baseline/attempt-2", True)]
     # Both Attempts succeeded: p = 1 and the value is (2 * 1 - 1)^2 = 1.
     assert failure.scorecard["metrics"][0]["value"] == 1

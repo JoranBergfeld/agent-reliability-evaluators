@@ -273,8 +273,9 @@ def build_scorecard(
 
     `executions` is what was planned for each experiment and for each Task given without
     one, and how making it ended. The first are listed under `experiments` with what the
-    experiment declared, the second under `tasks_without_experiment`. Attempts refer to
-    their experiment by experiment identity.
+    experiment declared, the second under `tasks_without_experiment`. New sweeps produce
+    only experiment records; the second form is retained for earlier scorecards. Attempts
+    refer to their experiment by experiment identity.
 
     The scorecard is complete when every planned Attempt completed and every selected
     metric has a result. Otherwise it is partial, and `missing` names what is missing and
@@ -282,8 +283,8 @@ def build_scorecard(
     evidence that was collected. A metric whose scoring failed has none: it is listed in
     `missing` with its execution error, and every other metric keeps its own.
 
-    `max_concurrent_attempts` is how many Attempts of Tasks given without an experiment
-    the sweep allowed in flight at once; 1 means they ran one after another.
+    `max_concurrent_attempts` is the maximum number of independent experiments the sweep
+    allowed in flight at once; 1 means they ran one after another.
 
     `token_usage` reports what the Attempts, their confidence follow-ups, the scoring of
     each selected metric and the preparation in `preparation_usage` used, in tokens. It is

@@ -12,6 +12,7 @@ from reliability_evaluators.evidence import TaskOutcome
 from reliability_evaluators.scorecard import AcceptanceCriterion, render_summary
 from reliability_evaluators.sweep import Task, run_sweep
 from tests.fakes import FakeAgentTarget
+from tests.fakes import fake_baseline_experiments
 
 SOURCE = "final state of the fake service"
 OUTCOME = "outcome_consistency"
@@ -36,7 +37,7 @@ def sweep(behaviours, metrics=(OUTCOME,), artifact_dir=None, **scripted):
         shareable_success_rule="The item is closed.",
     )
     return run_sweep(
-        tasks=[task],
+        experiments=fake_baseline_experiments([task]),
         agent_target=target,
         metrics=metrics,
         acceptance_criteria=[AcceptanceCriterion(metric_id=OUTCOME, condition={"value": {"at_least": 0.5}})],
@@ -54,7 +55,7 @@ def sections(summary):
 def test_the_summary_reports_usage_under_a_heading_of_its_own_apart_from_the_metrics_and_their_acceptance():
     # Both Attempts succeed: outcome consistency is 1, which meets "at least 0.5". 790 + 812 = 1602 tokens.
     scorecard = sweep(
-        ["success", "success"], invocations={"close/attempt-1": reported(790), "close/attempt-2": reported(812)}
+        ["success", "success"], invocations={"close/baseline/attempt-1": reported(790), "close/baseline/attempt-2": reported(812)}
     )
 
     metrics, usage = sections(render_summary(scorecard))
@@ -66,8 +67,8 @@ def test_the_summary_reports_usage_under_a_heading_of_its_own_apart_from_the_met
     assert "it takes no part in any metric value or acceptance assessment" in usage
     assert "Sweep total: **1602 tokens**. No use is missing a count." in usage
     assert "| `outcome_consistency` | 1602 | complete | no |" in usage
-    assert "| `close/attempt-1` | completed | 790 | complete | 790 | \N{EM DASH} |" in usage
-    assert "| `close/attempt-2` | completed | 812 | complete | 812 | \N{EM DASH} |" in usage
+    assert "| `close/baseline/attempt-1` | completed | 790 | complete | 790 | \N{EM DASH} |" in usage
+    assert "| `close/baseline/attempt-2` | completed | 812 | complete | 812 | \N{EM DASH} |" in usage
     assert "Missing usage" not in usage
 
 
@@ -76,19 +77,19 @@ def test_the_summary_labels_a_partial_sum_and_names_what_is_missing_with_its_rea
     scorecard = sweep(
         ["success", "error"],
         metrics=(OUTCOME, "brier_based_score"),
-        invocations={"close/attempt-1": reported(790)},
+        invocations={"close/baseline/attempt-1": reported(790)},
         confidence={
-            "close/attempt-1": ConfidenceResponse(attempt_id="close/attempt-1", output="90", invocation=reported(120))
+            "close/baseline/attempt-1": ConfidenceResponse(attempt_id="close/baseline/attempt-1", output="90", invocation=reported(120))
         },
     )
 
     _, usage = sections(render_summary(scorecard))
 
     assert "Sweep total: **910 tokens**, a partial sum" in usage
-    assert "| `close/attempt-1` | completed | 910 | complete | 790 | 120 |" in usage
-    assert "| `close/attempt-2` | failed | \N{EM DASH} | unavailable | missing | \N{EM DASH} |" in usage
+    assert "| `close/baseline/attempt-1` | completed | 910 | complete | 790 | 120 |" in usage
+    assert "| `close/baseline/attempt-2` | failed | \N{EM DASH} | unavailable | missing | \N{EM DASH} |" in usage
     assert (
-        "- agent_invocation of Attempt `close/attempt-2`: the agent target recorded nothing of the invocation" in usage
+        "- agent_invocation of Attempt `close/baseline/attempt-2`: the agent target recorded nothing of the invocation" in usage
     )
     # Both Evaluators were given both Attempts: their totals overlap and are labelled so.
     assert "| `outcome_consistency` | 910 | partial | yes, with `brier_based_score` |" in usage
@@ -102,9 +103,9 @@ def test_the_summary_says_where_the_counts_of_the_attempts_come_from_when_the_ag
     scorecard = sweep(
         ["success", "success", "success"],
         invocations={
-            "close/attempt-1": {**reported(790), "token_usage_source": own_count},
-            "close/attempt-2": {**reported(812), "token_usage_source": own_count},
-            "close/attempt-3": reported(805),
+            "close/baseline/attempt-1": {**reported(790), "token_usage_source": own_count},
+            "close/baseline/attempt-2": {**reported(812), "token_usage_source": own_count},
+            "close/baseline/attempt-3": reported(805),
         },
     )
 
@@ -115,7 +116,7 @@ def test_the_summary_says_where_the_counts_of_the_attempts_come_from_when_the_ag
 
 
 def test_the_summary_names_no_source_of_the_counts_when_the_agent_target_states_none():
-    scorecard = sweep(["success", "success"], invocations={"close/attempt-1": reported(790)})
+    scorecard = sweep(["success", "success"], invocations={"close/baseline/attempt-1": reported(790)})
 
     _, usage = sections(render_summary(scorecard))
 
@@ -134,7 +135,7 @@ def test_the_summary_says_unavailable_and_not_zero_when_no_usage_is_known():
 
 def test_the_summary_is_delivered_with_the_scorecard_for_the_pipeline_to_publish(tmp_path):
     scorecard = sweep(
-        ["success", "success"], artifact_dir=tmp_path, invocations={"close/attempt-1": reported(790)}
+        ["success", "success"], artifact_dir=tmp_path, invocations={"close/baseline/attempt-1": reported(790)}
     )
 
     delivered = json.loads((tmp_path / "scorecard.json").read_text(encoding="utf-8"))

@@ -12,6 +12,7 @@ from reliability_evaluators.evidence import TaskOutcome
 from reliability_evaluators.scorecard import AcceptanceCriterion, CustomerAssessment, to_json
 from reliability_evaluators.sweep import Task, run_sweep
 from tests.fakes import FakeAgentTarget
+from tests.fakes import fake_baseline_experiments
 
 SOURCE = "final state of the fake service"
 
@@ -32,7 +33,7 @@ def sweep(script, acceptance_criteria=(), metrics=("outcome_consistency",)):
         Task(task_id=task_id, prompt=f"Do {task_id}.", success_rule=item_is_done, attempts=len(behaviours))
         for task_id, behaviours in script.items()
     ]
-    return run_sweep(tasks=tasks, agent_target=target, metrics=metrics, acceptance_criteria=acceptance_criteria)
+    return run_sweep(experiments=fake_baseline_experiments(tasks), agent_target=target, metrics=metrics, acceptance_criteria=acceptance_criteria)
 
 
 def on_value(**comparisons):
@@ -353,7 +354,7 @@ def test_acceptance_criteria_the_scorecard_could_not_report_are_rejected_before_
 
     with pytest.raises(ValueError, match=problem):
         run_sweep(
-            tasks=[always_succeeds],
+            experiments=fake_baseline_experiments([always_succeeds]),
             agent_target=target,
             metrics=["outcome_consistency"],
             acceptance_criteria=criteria(),

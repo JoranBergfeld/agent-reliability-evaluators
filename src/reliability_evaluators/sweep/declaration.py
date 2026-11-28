@@ -251,7 +251,7 @@ class Experiment:
     controls: CustomerControls
     # Whether the agent or the controls can change anything outside the conversation.
     write_capable: bool
-    # The test resources a write-capable experiment is authorized to change, by name.
+    # The test resources a write-capable experiment reads or is authorized to change, by name.
     authorized_resources: Sequence[str] = ()
     # The equivalent wordings of the Task's instruction, which the customer supplies or approves.
     # Declared with a variation of the kind prompt, and only with one. The sweep generates none:

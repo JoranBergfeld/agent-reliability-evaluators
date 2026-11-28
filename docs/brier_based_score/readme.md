@@ -114,7 +114,7 @@ Give each Task its success rule in words, and select the metric. The agent targe
 from reliability_evaluators.agent_target import AgentResponse, ConfidenceResponse, IsolatedFollowUp
 from reliability_evaluators.evidence import TaskOutcome
 from reliability_evaluators.scorecard import to_json
-from reliability_evaluators.sweep import Task, run_sweep
+from reliability_evaluators.sweep import Condition, Experiment, Task, run_sweep
 
 
 class MyAgentTarget:
@@ -135,13 +135,23 @@ def item_is_closed(attempt, response):
 
 
 scorecard = run_sweep(
-    tasks=[
-        Task(
-            task_id="close",
-            prompt="Close the item.",
-            success_rule=item_is_closed,
-            shareable_success_rule="The item is marked closed in the to-do service.",
-            attempts=5,
+    experiments=[
+        Experiment(
+            experiment_id="close",
+            task=Task(
+                task_id="close",
+                prompt="Close the item.",
+                success_rule=item_is_closed,
+                shareable_success_rule="The item is marked closed in the to-do service.",
+                attempts=5,
+            ),
+            agent_configuration={"agent": "my-agent", "version": "1"},
+            starting_state="fresh",
+            baseline=Condition(condition_id="baseline", description="The normal test environment."),
+            variation=None,
+            controls=my_controls,
+            write_capable=True,
+            authorized_resources=["to-do service test data"],
         )
     ],
     agent_target=MyAgentTarget(),
@@ -150,13 +160,13 @@ scorecard = run_sweep(
 print(to_json(scorecard))
 ```
 
-`my_agent` and `my_test_service` stand for your own code. With the [Foundry prompt agent target](../foundry_prompt_agent/readme.md#the-confidence-rating) you write none of this: it declares the isolated follow-up itself. The Foundry hosted agent target declares it unsupported. See [on Foundry agents](#on-foundry-agents).
+`my_agent` and `my_test_service` stand for your own code. Implement `my_controls` for your test resources as in [controlled experiments](../sweep/controlled-experiments.md). With the [Foundry prompt agent target](../foundry_prompt_agent/readme.md#the-confidence-rating) you do not implement `MyAgentTarget`: the Foundry target declares the isolated follow-up itself. The Foundry hosted agent target declares it unsupported. See [on Foundry agents](#on-foundry-agents).
 
 ## Scoring it in your Foundry project
 
 The Brier-based score can also be calculated by a custom evaluator in your own Foundry project. That evaluator is derived from the canonical definition above; there is no second formula. Select the metric as `ConfiguredEvaluator(metric_id="brier_based_score", scoring_path="foundry_managed")` and give the sweep your project as `managed_scoring`. Everything else is declared as above.
 
-For each Attempt the evaluator is sent its identity, its Task, its execution status, and its task outcome and its confidence evidence: the rating as the agent wrote it with the whole response it was read from, or the reason there is no rating. With it goes the condition the Attempt was intended for, with its role, description and parameters, when the Attempt was made in an experiment: the evaluator leaves out an Attempt made under a variation, as the canonical definition does. The rating travels as text, so the evaluator calculates from the same exact fractions as your own process. Nothing else about the Attempt leaves your process.
+For each Attempt the evaluator is sent its identity, its Task, its execution status, and its task outcome and its confidence evidence: the rating as the agent wrote it with the whole response it was read from, or the reason there is no rating. With it goes the declared condition the Attempt was intended for, with its role, description and parameters: the evaluator leaves out an Attempt made under a variation, as the canonical definition does. The rating travels as text, so the evaluator calculates from the same exact fractions as your own process. Nothing else about the Attempt leaves your process.
 
 The value is then the number Foundry returned. It is reported with `scoring_path` `foundry_managed`. Its `fidelity` is `authoritative` when it equals the value the evaluator returned with it in encoded form, and `unverified`, with its limitation, when it does not: see [the fidelity check](../managed_scoring/readme.md#the-fidelity-check) for what that establishes. An unverified result cannot be met or not met by an acceptance criterion. Only the metric value is compared in that way. The state, the reason, the counts and the details, with the mean squared error and every raw pair, are the ones the evaluator returned from Foundry in the encoded result, and they are what your own process gives for the same evidence. An unavailable measurement comes back as one.
 
@@ -252,7 +262,7 @@ Every Attempt in `attempts` carries its confidence evidence next to its task out
 
 ```json
 {
-  "attempt_id": "archive/attempt-1",
+  "attempt_id": "archive/baseline/attempt-1",
   "task_id": "archive",
   "execution_status": "completed",
   "execution_error": null,
@@ -279,7 +289,7 @@ The metric's own entry carries:
 | --- | --- |
 | `state`, `value`, `reason` | `available` with a value, or `unavailable` with a reason and no value |
 | `execution_failure` | `null`, unless the metric has no result because the Attempts that supply its evidence were cut short; see [execution limits and partial scorecards](../sweep/execution-limits.md#metrics-in-a-partial-scorecard) |
-| `cut_short` | The experiments, and the Tasks given without one, whose Attempts for this metric were cut short. Both lists are empty when none were |
+| `cut_short` | The experiments whose Attempts for this metric were cut short. `task_ids` is retained for earlier scorecards |
 | `definition` | version, what it measures, the calculation, the fidelity conventions, the scale and the interpretation |
 | `scoring_path`, `fidelity` | `customer_process` and `authoritative` for a value scored in your own process |
 | `counts.confidence_outcome_pairs` | `total` is the number of Attempts, `valid` the number of valid pairs (the denominator), and `missing` and `excluded` the Attempts that gave no pair, by reason and by Attempt identity |
@@ -305,7 +315,7 @@ Every Attempt is counted once in `counts.confidence_outcome_pairs`, under the fi
 
 | Situation | Treatment |
 | --- | --- |
-| An Attempt made under the variation of an experiment | Excluded with the reason `made under a variation, and this metric is calculated from Attempts under the baseline`. The metric describes the agent under the baseline. A sweep gives the Evaluator baseline Attempts only. Called on its own with the Attempts of a whole experiment, the Evaluator leaves the others out itself and counts them. An Attempt that records no condition was made without an experiment and is used. |
+| An Attempt made under the variation of an experiment | Excluded with the reason `made under a variation, and this metric is calculated from Attempts under the baseline`. The metric describes the agent under the baseline. A sweep gives the Evaluator baseline Attempts only. Called on its own with the Attempts of a whole experiment, the Evaluator leaves the others out itself and counts them. Standalone Evaluators and earlier scorecards can contain Attempts without a recorded condition; these are used. |
 | The execution status is not `completed` | Excluded: `execution status is not completed`. It is not a task failure. |
 | A completed Attempt with no task outcome | Missing: `no task outcome recorded`. |
 | A completed Attempt with an outcome and no confidence evidence | Missing: `no confidence rating recorded`. |

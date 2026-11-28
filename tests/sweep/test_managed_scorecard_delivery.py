@@ -17,6 +17,7 @@ from tests.fake_foundry import FakeFoundryProject
 from tests.fakes import FakeAgentTarget
 from tests.managed_artifact import altered_evidence
 from tests.report_reader import assert_faithful_rendering
+from tests.fakes import fake_baseline_experiments
 
 SOURCE = "final state of the fake service"
 DELIVERED = ["evidence.json", "report.html", "scorecard.json", "summary.md"]
@@ -51,7 +52,7 @@ def sweep(script, foundry, artifact_dir, metrics=(MANAGED,), target=None):
         for task_id, behaviours in script.items()
     ]
     return run_sweep(
-        tasks=tasks,
+        experiments=fake_baseline_experiments(tasks),
         agent_target=target,
         metrics=metrics,
         managed_scoring=FoundryManagedScoring(project=foundry, poll_interval_seconds=0),

@@ -29,7 +29,7 @@ You can declare your own acceptance criteria per metric, and the scorecard repor
 
 When a selected metric uses confidence, the sweep asks the agent for a confidence rating in a separate request after each Attempt. How that works, and when a rating is unavailable, is described in the [Brier-based score documentation](docs/brier_based_score/readme.md#how-the-confidence-rating-is-collected). Calibration, strict confidence discrimination and the Brier-based score are calculated from the same ratings and reported as three separate results. A Foundry prompt agent can be asked for the rating, whichever entry point invoked the Attempt. For a Foundry hosted agent no caller can ensure that the agent does not act while it answers, so the three are unavailable there: see [on Foundry agents](docs/brier_based_score/readme.md#on-foundry-agents).
 
-The Evaluator sweep can also run controlled experiments, with your own controls for preparing state, applying a condition, verifying what occurred and cleaning up: see [`docs/sweep/controlled-experiments.md`](docs/sweep/controlled-experiments.md). The three robustness metrics each need one, with a variation of their own kind. Fault robustness and environment robustness compare Attempts under the baseline with Attempts under a fault, or under an equivalent presentation of the same tools and data, that your controls apply and verify. Prompt robustness compares them with Attempts under the prompt variants that you supply or approve. The offering generates no variation.
+Every Evaluator sweep runs declared experiments, with your own controls for preparing state, applying a condition, verifying what occurred and cleaning up: see [`docs/sweep/controlled-experiments.md`](docs/sweep/controlled-experiments.md). The three robustness metrics each need a variation of their own kind. Fault robustness and environment robustness compare Attempts under the baseline with Attempts under a fault, or under an equivalent presentation of the same tools and data, that your controls apply and verify. Prompt robustness compares them with Attempts under the prompt variants that you supply or approve. The offering generates no variation.
 
 Several metrics can be selected in one sweep. Evaluators share Attempts only where that is valid, and the scorecard shows which Attempts each one used: see [`docs/sweep/several-evaluators.md`](docs/sweep/several-evaluators.md).
 
@@ -53,7 +53,7 @@ There is no published package. Copy the directory [`src/reliability_evaluators/`
 ```python
 from reliability_evaluators.evidence import TaskOutcome
 from reliability_evaluators.scorecard import to_json
-from reliability_evaluators.sweep import Task, run_sweep
+from reliability_evaluators.sweep import Condition, Experiment, Task, run_sweep
 
 
 def item_is_closed(attempt, response):
@@ -61,8 +61,20 @@ def item_is_closed(attempt, response):
     return TaskOutcome(success=closed, source="final state of the to-do service")
 
 
+experiment = Experiment(
+    experiment_id="close",
+    task=Task(task_id="close", prompt="Close the item.", success_rule=item_is_closed, attempts=5),
+    agent_configuration={"agent": "my-agent", "version": "1"},
+    starting_state="fresh",
+    baseline=Condition(condition_id="baseline", description="The normal test environment."),
+    variation=None,
+    controls=my_controls,
+    write_capable=True,
+    authorized_resources=["to-do service test data"],
+)
+
 scorecard = run_sweep(
-    tasks=[Task(task_id="close", prompt="Close the item.", success_rule=item_is_closed, attempts=5)],
+    experiments=[experiment],
     agent_target=my_agent_target,
     metrics=["outcome_consistency"],
     artifact_dir="artifacts/reliability",  # optional: scorecard.json, report.html, summary.md and evidence.json go here
@@ -70,11 +82,13 @@ scorecard = run_sweep(
 print(to_json(scorecard))
 ```
 
+`my_controls` must actually prepare, apply, verify and clean up your test state; the [controlled experiment example](docs/sweep/controlled-experiments.md) shows the four methods. Declare the configuration of the agent your target invokes and the resources your experiment can affect.
+
 `artifact_dir` is a directory you choose in the execution context, including a local directory for a CLI-driven run. With it, the sweep delivers all four files or raises `ReportingFailure`; publishing that directory as a hosted CI artifact is up to your pipeline.
 
 An Evaluator can also be called on its own, without a sweep: see the metric's documentation. The two trajectory metrics also need a declared source of action evidence and an action-type mapping, which have no default. Each robustness metric needs an experiment that declares a variation of its kind: a fault, an environment variation, or a prompt variation with its prompt variants.
 
-Attempt counts and execution limits are yours to set per Task, in an experiment or without one. Timeouts, cancellations and retries stay visible and are never scored as task failures, concurrency is opt-in, and a sweep that stops early still returns a scorecard that says it is partial: see [`docs/sweep/execution-limits.md`](docs/sweep/execution-limits.md).
+Attempt counts and execution limits are yours to set per Task in an experiment. Timeouts, cancellations and retries stay visible and are never scored as task failures, concurrency is opt-in, and a sweep that stops early still returns a scorecard that says it is partial: see [`docs/sweep/execution-limits.md`](docs/sweep/execution-limits.md).
 
 ## Where things are
 

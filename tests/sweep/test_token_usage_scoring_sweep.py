@@ -20,6 +20,7 @@ from reliability_evaluators.sweep import ConfiguredEvaluator, Task, rescore_in_c
 from tests.fake_foundry import FakeFoundryProject
 from tests.fakes import FakeAgentTarget
 from tests.managed_artifact import altered_evidence
+from tests.fakes import fake_baseline_experiments
 
 SOURCE = "final state of the fake service"
 OUTCOME = "outcome_consistency"
@@ -55,7 +56,7 @@ def sweep(foundry, metrics=(MANAGED,)):
     target = FakeAgentTarget(
         {"close": ["success", "success"]},
         invocations={
-            f"close/attempt-{number}": {"token_usage": {"total_tokens": total_tokens}}
+            f"close/baseline/attempt-{number}": {"token_usage": {"total_tokens": total_tokens}}
             for number, total_tokens in ((1, 790), (2, 812))
         },
     )
@@ -66,7 +67,7 @@ def sweep(foundry, metrics=(MANAGED,)):
         attempts=2,
     )
     managed_scoring = None if foundry is None else FoundryManagedScoring(project=foundry, poll_interval_seconds=0)
-    return run_sweep(tasks=[task], agent_target=target, metrics=metrics, managed_scoring=managed_scoring)
+    return run_sweep(experiments=fake_baseline_experiments([task]), agent_target=target, metrics=metrics, managed_scoring=managed_scoring)
 
 
 def usage_of(scorecard):
@@ -241,7 +242,7 @@ def test_managed_scoring_that_stops_before_it_made_a_run_reports_no_usage():
         attempts=2,
     )
     scorecard = run_sweep(
-        tasks=[task], agent_target=target, metrics=[MANAGED], managed_scoring=Stops(project=FakeFoundryProject())
+        experiments=fake_baseline_experiments([task]), agent_target=target, metrics=[MANAGED], managed_scoring=Stops(project=FakeFoundryProject())
     )
 
     sweep_total, _, scoring = usage_of(scorecard)

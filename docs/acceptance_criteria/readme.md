@@ -17,7 +17,7 @@ from reliability_evaluators.scorecard import AcceptanceCriterion, to_json
 from reliability_evaluators.sweep import run_sweep
 
 scorecard = run_sweep(
-    tasks=tasks,
+    experiments=experiments,
     agent_target=my_agent_target,
     metrics=["outcome_consistency"],
     acceptance_criteria=[
@@ -30,7 +30,7 @@ scorecard = run_sweep(
 print(to_json(scorecard))
 ```
 
-A metric has at most one criterion. The `condition` is JSON-compatible data, so it can be kept in a file next to your pipeline, and it is repeated in the scorecard.
+`experiments` are your [declared experiments](../sweep/controlled-experiments.md). A metric has at most one criterion. The `condition` is JSON-compatible data, so it can be kept in a file next to your pipeline, and it is repeated in the scorecard.
 
 The offering assesses a condition with either or both of these parts. Every part must hold for the criterion to be met.
 

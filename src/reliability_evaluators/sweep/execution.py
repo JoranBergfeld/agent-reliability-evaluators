@@ -50,11 +50,13 @@ class Cancellation:
     def __init__(self, requested: Callable[[], bool] | None) -> None:
         self._requested = requested
         self._latched = False
+        self._lock = threading.Lock()
 
     def requested(self) -> bool:
-        if not self._latched and self._requested is not None and self._requested():
-            self._latched = True
-        return self._latched
+        with self._lock:
+            if not self._latched and self._requested is not None and self._requested():
+                self._latched = True
+            return self._latched
 
 
 class AttemptGate:
@@ -68,7 +70,6 @@ class AttemptGate:
         self._limit = task.limits.total_timeout_seconds
         self._cancellation = cancellation
         self._clock = clock
-        # The Attempts of a Task given without an experiment may run on several threads.
         self._lock = threading.Lock()
         self._started: float | None = None
         self.stopped: ExperimentStatus | None = None
@@ -94,11 +95,11 @@ class AttemptGate:
 
 @dataclass(frozen=True)
 class Execution:
-    """What became of the Attempts planned for a Task in one set of Attempts, in its experiment or without one."""
+    """What became of the Attempts planned for an experiment in one set."""
 
     record: ExecutionRecord
     task: Task
-    experiment: Experiment | None
+    experiment: Experiment
     # The last execution of each planned Attempt that was made.
     last: tuple[Attempt, ...]
 
@@ -106,14 +107,13 @@ class Execution:
         """The conditions of this Task's Attempts that an Evaluator is calculated from.
 
         `kind` is the kind of variation the Evaluator compares with the baseline, or None
-        for one calculated from the baseline only. An Attempt at a Task given without an
-        experiment had no variation applied to it, so it counts as a baseline Attempt. An
-        Evaluator that compares a kind of variation is calculated from both conditions of
-        the experiments whose variation is of that kind, and from nothing else.
+        for one calculated from the baseline only. An Evaluator that compares a kind of
+        variation is calculated from both conditions of experiments whose variation is
+        of that kind, and from nothing else.
         """
         if kind is None:
             return (ConditionRole.BASELINE,)
-        variation = None if self.experiment is None else self.experiment.variation
+        variation = self.experiment.variation
         if variation is not None and variation.kind is kind:
             return (ConditionRole.BASELINE, ConditionRole.VARIATION)
         return ()
@@ -124,16 +124,11 @@ class Execution:
         They were when not all of them were made, or not one of them completed.
         """
         roles = self.conditions_for(kind)
-        made = [attempt for attempt in self.last if (attempt.condition_role or ConditionRole.BASELINE) in roles]
+        made = [attempt for attempt in self.last if attempt.condition_role in roles]
         return bool(roles) and (
-            len(made) < sum(_planned_under(self.task, self.experiment, role) for role in roles)
+            len(made) < sum(self.experiment.attempts_planned(role) for role in roles)
             or not any(attempt.execution_status is ExecutionStatus.COMPLETED for attempt in made)
         )
-
-
-def _planned_under(task: Task, experiment: Experiment | None, role: ConditionRole) -> int:
-    """How many Attempts are planned for a Task under a condition. Without an experiment, all under the baseline."""
-    return task.attempts if experiment is None else experiment.attempts_planned(role)
 
 
 def execution_of(
@@ -141,18 +136,17 @@ def execution_of(
     made: Sequence[Sequence[Attempt]],
     gate: AttemptGate,
     *,
-    experiment: Experiment | None = None,
+    experiment: Experiment,
     stop_reason: str | None = None,
     attempt_set: int = 1,
 ) -> Execution:
-    """What became of the Attempts planned for a Task, in its experiment or without one.
+    """What became of the Attempts planned for a Task in its experiment.
 
     `made` has one entry for each planned Attempt that was made: its executions in order,
     the Attempt first and then its retries. `stop_reason` is why a customer control
     stopped the experiment, if one did.
     """
-    roles = tuple(ConditionRole) if experiment is not None else (ConditionRole.BASELINE,)
-    planned = sum(_planned_under(task, experiment, role) for role in roles)
+    planned = sum(experiment.attempts_planned(role) for role in ConditionRole)
     last = tuple(executions[-1] for executions in made)
     not_made = planned - len(last)
     if gate.stopped is not None:
@@ -165,8 +159,8 @@ def execution_of(
         status, reason = ExperimentStatus.COMPLETED, None
     record = ExecutionRecord(
         task_id=task.task_id,
-        experiment_id=None if experiment is None else experiment.experiment_id,
-        declaration={} if experiment is None else experiment.to_dict(),
+        experiment_id=experiment.experiment_id,
+        declaration=experiment.to_dict(),
         attempt_set=attempt_set,
         limits=task.limits.to_dict(),
         status=status,

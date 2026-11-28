@@ -157,9 +157,9 @@ One Task, three Attempts, with outcome consistency and the Brier-based score sel
 
 | Attempt | Execution status | Invocation | Confidence follow-up | Attempt total |
 | --- | --- | --- | --- | --- |
-| `close/attempt-1` | completed | 790 | 120 | 910, complete |
-| `close/attempt-2` | failed | not recorded | not sent | unavailable |
-| `close/attempt-3` | completed | 812 | sent, nothing recorded | 812, partial |
+| `close/baseline/attempt-1` | completed | 790 | 120 | 910, complete |
+| `close/baseline/attempt-2` | failed | not recorded | not sent | unavailable |
+| `close/baseline/attempt-3` | completed | 812 | sent, nothing recorded | 812, partial |
 
 Known: 790 + 120 + 812 = 1722 tokens. Two uses are missing a count, so 1722 is a partial sum. Both Evaluators are scored by code in your process, which adds zero.
 
@@ -172,9 +172,9 @@ Known: 790 + 120 + 812 = 1722 tokens. Two uses are missing a count, so 1722 is a
     "uses_reported": 3,
     "uses_missing": 2,
     "missing": [
-      {"use": "agent_invocation", "attempt_id": "close/attempt-2",
+      {"use": "agent_invocation", "attempt_id": "close/baseline/attempt-2",
        "reason": "the agent target recorded nothing of the invocation"},
-      {"use": "confidence_follow_up", "attempt_id": "close/attempt-3",
+      {"use": "confidence_follow_up", "attempt_id": "close/baseline/attempt-3",
        "reason": "the agent target recorded nothing of the confidence request"}
     ]
   },
@@ -182,7 +182,7 @@ Known: 790 + 120 + 812 = 1722 tokens. Two uses are missing a count, so 1722 is a
     {"metric_id": "outcome_consistency",
      "total": {"coverage": "partial", "total_tokens": 1722, "uses_reported": 3, "uses_missing": 2, "missing": ["..."]},
      "overlapping": true, "additive": false, "overlaps_with": ["brier_based_score"],
-     "attempt_ids": ["close/attempt-1", "close/attempt-2", "close/attempt-3"],
+     "attempt_ids": ["close/baseline/attempt-1", "close/baseline/attempt-2", "close/baseline/attempt-3"],
      "preparation_ids": [],
      "scoring": [{"basis": "no_model_use", "total_tokens": 0,
                   "reason": "the Evaluator is calculated by code in the customer's process, which uses no model",
@@ -191,7 +191,7 @@ Known: 790 + 120 + 812 = 1722 tokens. Two uses are missing a count, so 1722 is a
   ],
   "shared_preparation": [],
   "attempts": [
-    {"attempt_id": "close/attempt-1", "task_id": "close", "execution_status": "completed", "retry_of": null,
+    {"attempt_id": "close/baseline/attempt-1", "task_id": "close", "execution_status": "completed", "retry_of": null,
      "coverage": "complete", "total_tokens": 910,
      "invocation": {"basis": "reported", "total_tokens": 790, "reason": null,
                     "response_id": "resp_1", "request_ids": {}, "evaluation_run": null, "source": null},

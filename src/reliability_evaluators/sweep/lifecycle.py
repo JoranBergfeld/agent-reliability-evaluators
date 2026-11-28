@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field, replace
-from typing import Any, Callable, Sequence
+from typing import Any, Callable, Iterator, Sequence
 
 from ..evidence import (
     Attempt,
@@ -48,14 +49,16 @@ def run_experiments(
     attempts: list[Attempt],
     unrestored: dict[str, str] | None = None,
     attempt_set: int = 1,
+    max_concurrent_attempts: int = 1,
 ) -> list[Execution]:
     """Run the experiments in the order declared. Returns what became of the Attempts planned for each.
 
     Each Attempt is added to `attempts` as it is made, so that the caller still has the
     evidence if an experiment raises.
 
-    An experiment is not started when it may change a test resource that an earlier
-    experiment failed to restore. Experiments that share no such resource are unrelated.
+    An experiment is not started when it may use a test resource that an earlier
+    experiment failed to restore. Read-only experiments cannot name resources, so they
+    are not started after any resource was left unrestored.
     `unrestored` holds those test resources, each with why it was not restored. A caller
     that runs experiments more than once in a sweep passes the same one every time.
 
@@ -66,14 +69,24 @@ def run_experiments(
     start under its execution limits and the cancellation of the sweep. `attempt_set` is
     which set of the sweep's Attempts these experiments are run for.
     """
-    records = []
     unrestored = {} if unrestored is None else unrestored
+    if max_concurrent_attempts > 1:
+        return _run_independent_experiments(
+            experiments, make_attempt, ask_confidence, gate_for, attempts, unrestored, attempt_set,
+            max_concurrent_attempts,
+        )
+    records = []
     for experiment in experiments:
         gate = gate_for(experiment.task)
         made: list[list[Attempt]] = []
         stop_reason = next(
             (unrestored[resource] for resource in experiment.authorized_resources if resource in unrestored), None
         )
+        if not experiment.write_capable and unrestored:
+            stop_reason = (
+                "a read-only experiment cannot name its resource dependencies and may depend on an unrestored "
+                f"resource: {next(iter(unrestored.values()))}"
+            )
         if stop_reason is None:
             made, stop = _run_experiment(experiment, make_attempt, ask_confidence, gate, attempts)
             if stop is not None:
@@ -91,6 +104,63 @@ def run_experiments(
                 experiment.task, made, gate, experiment=experiment, stop_reason=stop_reason, attempt_set=attempt_set
             )
         )
+    return records
+
+
+def _independent_batches(experiments: Sequence[Experiment], limit: int) -> Iterator[list[Experiment]]:
+    batch: list[Experiment] = []
+    resources: set[str] = set()
+    for experiment in experiments:
+        required = set(experiment.authorized_resources)
+        if batch and (
+            len(batch) == limit
+            or resources.intersection(required)
+            or experiment.write_capable != batch[0].write_capable
+        ):
+            yield batch
+            batch, resources = [], set()
+        batch.append(experiment)
+        resources.update(required)
+    if batch:
+        yield batch
+
+
+def _run_independent_experiments(
+    experiments: Sequence[Experiment],
+    make_attempt: MakeAttempt,
+    ask_confidence: bool,
+    gate_for: Callable[[Task], AttemptGate],
+    attempts: list[Attempt],
+    unrestored: dict[str, str],
+    attempt_set: int,
+    limit: int,
+) -> list[Execution]:
+    records = []
+    for batch in _independent_batches(experiments, limit):
+        if len(batch) == 1:
+            records.extend(run_experiments(batch, make_attempt, ask_confidence, gate_for, attempts, unrestored, attempt_set))
+            continue
+        pool = ThreadPoolExecutor(max_workers=limit)
+        running = []
+        try:
+            for experiment in batch:
+                collected: list[Attempt] = []
+                state = dict(unrestored)
+                future = pool.submit(
+                    run_experiments, [experiment], make_attempt, ask_confidence, gate_for, collected, state, attempt_set
+                )
+                running.append((future, collected, state))
+            for future, _, _ in running:
+                records.extend(future.result())
+        except BaseException:
+            for future, _, _ in running:
+                future.cancel()
+            raise
+        finally:
+            pool.shutdown(wait=True, cancel_futures=True)
+            for _, collected, state in running:
+                attempts.extend(collected)
+                unrestored.update(state)
     return records
 
 

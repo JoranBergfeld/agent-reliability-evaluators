@@ -25,6 +25,7 @@ from tests.fakes import (
     FakeTodoService,
     todo_list,
 )
+from tests.fakes import fake_baseline_experiments
 
 OUTCOME = "outcome_consistency"
 DISTRIBUTIONAL = "distributional_trajectory_consistency"
@@ -75,7 +76,7 @@ class ToDo:
 
     def sweep(self, metrics):
         return run_sweep(
-            tasks=self.tasks, agent_target=self.target, metrics=metrics, action_evidence=self.native_tool_calls
+            experiments=fake_baseline_experiments(self.tasks), agent_target=self.target, metrics=metrics, action_evidence=self.native_tool_calls
         )
 
     def _item_is_done(self, attempt, response):
@@ -161,12 +162,12 @@ def test_a_sweep_with_several_evaluators_gives_one_scorecard_with_each_metric_on
 
 
 SIX_ATTEMPTS = [
-    "close/attempt-1",
-    "close/attempt-2",
-    "close/attempt-3",
-    "close/attempt-4",
-    "archive/attempt-1",
-    "archive/attempt-2",
+    "close/baseline/attempt-1",
+    "close/baseline/attempt-2",
+    "close/baseline/attempt-3",
+    "close/baseline/attempt-4",
+    "archive/baseline/attempt-1",
+    "archive/baseline/attempt-2",
 ]
 
 
@@ -191,8 +192,8 @@ def test_an_attempt_an_evaluator_was_given_and_could_not_use_is_still_one_it_use
     for metric_id in (OUTCOME, SEQUENTIAL):
         entry = metric(scorecard, metric_id)
         assert entry["value"] == 1
-        assert entry["evidence"] == {"attempt_ids": ["close/attempt-1", "close/attempt-3"]}
-        assert entry["attempts_used"]["attempt_ids"] == ["close/attempt-1", "close/attempt-2", "close/attempt-3"]
+        assert entry["evidence"] == {"attempt_ids": ["close/baseline/attempt-1", "close/baseline/attempt-3"]}
+        assert entry["attempts_used"]["attempt_ids"] == ["close/baseline/attempt-1", "close/baseline/attempt-2", "close/baseline/attempt-3"]
 
 
 def test_evaluators_that_need_action_evidence_from_different_sources_get_separate_attempts():
@@ -211,21 +212,21 @@ def test_evaluators_that_need_action_evidence_from_different_sources_get_separat
     )
 
     assert [(attempt["attempt_id"], attempt["action_evidence"]["source"]) for attempt in scorecard["attempts"]] == [
-        ("close/attempt-1", "native tool calls"),
-        ("close/attempt-2", "native tool calls"),
-        ("close/set-2/attempt-1", "service-side effects"),
-        ("close/set-2/attempt-2", "service-side effects"),
+        ("close/baseline/attempt-1", "native tool calls"),
+        ("close/baseline/attempt-2", "native tool calls"),
+        ("close/set-2/baseline/attempt-1", "service-side effects"),
+        ("close/set-2/baseline/attempt-2", "service-side effects"),
     ]
     assert [attempt["task_id"] for attempt in scorecard["attempts"]] == ["close"] * 4
     distributional, sequential = metric(scorecard, DISTRIBUTIONAL), metric(scorecard, SEQUENTIAL)
     assert distributional["value"] == 0.5
     assert distributional["attempts_used"] == {
-        "attempt_ids": ["close/attempt-1", "close/attempt-2"],
+        "attempt_ids": ["close/baseline/attempt-1", "close/baseline/attempt-2"],
         "shared_with": [],
     }
     assert sequential["value"] == 1
     assert sequential["attempts_used"] == {
-        "attempt_ids": ["close/set-2/attempt-1", "close/set-2/attempt-2"],
+        "attempt_ids": ["close/set-2/baseline/attempt-1", "close/set-2/baseline/attempt-2"],
         "shared_with": [],
     }
 
@@ -244,7 +245,7 @@ def test_evaluators_that_read_the_same_recording_with_different_action_types_sha
 
     scorecard = to_do.sweep([ConfiguredEvaluator(metric_id=DISTRIBUTIONAL, action_evidence=read_or_write), SEQUENTIAL])
 
-    assert [attempt["attempt_id"] for attempt in scorecard["attempts"]] == ["close/attempt-1", "close/attempt-2"]
+    assert [attempt["attempt_id"] for attempt in scorecard["attempts"]] == ["close/baseline/attempt-1", "close/baseline/attempt-2"]
     distributional, sequential = metric(scorecard, DISTRIBUTIONAL), metric(scorecard, SEQUENTIAL)
     assert distributional["value"] == 1
     assert distributional["details"]["action_type_mapping"] == read_or_write.action_types
@@ -290,13 +291,13 @@ def grouped_sweep():
 def test_attempts_are_made_again_only_for_the_evaluator_that_needs_something_else():
     scorecard = grouped_sweep()
 
-    first = ["close/attempt-1", "close/attempt-2", "close/attempt-3", "archive/attempt-1", "archive/attempt-2"]
+    first = ["close/baseline/attempt-1", "close/baseline/attempt-2", "close/baseline/attempt-3", "archive/baseline/attempt-1", "archive/baseline/attempt-2"]
     second = [
-        "close/set-2/attempt-1",
-        "close/set-2/attempt-2",
-        "close/set-2/attempt-3",
-        "archive/set-2/attempt-1",
-        "archive/set-2/attempt-2",
+        "close/set-2/baseline/attempt-1",
+        "close/set-2/baseline/attempt-2",
+        "close/set-2/baseline/attempt-3",
+        "archive/set-2/baseline/attempt-1",
+        "archive/set-2/baseline/attempt-2",
     ]
     assert [attempt["attempt_id"] for attempt in scorecard["attempts"]] == first + second
     assert metric(scorecard, OUTCOME)["attempts_used"] == {
@@ -336,11 +337,11 @@ def test_an_evaluator_with_attempts_of_its_own_gives_the_same_result_alone_as_in
 
     # Alone, its Attempts are the first that are made, so they are identified as such.
     assert alone["evidence"]["attempt_ids"] == [
-        "close/attempt-1",
-        "close/attempt-2",
-        "close/attempt-3",
-        "archive/attempt-1",
-        "archive/attempt-2",
+        "close/baseline/attempt-1",
+        "close/baseline/attempt-2",
+        "close/baseline/attempt-3",
+        "archive/baseline/attempt-1",
+        "archive/baseline/attempt-2",
     ]
     assert alone["attempts_used"]["attempt_ids"] == alone["evidence"]["attempt_ids"]
     assert grouped["attempts_used"]["attempt_ids"] == grouped["evidence"]["attempt_ids"]
@@ -362,20 +363,21 @@ def test_an_evaluator_whose_attempts_all_fail_does_not_remove_the_metric_of_anot
     scorecard = to_do.sweep([DISTRIBUTIONAL, from_service_side_effects(to_do)])
 
     assert [(attempt["attempt_id"], attempt["execution_status"]) for attempt in scorecard["attempts"]] == [
-        ("close/attempt-1", "failed"),
-        ("close/attempt-2", "failed"),
-        ("close/set-2/attempt-1", "completed"),
-        ("close/set-2/attempt-2", "completed"),
+        ("close/baseline/attempt-1", "failed"),
+        ("close/baseline/attempt-2", "failed"),
+        ("close/set-2/baseline/attempt-1", "completed"),
+        ("close/set-2/baseline/attempt-2", "completed"),
     ]
     distributional, sequential = metric(scorecard, DISTRIBUTIONAL), metric(scorecard, SEQUENTIAL)
     assert distributional["state"] is None
     assert distributional["value"] is None
-    assert distributional["execution_failure"]["task_ids"] == ["close"]
+    assert distributional["execution_failure"]["experiment_ids"] == ["close"]
+    assert distributional["execution_failure"]["task_ids"] == []
     assert distributional["counts"]["attempts"]["excluded"] == [
         {
             "reason": "execution status is not completed",
             "count": 2,
-            "ids": ["close/attempt-1", "close/attempt-2"],
+            "ids": ["close/baseline/attempt-1", "close/baseline/attempt-2"],
         }
     ]
     assert sequential["state"] == "available"
@@ -387,7 +389,7 @@ def test_an_evaluator_configured_with_its_own_action_evidence_needs_none_from_th
     to_do = ToDo(actions={"close": [READ_UPDATE, UPDATE_READ]})
     own = ConfiguredEvaluator(metric_id=DISTRIBUTIONAL, action_evidence=to_do.native_tool_calls)
 
-    scorecard = run_sweep(tasks=to_do.tasks, agent_target=to_do.target, metrics=[own])
+    scorecard = run_sweep(experiments=fake_baseline_experiments(to_do.tasks), agent_target=to_do.target, metrics=[own])
 
     assert metric(scorecard, DISTRIBUTIONAL)["value"] == 1
 
@@ -418,13 +420,13 @@ def test_a_selection_of_evaluators_the_sweep_cannot_run_is_rejected_before_any_a
     assert to_do.target.service_log == {}
 
 
-def test_tasks_whose_attempts_could_not_be_told_apart_are_rejected_before_any_attempt():
-    # The second Attempts at "close" would be identified exactly as the first Attempts at "close/set-2".
+def test_experiments_whose_later_sets_could_not_be_told_apart_are_rejected_before_any_attempt():
+    # The second set of "close" would be identified as the experiment "close/set-2".
     to_do = ToDo(
         actions={"close": [READ_UPDATE] * 2, "close/set-2": [READ_UPDATE] * 2}, attempts={"close": 1, "close/set-2": 1}
     )
 
-    with pytest.raises(ValueError, match="more than one Attempt would have the identity 'close/set-2/attempt-1'"):
+    with pytest.raises(ValueError, match="more than one experiment would have the identity 'close/set-2'"):
         to_do.sweep([DISTRIBUTIONAL, from_service_side_effects(to_do)])
 
     assert to_do.target.service_log == {}
@@ -481,22 +483,37 @@ class Controlled:
 
 
 def test_an_evaluator_is_given_no_attempt_made_under_a_variation_and_the_scorecard_shows_it():
-    # plain, without an experiment: its list is never emptied, so both Attempts fail. p = 0/2: 1.
+    # plain starts with a leftover item in each Attempt, so both fail. p = 0/2: 1.
     # add, baseline: 2 successes. Variation: the fault occurs twice and the Task fails twice.
     #   From the baseline only, p = 2/2: 1. Mixing the conditions would give p = 2/4: 0.
     # Outcome consistency: (1 + 1) / 2 = 1. With the conditions mixed it would be (1 + 0) / 2 = 0.5.
     controlled = Controlled(task_ids=("plain", "add"))
 
+    class SeededControls(FakeControls):
+        def prepare_state(self, context):
+            super().prepare_state(context)
+            self._service.lists[todo_list(context.task_id)].append("left over")
+
+    plain = Experiment(
+        experiment_id="plain",
+        task=controlled.task("plain", attempts=2),
+        agent_configuration={"agent": "todo-agent", "version": "3"},
+        starting_state="fresh",
+        baseline=BASELINE,
+        variation=None,
+        controls=SeededControls(controlled.service),
+        write_capable=True,
+        authorized_resources=[todo_list("plain")],
+    )
     scorecard = run_sweep(
-        tasks=[controlled.task("plain", attempts=2)],
-        experiments=[controlled.experiment(attempts=2, variation=ADD_FAILS)],
+        experiments=[plain, controlled.experiment(attempts=2, variation=ADD_FAILS)],
         agent_target=controlled.agent,
         metrics=[OUTCOME, "resource_consistency"],
     )
 
     not_under_a_variation = [
-        "plain/attempt-1",
-        "plain/attempt-2",
+        "plain/baseline/attempt-1",
+        "plain/baseline/attempt-2",
         "add-item/baseline/attempt-1",
         "add-item/baseline/attempt-2",
     ]
@@ -598,7 +615,7 @@ def test_the_agent_is_asked_for_its_confidence_only_in_the_attempts_of_an_evalua
     # Sequential reads another recording, so the Task is attempted twice more. Nothing there uses confidence.
     target = FakeAgentTarget(
         {"close": ["success", "failure", "success", "success"]},
-        confidence={"close/attempt-1": "80", "close/attempt-2": "40"},
+        confidence={"close/baseline/attempt-1": "80", "close/baseline/attempt-2": "40"},
     )
     close = Task(
         task_id="close",
@@ -611,7 +628,7 @@ def test_the_agent_is_asked_for_its_confidence_only_in_the_attempts_of_an_evalua
     )
 
     scorecard = run_sweep(
-        tasks=[close],
+        experiments=fake_baseline_experiments([close]),
         agent_target=target,
         metrics=[
             "brier_based_score",
@@ -622,16 +639,16 @@ def test_the_agent_is_asked_for_its_confidence_only_in_the_attempts_of_an_evalua
 
     shared, separate = scorecard["attempts"][:2], scorecard["attempts"][2:]
     assert [(attempt["attempt_id"], attempt["confidence"]["rating"]) for attempt in shared] == [
-        ("close/attempt-1", "80"),
-        ("close/attempt-2", "40"),
+        ("close/baseline/attempt-1", "80"),
+        ("close/baseline/attempt-2", "40"),
     ]
     assert [(attempt["attempt_id"], attempt["confidence"]) for attempt in separate] == [
-        ("close/set-2/attempt-1", None),
-        ("close/set-2/attempt-2", None),
+        ("close/set-2/baseline/attempt-1", None),
+        ("close/set-2/baseline/attempt-2", None),
     ]
     brier = metric(scorecard, "brier_based_score")
     assert brier["value"] == 0.9
     assert brier["attempts_used"] == {
-        "attempt_ids": ["close/attempt-1", "close/attempt-2"],
+        "attempt_ids": ["close/baseline/attempt-1", "close/baseline/attempt-2"],
         "shared_with": [DISTRIBUTIONAL],
     }

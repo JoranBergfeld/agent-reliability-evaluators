@@ -20,6 +20,7 @@ from reliability_evaluators.sweep import ConfiguredEvaluator, Task, run_sweep
 from tests.fake_foundry import FakeFoundryProject
 from tests.fakes import FakeAgentTarget
 from tests.report_reader import assert_faithful_rendering
+from tests.fakes import fake_baseline_experiments
 
 SOURCE = "final state of the fake service"
 
@@ -45,7 +46,7 @@ def sweep(script, foundry=None, managed_scoring=None, **declared):
         for task_id, behaviours in script.items()
     ]
     return run_sweep(
-        tasks=tasks,
+        experiments=fake_baseline_experiments(tasks),
         agent_target=target,
         metrics=[MANAGED],
         managed_scoring=managed_scoring or FoundryManagedScoring(project=foundry, poll_interval_seconds=0),

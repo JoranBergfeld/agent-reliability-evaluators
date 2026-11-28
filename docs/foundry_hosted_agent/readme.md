@@ -5,7 +5,7 @@
 ```python
 from reliability_evaluators.agent_target.foundry_hosted import FoundryHostedAgentTarget
 from reliability_evaluators.evidence import TaskOutcome
-from reliability_evaluators.sweep import Task, run_sweep
+from reliability_evaluators.sweep import Condition, Experiment, Task, run_sweep
 
 target = FoundryHostedAgentTarget(
     project_endpoint="https://<account>.services.ai.azure.com/api/projects/<project>",
@@ -19,13 +19,23 @@ def item_is_closed(attempt, response):
 
 
 scorecard = run_sweep(
-    tasks=[Task(task_id="close", prompt="Close the item.", success_rule=item_is_closed, attempts=5)],
+    experiments=[Experiment(
+        experiment_id="close",
+        task=Task(task_id="close", prompt="Close the item.", success_rule=item_is_closed, attempts=5),
+        agent_configuration={"agent": "my-hosted-agent"},
+        starting_state="fresh",
+        baseline=Condition(condition_id="baseline", description="The normal test environment."),
+        variation=None,
+        controls=my_controls,
+        write_capable=True,
+        authorized_resources=["to-do service test data"],
+    )],
     agent_target=target,
     metrics=["outcome_consistency"],
 )
 ```
 
-`my_test_service` stands for your own code.
+`my_test_service` stands for your own code. Implement `my_controls` for the named resources as in [controlled experiments](../sweep/controlled-experiments.md).
 
 ## Assumptions
 

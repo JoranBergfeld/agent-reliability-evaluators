@@ -27,10 +27,13 @@ import pytest
 
 from live_fixture import connect, provision, teardown
 from reliability_evaluators.agent_target.foundry_cloud_evaluation import CRITERION, FoundryCloudEvaluationTarget
-from reliability_evaluators.evidence import TaskOutcome
 from reliability_evaluators.managed_scoring import FoundryProject
-from reliability_evaluators.sweep import Task, run_sweep
-from tests.live.test_foundry_hosted_agent_live import INVOCATIONS_AGENT, declare_invocations_agent
+from reliability_evaluators.sweep import run_sweep
+from tests.live.test_foundry_hosted_agent_live import (
+    INVOCATIONS_AGENT,
+    declare_invocations_agent,
+    unsupported_agent_experiment,
+)
 from tests.todo_fixture_sweep import UPDATE_FAILS, TodoFixtureSweep
 
 pytestmark = pytest.mark.live
@@ -330,14 +333,7 @@ def test_a_hosted_agent_declared_with_the_invocations_protocol_is_reported_as_un
     declare_invocations_agent(live)
 
     scorecard = run_sweep(
-        tasks=[
-            Task(
-                task_id="synthetic",
-                prompt="Synthetic probe. Do nothing.",
-                success_rule=lambda attempt, response: TaskOutcome(success=False, source="never decided"),
-                attempts=1,
-            )
-        ],
+        experiments=[unsupported_agent_experiment()],
         agent_target=cloud_target(live, INVOCATIONS_AGENT),
         metrics=["outcome_consistency"],
     )

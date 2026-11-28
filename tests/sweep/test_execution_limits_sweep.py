@@ -1,7 +1,7 @@
 """Evaluator sweep seam: execution limits, retries, concurrency and partial scorecards.
 
-These are Tasks given without an experiment. The sweep is driven through its public entry
-point with a fake agent target and that fake's clock. Every assertion is on the
+The sweep is driven through its public entry point with declared experiments, a fake agent
+target and that fake's clock. Every assertion is on the
 machine-readable scorecard. Expected values are calculated by hand.
 """
 
@@ -19,6 +19,7 @@ from reliability_evaluators.sweep import (
     run_sweep,
 )
 from tests.fakes import FakeAgentTarget, MeetingAgentTarget, attempt_evidence, cancelling, taking
+from tests.fakes import fake_baseline_experiments
 
 SOURCE = "final state of the fake service"
 
@@ -54,7 +55,7 @@ def sweep(script, *, attempts=None, limits=None, honours_time_limits=True, confi
     ]
     return run_sweep(
         **{
-            "tasks": tasks,
+            "experiments": fake_baseline_experiments(tasks),
             "agent_target": target,
             "metrics": ["outcome_consistency"],
             "cancellation": lambda: target.cancel_requested,
@@ -75,8 +76,8 @@ def attempt(scorecard, attempt_id):
 
 
 def execution(scorecard, task_id):
-    """What became of the Attempts planned for a Task given without an experiment."""
-    (entry,) = [entry for entry in scorecard["tasks_without_experiment"] if entry["task_id"] == task_id]
+    """What became of the Attempts planned for a Task's experiment."""
+    (entry,) = [entry for entry in scorecard["experiments"] if entry["task_id"] == task_id]
     return entry["execution"]
 
 
@@ -89,10 +90,21 @@ def test_a_sweep_that_collects_everything_it_planned_gives_a_complete_scorecard(
 
     assert scorecard["status"] == "complete"
     assert scorecard["missing"] == []
-    assert scorecard["experiments"] == []
-    assert scorecard["tasks_without_experiment"] == [
+    assert scorecard["tasks_without_experiment"] == []
+    assert scorecard["experiments"] == [
         {
+            "experiment_id": "close",
             "task_id": "close",
+            "agent_configuration": {"agent": "synthetic test target"},
+            "starting_state": "fresh",
+            "baseline": {
+                "condition_id": "baseline",
+                "description": "The synthetic target has no injected variation.",
+                "parameters": {},
+            },
+            "variation": None,
+            "write_capable": True,
+            "authorized_resources": ["synthetic state of close"],
             "attempt_set": 1,
             "limits": {"attempt_timeout_seconds": None, "total_timeout_seconds": None, "max_retries": 0},
             "execution": {
@@ -117,14 +129,14 @@ def test_an_attempt_that_reaches_its_time_limit_is_timed_out_and_not_a_task_fail
         limits={"close": ExecutionLimits(attempt_timeout_seconds=30)},
     )
 
-    timed_out = attempt(scorecard, "close/attempt-2")
+    timed_out = attempt(scorecard, "close/baseline/attempt-2")
     assert timed_out["execution_status"] == "timed_out"
     assert timed_out["execution_error"] == "TimeoutError: no answer within 30 seconds"
     assert timed_out["task_outcome"] is None
     outcome_consistency = metric(scorecard)
     assert outcome_consistency["value"] == 1
     assert outcome_consistency["counts"]["attempts"]["excluded"] == [
-        {"reason": "execution status is not completed", "count": 1, "ids": ["close/attempt-2"]},
+        {"reason": "execution status is not completed", "count": 1, "ids": ["close/baseline/attempt-2"]},
     ]
 
 
@@ -144,7 +156,7 @@ def test_an_invocation_that_ends_after_the_time_limit_is_timed_out_and_not_score
         honours_time_limits=False,
     )
 
-    timed_out = attempt(scorecard, "close/attempt-2")
+    timed_out = attempt(scorecard, "close/baseline/attempt-2")
     assert timed_out["execution_status"] == "timed_out"
     assert timed_out["execution_error"] == recorded
     assert timed_out["task_outcome"] is None
@@ -160,12 +172,12 @@ def test_the_caller_chooses_attempt_counts_and_limits_per_task_and_none_is_impos
 
     assert [
         (entry["task_id"], entry["execution"]["attempts_planned"], entry["limits"]["attempt_timeout_seconds"])
-        for entry in scorecard["tasks_without_experiment"]
+        for entry in scorecard["experiments"]
     ] == [("close", 2, 30), ("archive", 1, None)]
     assert {entry["attempt_id"]: entry["execution_status"] for entry in scorecard["attempts"]} == {
-        "close/attempt-1": "timed_out",
-        "close/attempt-2": "timed_out",
-        "archive/attempt-1": "completed",
+        "close/baseline/attempt-1": "timed_out",
+        "close/baseline/attempt-2": "timed_out",
+        "archive/baseline/attempt-1": "completed",
     }
 
 
@@ -179,7 +191,7 @@ def test_a_scorecard_lacking_a_planned_attempt_is_partial_and_names_what_is_miss
     assert scorecard["missing"] == [
         {
             "kind": "attempt_evidence",
-            "experiment_id": None,
+            "experiment_id": "close",
             "task_id": "close",
             "attempt_set": 1,
             # Every planned Attempt was made, so nothing stopped the making of them.
@@ -188,7 +200,7 @@ def test_a_scorecard_lacking_a_planned_attempt_is_partial_and_names_what_is_miss
             "attempts_not_made": 0,
             "attempts_not_completed": [
                 {
-                    "attempt_id": "close/attempt-2",
+                    "attempt_id": "close/baseline/attempt-2",
                     "execution_status": "timed_out",
                     "execution_error": "TimeoutError: no answer within 30 seconds",
                 }
@@ -201,7 +213,7 @@ def test_a_scorecard_lacking_a_planned_attempt_is_partial_and_names_what_is_miss
         "attempts_planned": 3,
         "attempts_recorded": 3,
         "attempts_completed": 2,
-        "attempts_not_completed": ["close/attempt-2"],
+        "attempts_not_completed": ["close/baseline/attempt-2"],
         "attempts_not_made": 0,
         "retries": 0,
     }
@@ -219,7 +231,7 @@ def test_a_retried_attempt_stays_in_the_evidence_next_to_its_retry():
 
     assert [attempt_evidence(entry, "retry_of") for entry in scorecard["attempts"][1:3]] == [
         {
-            "attempt_id": "close/attempt-2",
+            "attempt_id": "close/baseline/attempt-2",
             "task_id": "close",
             "execution_status": "retried",
             "execution_error": "ConnectionError: the agent endpoint returned 503",
@@ -227,21 +239,21 @@ def test_a_retried_attempt_stays_in_the_evidence_next_to_its_retry():
             "retry_of": None,
         },
         {
-            "attempt_id": "close/attempt-2/retry-1",
+            "attempt_id": "close/baseline/attempt-2/retry-1",
             "task_id": "close",
             "execution_status": "completed",
             "execution_error": None,
             "task_outcome": {"success": True, "source": SOURCE},
-            "retry_of": "close/attempt-2",
+            "retry_of": "close/baseline/attempt-2",
         },
     ]
     outcome_consistency = metric(scorecard)
     assert outcome_consistency["value"] == pytest.approx(1 / 9, abs=1e-12)
     assert outcome_consistency["evidence"] == {
-        "attempt_ids": ["close/attempt-1", "close/attempt-2/retry-1", "close/attempt-3"]
+        "attempt_ids": ["close/baseline/attempt-1", "close/baseline/attempt-2/retry-1", "close/baseline/attempt-3"]
     }
     assert outcome_consistency["counts"]["attempts"]["excluded"] == [
-        {"reason": "execution status is not completed", "count": 1, "ids": ["close/attempt-2"]},
+        {"reason": "execution status is not completed", "count": 1, "ids": ["close/baseline/attempt-2"]},
     ]
     assert scorecard["status"] == "complete"
     assert execution(scorecard, "close") == {
@@ -268,17 +280,17 @@ def test_when_retries_run_out_the_last_execution_keeps_its_own_status():
     assert [
         (entry["attempt_id"], entry["execution_status"], entry["retry_of"]) for entry in scorecard["attempts"]
     ] == [
-        ("close/attempt-1", "retried", None),
-        ("close/attempt-1/retry-1", "retried", "close/attempt-1"),
-        ("close/attempt-1/retry-2", "timed_out", "close/attempt-1/retry-1"),
-        ("close/attempt-2", "completed", None),
-        ("close/attempt-3", "completed", None),
+        ("close/baseline/attempt-1", "retried", None),
+        ("close/baseline/attempt-1/retry-1", "retried", "close/baseline/attempt-1"),
+        ("close/baseline/attempt-1/retry-2", "timed_out", "close/baseline/attempt-1/retry-1"),
+        ("close/baseline/attempt-2", "completed", None),
+        ("close/baseline/attempt-3", "completed", None),
     ]
-    assert attempt(scorecard, "close/attempt-1")["execution_error"] == "TimeoutError: no answer within 30 seconds"
+    assert attempt(scorecard, "close/baseline/attempt-1")["execution_error"] == "TimeoutError: no answer within 30 seconds"
     assert metric(scorecard)["value"] == 1
     assert scorecard["status"] == "partial"
     close = execution(scorecard, "close")
-    assert close["attempts_not_completed"] == ["close/attempt-1/retry-2"]
+    assert close["attempts_not_completed"] == ["close/baseline/attempt-1/retry-2"]
     assert (close["attempts_completed"], close["retries"]) == (2, 2)
 
 
@@ -286,7 +298,7 @@ def test_a_task_failure_is_never_retried():
     # p = 1/2, so the value is 0. Retrying the failure until it succeeded would give 1.
     scorecard = sweep({"close": ["failure", "success"]}, limits={"close": ExecutionLimits(max_retries=3)})
 
-    assert [entry["attempt_id"] for entry in scorecard["attempts"]] == ["close/attempt-1", "close/attempt-2"]
+    assert [entry["attempt_id"] for entry in scorecard["attempts"]] == ["close/baseline/attempt-1", "close/baseline/attempt-2"]
     assert metric(scorecard)["value"] == 0
 
 
@@ -320,7 +332,7 @@ def test_a_task_that_reaches_its_total_time_limit_keeps_the_evidence_it_collecte
     assert scorecard["missing"] == [
         {
             "kind": "attempt_evidence",
-            "experiment_id": None,
+            "experiment_id": "close",
             "task_id": "close",
             "attempt_set": 1,
             "status": "timed_out",
@@ -333,7 +345,7 @@ def test_a_task_that_reaches_its_total_time_limit_keeps_the_evidence_it_collecte
     assert outcome_consistency["state"] == "available"
     assert outcome_consistency["value"] == pytest.approx(5 / 9, abs=1e-12)
     # The value stands, and the metric says that the Attempts it rests on were cut short at "close".
-    assert outcome_consistency["cut_short"] == {"experiment_ids": [], "task_ids": ["close"]}
+    assert outcome_consistency["cut_short"] == {"experiment_ids": ["close"], "task_ids": []}
 
 
 def recording(evidence_source):
@@ -365,14 +377,14 @@ def test_each_set_of_attempts_is_made_under_the_limits_of_its_task_anew_and_has_
     )
 
     assert [entry["attempt_id"] for entry in scorecard["attempts"]] == [
-        "close/attempt-1",
-        "close/attempt-2",
-        "close/set-2/attempt-1",
-        "close/set-2/attempt-2",
+        "close/baseline/attempt-1",
+        "close/baseline/attempt-2",
+        "close/set-2/baseline/attempt-1",
+        "close/set-2/baseline/attempt-2",
     ]
     assert [
         (entry["task_id"], entry["attempt_set"], entry["execution"]["status"], entry["execution"]["attempts_not_made"])
-        for entry in scorecard["tasks_without_experiment"]
+        for entry in scorecard["experiments"]
     ] == [("close", 1, "timed_out", 1), ("close", 2, "timed_out", 1)]
     assert [(entry["task_id"], entry["attempt_set"]) for entry in scorecard["missing"]] == [("close", 1), ("close", 2)]
     assert metric(scorecard, "distributional_trajectory_consistency")["value"] == 1
@@ -389,12 +401,12 @@ def test_a_retry_is_not_started_after_the_total_time_limit_was_reached():
     )
 
     assert [(entry["attempt_id"], entry["execution_status"]) for entry in scorecard["attempts"]] == [
-        ("close/attempt-1", "retried"),
-        ("close/attempt-1/retry-1", "failed"),
+        ("close/baseline/attempt-1", "retried"),
+        ("close/baseline/attempt-1/retry-1", "failed"),
     ]
     close = execution(scorecard, "close")
     assert (close["status"], close["reason"]) == ("timed_out", TIME_LIMIT_REACHED)
-    assert close["attempts_not_completed"] == ["close/attempt-1/retry-1"]
+    assert close["attempts_not_completed"] == ["close/baseline/attempt-1/retry-1"]
     assert close["attempts_not_made"] == 0
 
 
@@ -410,8 +422,8 @@ def test_a_cancelled_sweep_makes_no_further_attempts_and_keeps_the_evidence_it_c
     )
 
     assert [(entry["attempt_id"], entry["execution_status"]) for entry in scorecard["attempts"]] == [
-        ("close/attempt-1", "completed"),
-        ("close/attempt-2", "completed"),
+        ("close/baseline/attempt-1", "completed"),
+        ("close/baseline/attempt-2", "completed"),
     ]
     close, archive = execution(scorecard, "close"), execution(scorecard, "archive")
     assert (close["status"], close["reason"]) == ("cancelled", CANCELLED)
@@ -443,7 +455,7 @@ def test_an_attempt_that_is_aborted_by_a_cancellation_is_cancelled_and_not_faile
     )
 
     assert attempt_evidence(scorecard["attempts"][-1], "retry_of") == {
-        "attempt_id": "close/attempt-3",
+        "attempt_id": "close/baseline/attempt-3",
         "task_id": "close",
         "execution_status": "cancelled",
         "execution_error": "ConnectionAbortedError: the caller closed the connection, after the sweep was cancelled",
@@ -453,7 +465,7 @@ def test_an_attempt_that_is_aborted_by_a_cancellation_is_cancelled_and_not_faile
     assert metric(scorecard)["value"] == 1
     close = execution(scorecard, "close")
     assert (close["status"], close["reason"]) == ("cancelled", CANCELLED)
-    assert (close["attempts_not_made"], close["attempts_not_completed"]) == (1, ["close/attempt-3"])
+    assert (close["attempts_not_made"], close["attempts_not_completed"]) == (1, ["close/baseline/attempt-3"])
 
 
 def test_a_valid_metric_is_preserved_when_the_attempts_of_another_task_fail():
@@ -469,7 +481,7 @@ def test_a_valid_metric_is_preserved_when_the_attempts_of_another_task_fail():
     assert outcome_consistency["state"] == "available"
     assert outcome_consistency["value"] == pytest.approx(0.36, abs=1e-12)
     assert outcome_consistency["execution_failure"] is None
-    assert outcome_consistency["cut_short"] == {"experiment_ids": [], "task_ids": ["archive"]}
+    assert outcome_consistency["cut_short"] == {"experiment_ids": ["archive"], "task_ids": []}
     assert outcome_consistency["counts"]["tasks"]["excluded"] == [
         {"reason": "fewer than two Attempts with a task outcome", "count": 1, "ids": ["archive"]},
     ]
@@ -498,14 +510,14 @@ def test_an_execution_failure_is_not_an_unavailable_measurement_not_applicable_o
     assert outcome_consistency["reason"] is None
     assert outcome_consistency["execution_failure"] == {
         "reason": EXECUTION_FAILURE,
-        "experiment_ids": [],
-        "task_ids": ["close"],
+        "experiment_ids": ["close"],
+        "task_ids": [],
     }
     assert outcome_consistency["counts"]["attempts"]["excluded"] == [
         {
             "reason": "execution status is not completed",
             "count": 3,
-            "ids": ["close/attempt-1", "close/attempt-2", "close/attempt-3"],
+            "ids": ["close/baseline/attempt-1", "close/baseline/attempt-2", "close/baseline/attempt-3"],
         },
     ]
     assert [entry["task_outcome"] for entry in scorecard["attempts"]] == [None, None, None]
@@ -514,8 +526,8 @@ def test_an_execution_failure_is_not_an_unavailable_measurement_not_applicable_o
         "kind": "metric_result",
         "metric_id": "outcome_consistency",
         "reason": EXECUTION_FAILURE,
-        "experiment_ids": [],
-        "task_ids": ["close"],
+        "experiment_ids": ["close"],
+        "task_ids": [],
     }
 
 
@@ -550,7 +562,7 @@ def test_one_metric_keeps_its_result_while_another_has_none_after_the_same_execu
         violation_assessor=unrelated_is_left_alone,
     )
     scorecard = run_sweep(
-        tasks=[task],
+        experiments=fake_baseline_experiments([task]),
         agent_target=target,
         metrics=["outcome_consistency", "constraint_compliance"],
         cancellation=lambda: target.cancel_requested,
@@ -560,10 +572,11 @@ def test_one_metric_keeps_its_result_while_another_has_none_after_the_same_execu
     assert constraint_compliance["state"] == "available"
     assert constraint_compliance["value"] == 1
     assert constraint_compliance["execution_failure"] is None
-    assert constraint_compliance["evidence"] == {"attempt_ids": ["close/attempt-1"]}
+    assert constraint_compliance["evidence"] == {"attempt_ids": ["close/baseline/attempt-1"]}
     outcome_consistency = metric(scorecard)
     assert outcome_consistency["state"] is None
-    assert outcome_consistency["execution_failure"]["task_ids"] == ["close"]
+    assert outcome_consistency["execution_failure"]["experiment_ids"] == ["close"]
+    assert outcome_consistency["execution_failure"]["task_ids"] == []
     assert scorecard["status"] == "partial"
     assert [(entry["kind"], entry.get("metric_id")) for entry in scorecard["missing"]] == [
         ("attempt_evidence", None),
@@ -617,7 +630,7 @@ def test_an_unavailable_measurement_stays_unavailable_when_every_attempt_was_mad
     assert outcome_consistency["counts"]["attempts"]["excluded"][0] == {
         "reason": "execution status is not completed",
         "count": 1,
-        "ids": ["close/attempt-2"],
+        "ids": ["close/baseline/attempt-2"],
     }
     assert scorecard["status"] == "partial"
 
@@ -647,7 +660,7 @@ def test_the_agent_is_not_asked_for_its_confidence_in_an_attempt_that_timed_out_
         {"close": ["success", second_attempt]},
         limits={"close": ExecutionLimits(attempt_timeout_seconds=30)},
         honours_time_limits=honours_time_limits,
-        confidence={"close/attempt-1": "90"},
+        confidence={"close/baseline/attempt-1": "90"},
         metrics=["brier_based_score"],
     )
 
@@ -662,7 +675,7 @@ def test_no_confidence_request_is_sent_once_the_sweep_was_cancelled():
     # by its task outcome, and the agent is not sent another request.
     scorecard = sweep(
         {"close": ["success", cancelling("success"), "success"]},
-        confidence={"close/attempt-1": "90"},
+        confidence={"close/baseline/attempt-1": "90"},
         metrics=["brier_based_score"],
     )
 
@@ -696,7 +709,7 @@ def two_tasks_of_two_attempts():
 def test_attempts_run_one_after_another_by_default_and_the_scorecard_says_so():
     # The agent only answers when two invocations are in flight at once, which never happens.
     scorecard = run_sweep(
-        tasks=two_tasks_of_two_attempts(),
+        experiments=fake_baseline_experiments(two_tasks_of_two_attempts()),
         agent_target=MeetingAgentTarget(wait_seconds=0.05),
         metrics=["outcome_consistency"],
     )
@@ -709,7 +722,7 @@ def test_attempts_run_one_after_another_by_default_and_the_scorecard_says_so():
 def test_concurrency_is_declared_by_the_caller_and_recorded_in_the_scorecard():
     # The agent only answers when two invocations are in flight at once. All four Attempts complete.
     scorecard = run_sweep(
-        tasks=two_tasks_of_two_attempts(),
+        experiments=fake_baseline_experiments(two_tasks_of_two_attempts()),
         agent_target=MeetingAgentTarget(wait_seconds=30),
         metrics=["outcome_consistency"],
         max_concurrent_attempts=2,
@@ -717,10 +730,10 @@ def test_concurrency_is_declared_by_the_caller_and_recorded_in_the_scorecard():
 
     assert scorecard["concurrency"] == {"mode": "concurrent", "max_concurrent_attempts": 2}
     assert [(entry["attempt_id"], entry["execution_status"]) for entry in scorecard["attempts"]] == [
-        ("close/attempt-1", "completed"),
-        ("close/attempt-2", "completed"),
-        ("archive/attempt-1", "completed"),
-        ("archive/attempt-2", "completed"),
+        ("close/baseline/attempt-1", "completed"),
+        ("close/baseline/attempt-2", "completed"),
+        ("archive/baseline/attempt-1", "completed"),
+        ("archive/baseline/attempt-2", "completed"),
     ]
     assert scorecard["status"] == "complete"
     assert metric(scorecard)["value"] == 1
@@ -751,7 +764,7 @@ def test_limits_that_are_not_execution_limits_are_rejected_when_the_task_is_decl
 def test_a_concurrency_that_cannot_be_applied_is_rejected(declared):
     with pytest.raises(ValueError, match="max_concurrent_attempts"):
         run_sweep(
-            tasks=two_tasks_of_two_attempts(),
+            experiments=fake_baseline_experiments(two_tasks_of_two_attempts()),
             agent_target=FakeAgentTarget({"close": ["success"] * 2, "archive": ["success"] * 2}),
             metrics=["outcome_consistency"],
             max_concurrent_attempts=declared,

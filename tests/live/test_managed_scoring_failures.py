@@ -20,13 +20,12 @@ import os
 
 import pytest
 
-from live_fixture import TASK_PROMPT, local_service, strict_task_outcome, teardown
+from live_fixture import local_service, teardown
 from live_fixture.project_only import connect_project, provision_project
-from reliability_evaluators.evidence import TaskOutcome
 from reliability_evaluators.managed_scoring import FoundryManagedScoring, FoundryProject
 from reliability_evaluators.scorecard import to_json
-from reliability_evaluators.sweep import ConfiguredEvaluator, Task, rescore_in_customer_process, run_sweep
-from tests.live.test_managed_outcome_consistency import ScriptedTodoAgent, service_attempt
+from reliability_evaluators.sweep import ConfiguredEvaluator, rescore_in_customer_process, run_sweep
+from tests.live.test_managed_outcome_consistency import ScriptedTodoAgent, scripted_experiments
 
 pytestmark = pytest.mark.live
 
@@ -115,18 +114,11 @@ def sweep_on_the_fixture(project, monkeypatch, metrics=(MANAGED, "resource_consi
         monkeypatch.setenv("TODO_SERVICE_URL", service.url)
         monkeypatch.setenv("TODO_API_KEY", service.api_key)
 
-        def strict_success(attempt, response):
-            outcome = strict_task_outcome(service.evidence(service_attempt(attempt.attempt_id)))
-            return TaskOutcome(success=outcome["success"], source=outcome["source"])
-
-        tasks = [
-            Task(task_id=task_id, prompt=TASK_PROMPT, success_rule=strict_success, attempts=len(behaviours))
-            for task_id, behaviours in SCRIPT.items()
-        ]
+        setup, experiments = scripted_experiments(service, SCRIPT)
         ticks = itertools.count()
         return run_sweep(
-            tasks=tasks,
-            agent_target=ScriptedTodoAgent(service, SCRIPT),
+            experiments=experiments,
+            agent_target=ScriptedTodoAgent(SCRIPT, setup),
             metrics=metrics,
             managed_scoring=FoundryManagedScoring(project=project),
             clock=lambda: float(next(ticks)),

@@ -22,7 +22,8 @@ import live_fixture
 from live_fixture import LiveFixtureError, connect, provision, teardown
 from reliability_evaluators.agent_target.foundry_hosted import AzureCliCredential, FoundryHostedAgentTarget
 from reliability_evaluators.evidence import TaskOutcome
-from reliability_evaluators.sweep import Task, run_sweep
+from reliability_evaluators.sweep import Condition, Experiment, Task, run_sweep
+from tests.fakes import FakeBaselineControls
 from tests.todo_experiment import ALL_TOOLS_WORK, TodoSetup, update_fails_on
 
 pytestmark = pytest.mark.live
@@ -205,14 +206,7 @@ def test_a_live_hosted_agent_declared_with_the_invocations_protocol_is_reported_
     declare_invocations_agent(live)
 
     scorecard = run_sweep(
-        tasks=[
-            Task(
-                task_id="synthetic",
-                prompt="Synthetic probe. Do nothing.",
-                success_rule=lambda attempt, response: TaskOutcome(success=False, source="never decided"),
-                attempts=1,
-            )
-        ],
+        experiments=[unsupported_agent_experiment()],
         agent_target=hosted_agent_target(live, INVOCATIONS_AGENT),
         metrics=["outcome_consistency"],
     )
@@ -227,6 +221,24 @@ def test_a_live_hosted_agent_declared_with_the_invocations_protocol_is_reported_
     )
     assert attempt["task_outcome"] is None
     assert attempt["invocation"] is None
+
+
+def unsupported_agent_experiment():
+    return Experiment(
+        experiment_id="synthetic",
+        task=Task(
+            task_id="synthetic",
+            prompt="Synthetic probe. Do nothing.",
+            success_rule=lambda attempt, response: TaskOutcome(success=False, source="never decided"),
+            attempts=1,
+        ),
+        agent_configuration={"agent": INVOCATIONS_AGENT, "protocol": "invocations"},
+        starting_state="fresh",
+        baseline=Condition(condition_id="baseline", description="The synthetic probe injects no variation."),
+        variation=None,
+        controls=FakeBaselineControls(),
+        write_capable=False,
+    )
 
 
 def declare_invocations_agent(live):

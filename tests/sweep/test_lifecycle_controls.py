@@ -106,6 +106,16 @@ def test_a_continuing_state_experiment_carries_the_state_from_one_attempt_to_the
     assert metric(scorecard)["value"] == pytest.approx(1 / 9, abs=1e-12)
 
 
+def test_a_sweep_rejects_tasks_without_experiments_before_making_attempts():
+    fixture = Fixture()
+    task = fixture.experiment().task
+
+    with pytest.raises(TypeError, match="tasks"):
+        run_sweep(tasks=[task], agent_target=fixture.agent, metrics=["outcome_consistency"])
+
+    assert fixture.service.lists == {"todo-list/add": ["left over"]}
+
+
 def control_points(scorecard):
     return [[step["point"] for step in attempt["lifecycle"]] for attempt in scorecard["attempts"]]
 
@@ -509,24 +519,24 @@ def test_a_sweep_whose_experiments_cannot_be_told_apart_is_rejected():
     add = fixture.experiment("add")
     same_task = fixture.experiment("add", experiment_id="add-again")
     same_identity = fixture.experiment("tidy", experiment_id="add-item")
-    task_given_twice = add.task
-    colliding_task = Task(
-        task_id="add-item/baseline", prompt="Add.", success_rule=fixture.exactly_one_item, attempts=1
-    )
-
-    def sweep(tasks, experiments):
-        return run_sweep(
-            tasks=tasks, experiments=experiments, agent_target=fixture.agent, metrics=["outcome_consistency"]
-        )
+    def sweep(experiments):
+        return run_sweep(experiments=experiments, agent_target=fixture.agent, metrics=["outcome_consistency"])
 
     with pytest.raises(ValueError, match="more than one experiment is declared as 'add-item'"):
-        sweep([], [add, same_identity])
+        sweep([add, same_identity])
     with pytest.raises(ValueError, match="more than one Task is declared as 'add'"):
-        sweep([], [add, same_task])
-    with pytest.raises(ValueError, match="more than one Task is declared as 'add'"):
-        sweep([task_given_twice], [add])
-    with pytest.raises(ValueError, match="more than one Attempt would have the identity 'add-item/baseline/"):
-        sweep([colliding_task], [add])
+        sweep([add, same_task])
+    with pytest.raises(TypeError, match="tasks"):
+        run_sweep(tasks=[add.task], experiments=[add], agent_target=fixture.agent, metrics=["outcome_consistency"])
+    # Distinct experiment identities can still produce the same Attempt identity.
+    first = fixture.experiment("add", baseline=Condition(condition_id="baseline/base", description="Baseline."))
+    second = fixture.experiment(
+        "tidy",
+        experiment_id="add-item/baseline",
+        baseline=Condition(condition_id="base", description="Baseline."),
+    )
+    with pytest.raises(ValueError, match="more than one Attempt would have the identity 'add-item/baseline/base/"):
+        sweep([first, second])
 
 
 def test_a_clean_up_that_fails_after_the_last_attempt_still_stops_the_experiments_that_depend_on_it():
@@ -553,6 +563,39 @@ def test_a_clean_up_that_fails_after_the_last_attempt_still_stops_the_experiment
     }
     assert execution(scorecard, "tidy-item")["status"] == "stopped"
     assert execution(scorecard, "tidy-item")["attempts_recorded"] == 0
+
+
+def test_failed_cleanup_in_a_concurrent_batch_stops_shared_resources_but_not_independent_experiments():
+    fixture = Fixture(
+        task_ids=("add", "archive", "tidy", "finish"),
+        failures={("clean_up", "add-item/baseline/attempt-1"): "the list could not be deleted"},
+    )
+    scorecard = run_sweep(
+        experiments=[
+            fixture.experiment("add", attempts=2, authorized_resources=[todo_list("add"), "shared"]),
+            fixture.experiment("archive", attempts=2),
+            fixture.experiment("tidy", attempts=2, authorized_resources=[todo_list("tidy"), "shared"]),
+            fixture.experiment("finish", attempts=2),
+        ],
+        agent_target=fixture.agent,
+        metrics=["outcome_consistency"],
+        max_concurrent_attempts=2,
+    )
+
+    assert [(attempt["task_id"], attempt["execution_status"]) for attempt in scorecard["attempts"]] == [
+        ("add", "cleanup_failed"),
+        ("archive", "completed"),
+        ("archive", "completed"),
+        ("finish", "completed"),
+        ("finish", "completed"),
+    ]
+    assert execution(scorecard, "add-item")["status"] == "stopped"
+    assert execution(scorecard, "tidy-item")["status"] == "stopped"
+    assert execution(scorecard, "tidy-item")["attempts_recorded"] == 0
+    assert "did not restore" in execution(scorecard, "tidy-item")["reason"]
+    assert execution(scorecard, "archive-item")["status"] == "completed"
+    assert execution(scorecard, "finish-item")["status"] == "completed"
+    assert scorecard["status"] == "partial"
 
 
 def test_an_attempt_whose_setup_failed_still_records_the_operational_constraints_of_its_task():

@@ -27,6 +27,7 @@ from tests.fake_foundry import FakeFoundryProject
 from tests.fakes import FakeAgentTarget
 from tests.managed_artifact import altered_evidence
 from tests.report_reader import assert_faithful_rendering
+from tests.fakes import fake_baseline_experiments
 
 SOURCE = "final state of the fake service"
 
@@ -50,7 +51,7 @@ def sweep(script, foundry, metrics=(MANAGED,), resources=None, **declared):
         for task_id, behaviours in script.items()
     ]
     scorecard = run_sweep(
-        tasks=tasks,
+        experiments=fake_baseline_experiments(tasks),
         agent_target=target,
         metrics=metrics,
         managed_scoring=FoundryManagedScoring(project=foundry, poll_interval_seconds=0),
@@ -252,7 +253,8 @@ def test_a_rescore_of_attempts_that_were_cut_short_has_an_execution_failure_as_i
     ]
 
     assert rescore["state"] is None
-    assert rescore["execution_failure"]["task_ids"] == ["close"]
+    assert rescore["execution_failure"]["experiment_ids"] == ["close"]
+    assert rescore["execution_failure"]["task_ids"] == []
     assert rescore["execution_failure"]["reason"].startswith("the Attempts that supply this metric's evidence were cut short")
 
 
@@ -311,7 +313,7 @@ def an_attempt_that_is_not_valid_evidence(scorecard):
             an_outcome_changed,
             "the supplied evidence is not the evidence that was submitted to Foundry for 'outcome_consistency'",
         ),
-        (an_attempt_removed, "the supplied evidence does not validate.*'close/attempt-1', which is not in the attempt-level"),
+        (an_attempt_removed, "the supplied evidence does not validate.*'close/baseline/attempt-1', which is not in the attempt-level"),
         (an_attempt_that_is_not_valid_evidence, "the supplied evidence does not validate"),
     ],
 )
@@ -363,7 +365,7 @@ def test_an_acceptance_criterion_of_the_earlier_scorecard_has_to_be_declared_aga
 
 
 CORRECTED = OutcomeCorrection(
-    attempt_id="close/attempt-5",
+    attempt_id="close/baseline/attempt-5",
     task_outcome=TaskOutcome(success=True, source="label added after the run"),
     provenance="synthetic correction",
 )
@@ -384,7 +386,7 @@ def test_a_recalculation_carries_a_managed_failure_and_its_rescore_and_scores_ne
     assert now["state"] is None and now["value"] is None
     assert now["execution_failure"] == was["execution_failure"]
     assert now.get("customer_process_rescore") == was.get("customer_process_rescore")
-    assert now["not_recalculated"]["corrected_attempt_ids"] == ["close/attempt-5"]
+    assert now["not_recalculated"]["corrected_attempt_ids"] == ["close/baseline/attempt-5"]
     assert recalculated["status"] == "partial"
     assert recalculated["missing"] == scorecard["missing"]
     assert recalculated["token_usage"] == scorecard["token_usage"]

@@ -11,9 +11,53 @@ from reliability_evaluators.agent_target import (
     IsolatedFollowUp,
 )
 from reliability_evaluators.evidence import ObservedCondition, ResourceMeasurement
+from reliability_evaluators.sweep import Condition, Experiment
 
 TOOL_CALL_BOUNDARY = "tool calls made on the fake service during the Attempt, counted by the fake agent target"
 OWN_ELAPSED_BOUNDARY = "processing time of the Attempt, as reported by the fake agent service"
+FAKE_BASELINE = Condition(condition_id="baseline", description="The synthetic target has no injected variation.")
+
+
+class FakeBaselineControls:
+    """Controls for fakes whose state is isolated by Attempt identity."""
+
+    def __init__(self):
+        self._applied = {}
+
+    def prepare_state(self, context):
+        self._applied.pop(context.attempt_id, None)
+
+    def apply_condition(self, context):
+        self._applied[context.attempt_id] = dict(context.condition.parameters)
+
+    def verify_condition(self, context):
+        parameters = self._applied[context.attempt_id]
+        return ObservedCondition(
+            met=parameters == {},
+            source="parameters applied by the fake control",
+            observations={"parameters": parameters},
+        )
+
+    def clean_up(self, context):
+        self._applied.pop(context.attempt_id, None)
+
+
+def fake_baseline_experiments(tasks):
+    """Declare the isolated synthetic target and its controls for each Task."""
+    return [
+        Experiment(
+            experiment_id=task.task_id,
+            task=task,
+            agent_configuration={"agent": "synthetic test target"},
+            starting_state="fresh",
+            baseline=FAKE_BASELINE,
+            variation=None,
+            controls=FakeBaselineControls(),
+            write_capable=True,
+            authorized_resources=[f"synthetic state of {task.task_id}"],
+        )
+        for task in tasks
+    ]
 
 
 def attempt_evidence(attempt: dict, *evidence: str) -> dict:

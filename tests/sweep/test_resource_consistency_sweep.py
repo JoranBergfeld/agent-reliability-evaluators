@@ -14,6 +14,7 @@ from reliability_evaluators.evidence import TaskOutcome
 from reliability_evaluators.scorecard import to_json
 from reliability_evaluators.sweep import Task, run_sweep
 from tests.fakes import OWN_ELAPSED_BOUNDARY, TOOL_CALL_BOUNDARY, FakeAgentTarget, attempt_evidence
+from tests.fakes import fake_baseline_experiments
 
 SOURCE = "final state of the fake service"
 SWEEP_ELAPSED_BOUNDARY = (
@@ -34,7 +35,7 @@ def sweep(script, resources, metrics=("resource_consistency",)):
         Task(task_id=task_id, prompt=f"Do {task_id}.", success_rule=item_is_done, attempts=len(behaviours))
         for task_id, behaviours in script.items()
     ]
-    return run_sweep(tasks=tasks, agent_target=target, metrics=metrics, clock=target.clock)
+    return run_sweep(experiments=fake_baseline_experiments(tasks), agent_target=target, metrics=metrics, clock=target.clock)
 
 
 def metric(scorecard, metric_id="resource_consistency"):
@@ -69,7 +70,7 @@ def test_each_attempt_in_the_scorecard_carries_its_elapsed_time_and_tool_call_co
     scorecard = sweep(SCRIPT, RESOURCES)
 
     assert attempt_evidence(scorecard["attempts"][1], "resource_measurements") == {
-        "attempt_id": "close/attempt-2",
+        "attempt_id": "close/baseline/attempt-2",
         "task_id": "close",
         "execution_status": "completed",
         "execution_error": None,
@@ -93,11 +94,11 @@ def test_each_attempt_in_the_scorecard_carries_its_elapsed_time_and_tool_call_co
     }
     assert metric(scorecard)["evidence"] == {
         "attempt_ids": [
-            "close/attempt-1",
-            "close/attempt-2",
-            "archive/attempt-1",
-            "archive/attempt-2",
-            "archive/attempt-3",
+            "close/baseline/attempt-1",
+            "close/baseline/attempt-2",
+            "archive/baseline/attempt-1",
+            "archive/baseline/attempt-2",
+            "archive/baseline/attempt-3",
         ]
     }
 
@@ -163,7 +164,7 @@ def test_the_scorecard_names_the_resource_types_used_and_those_excluded_with_rea
             },
         ],
         "excluded_resource_types": [
-            {"resource_type": "tool_calls", "reason": MISSING, "attempt_ids": ["close/attempt-2"]},
+            {"resource_type": "tool_calls", "reason": MISSING, "attempt_ids": ["close/baseline/attempt-2"]},
             {"resource_type": "token_usage", "reason": NOT_MEASURED, "attempt_ids": []},
         ],
         "value": pytest.approx(EXP_MINUS_HALF, abs=1e-12),
@@ -190,9 +191,9 @@ def test_an_invocation_that_fails_carries_no_measurement_and_is_left_out():
         "total": 3,
         "valid": 2,
         "missing": [],
-        "excluded": [{"reason": "execution status is not completed", "count": 1, "ids": ["close/attempt-2"]}],
+        "excluded": [{"reason": "execution status is not completed", "count": 1, "ids": ["close/baseline/attempt-2"]}],
     }
-    assert resource_consistency["evidence"] == {"attempt_ids": ["close/attempt-1", "close/attempt-3"]}
+    assert resource_consistency["evidence"] == {"attempt_ids": ["close/baseline/attempt-1", "close/baseline/attempt-3"]}
 
 
 def test_no_task_with_repeated_attempts_gives_an_unavailable_measurement_and_no_number():
@@ -268,7 +269,7 @@ def test_no_complete_resource_type_gives_an_unavailable_measurement_with_its_rea
                 {
                     "reason": "its Task has no resource type with complete and comparable measurements",
                     "count": 2,
-                    "ids": ["close/attempt-1", "close/attempt-2"],
+                    "ids": ["close/baseline/attempt-1", "close/baseline/attempt-2"],
                 },
             ],
         },
@@ -283,7 +284,7 @@ def test_no_complete_resource_type_gives_an_unavailable_measurement_with_its_rea
                     "reason": "measured with more than one measurement boundary across the Attempts of the Task",
                     "attempt_ids": [],
                 },
-                {"resource_type": "tool_calls", "reason": MISSING, "attempt_ids": ["close/attempt-2"]},
+                {"resource_type": "tool_calls", "reason": MISSING, "attempt_ids": ["close/baseline/attempt-2"]},
                 {"resource_type": "token_usage", "reason": NOT_MEASURED, "attempt_ids": []},
             ],
         },

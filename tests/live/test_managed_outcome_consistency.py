@@ -17,7 +17,7 @@ import time
 
 import pytest
 
-from live_fixture import TASK_PROMPT, local_service, strict_task_outcome, teardown
+from live_fixture import local_service, teardown
 from live_fixture.hosted_agent import todo_tools
 from live_fixture.project_only import connect_project, provision_project
 from reliability_evaluators.agent_target import AgentResponse
@@ -30,7 +30,8 @@ from reliability_evaluators.managed_scoring import (
     derive_artifact,
 )
 from reliability_evaluators.managed_scoring.grader import decode_result, result_parts
-from reliability_evaluators.sweep import ConfiguredEvaluator, Task, run_sweep
+from reliability_evaluators.sweep import ConfiguredEvaluator, run_sweep
+from tests.todo_experiment import ALL_TOOLS_WORK, TodoSetup
 
 pytestmark = pytest.mark.live
 
@@ -62,13 +63,12 @@ class ScriptedTodoAgent:
     It always answers "Done.", so only the service says what happened.
     """
 
-    def __init__(self, service, script):
-        self._service = service
+    def __init__(self, script, setup):
+        self._setup = setup
         self._remaining = {task_id: list(behaviours) for task_id, behaviours in script.items()}
 
     def invoke(self, request):
-        attempt_id = service_attempt(request.attempt_id)
-        self._service.prepare_attempt(attempt_id)
+        attempt_id = self._setup.on_service(request.attempt_id)
         todo_tools.read_todo(attempt_id, "target")
         todo_tools.create_todo(attempt_id, "scratch", "Temporary")
         todo_tools.read_todo(attempt_id, "scratch")
@@ -78,9 +78,13 @@ class ScriptedTodoAgent:
         return AgentResponse(output="Done.")
 
 
-def service_attempt(attempt_id):
-    # The service takes the Attempt identifier in a path, so it cannot hold a slash.
-    return attempt_id.replace("/", "-")
+def scripted_experiments(service, script):
+    setup = TodoSetup(service, run_id="managed-synthetic")
+    experiments = [
+        setup.experiment(task_id, len(behaviours), ALL_TOOLS_WORK, {"agent": "scripted to-do agent"})
+        for task_id, behaviours in script.items()
+    ]
+    return setup, experiments
 
 
 def sweep_on_the_fixture(script, scoring, monkeypatch, **declared):
@@ -88,17 +92,10 @@ def sweep_on_the_fixture(script, scoring, monkeypatch, **declared):
         monkeypatch.setenv("TODO_SERVICE_URL", service.url)
         monkeypatch.setenv("TODO_API_KEY", service.api_key)
 
-        def strict_success(attempt, response):
-            outcome = strict_task_outcome(service.evidence(service_attempt(attempt.attempt_id)))
-            return TaskOutcome(success=outcome["success"], source=outcome["source"])
-
-        tasks = [
-            Task(task_id=task_id, prompt=TASK_PROMPT, success_rule=strict_success, attempts=len(behaviours))
-            for task_id, behaviours in script.items()
-        ]
+        setup, experiments = scripted_experiments(service, script)
         return run_sweep(
-            tasks=tasks,
-            agent_target=ScriptedTodoAgent(service, script),
+            experiments=experiments,
+            agent_target=ScriptedTodoAgent(script, setup),
             metrics=[MANAGED],
             managed_scoring=scoring,
             **declared,
@@ -207,7 +204,7 @@ def test_an_unavailable_measurement_comes_back_from_the_live_project_with_its_re
                 {
                     "reason": "its Task has fewer than two Attempts with a task outcome",
                     "count": 2,
-                    "ids": ["close/attempt-1", "archive/attempt-1"],
+                    "ids": ["close/all-tools-work/attempt-1", "archive/all-tools-work/attempt-1"],
                 }
             ],
         },

@@ -33,6 +33,7 @@ from tests.fakes import (
     todo_list,
 )
 from tests.report_reader import assert_faithful_rendering
+from tests.fakes import fake_baseline_experiments
 
 SOURCE = "final state of the fake service"
 OUTCOME = "outcome_consistency"
@@ -66,7 +67,7 @@ def sweep(script, metrics=(OUTCOME,), limits=ExecutionLimits(), acceptance_crite
         for task_id, behaviours in script.items()
     ]
     return run_sweep(
-        tasks=tasks,
+        experiments=fake_baseline_experiments(tasks),
         agent_target=target,
         metrics=metrics,
         acceptance_criteria=acceptance_criteria,
@@ -96,14 +97,14 @@ def test_the_scorecard_reports_the_usage_of_each_attempt_and_of_the_sweep_in_tok
     # 790 + 812 = 1602 tokens.
     scorecard = sweep(
         {"close": ["success", "success"]},
-        invocations={"close/attempt-1": reported(790, "resp_1"), "close/attempt-2": reported(812, "resp_2")},
+        invocations={"close/baseline/attempt-1": reported(790, "resp_1"), "close/baseline/attempt-2": reported(812, "resp_2")},
     )
 
     usage = scorecard["token_usage"]
     assert usage["unit"] == "tokens"
     assert per_attempt(usage) == [
-        ("close/attempt-1", "completed", "complete", 790),
-        ("close/attempt-2", "completed", "complete", 812),
+        ("close/baseline/attempt-1", "completed", "complete", 790),
+        ("close/baseline/attempt-2", "completed", "complete", 812),
     ]
     assert usage["attempts"][0]["invocation"] == {
         "basis": "reported",
@@ -130,8 +131,8 @@ def test_a_count_says_where_it_comes_from_when_the_agent_target_states_it():
     scorecard = sweep(
         {"close": ["success", "success", "error"]},
         invocations={
-            "close/attempt-1": {**reported(790, "resp_1"), "token_usage_source": own_count},
-            "close/attempt-2": reported(812, "resp_2"),
+            "close/baseline/attempt-1": {**reported(790, "resp_1"), "token_usage_source": own_count},
+            "close/baseline/attempt-2": reported(812, "resp_2"),
         },
     )
 
@@ -158,7 +159,7 @@ def test_usage_is_not_a_metric_and_changes_no_metric_result_and_no_acceptance_as
         script,
         metrics,
         acceptance_criteria=criteria,
-        invocations={f"close/attempt-{number}": reported(1000 * number) for number in (1, 2, 3)},
+        invocations={f"close/baseline/attempt-{number}": reported(1000 * number) for number in (1, 2, 3)},
     )
 
     assert with_usage["token_usage"]["sweep"]["total_tokens"] == 6000
@@ -185,7 +186,7 @@ def test_attempts_that_two_evaluators_share_are_counted_once_in_the_sweep_and_th
     scorecard = sweep(
         {"close": ["success", "success"]},
         metrics=(OUTCOME, "resource_consistency"),
-        invocations={"close/attempt-1": reported(790), "close/attempt-2": reported(812)},
+        invocations={"close/baseline/attempt-1": reported(790), "close/baseline/attempt-2": reported(812)},
     )
 
     usage = scorecard["token_usage"]
@@ -195,7 +196,7 @@ def test_attempts_that_two_evaluators_share_are_counted_once_in_the_sweep_and_th
         "resource_consistency": ("complete", 1602, True, False),
     }
     outcome, resource = usage["evaluators"]
-    assert outcome["attempt_ids"] == ["close/attempt-1", "close/attempt-2"]
+    assert outcome["attempt_ids"] == ["close/baseline/attempt-1", "close/baseline/attempt-2"]
     assert (outcome["overlaps_with"], resource["overlaps_with"]) == (["resource_consistency"], [OUTCOME])
     assert [entry["used_by"] for entry in usage["attempts"]] == [[OUTCOME, "resource_consistency"]] * 2
     # Scoring by code in this process uses no model: that zero is known.
@@ -219,10 +220,10 @@ def test_separate_attempts_made_for_an_evaluator_are_its_own_and_every_attempt_i
         {"close": ["success"] * 4},
         {"close": [calls] * 4},
         invocations={
-            "close/attempt-1": reported(500),
-            "close/attempt-2": reported(520),
-            "close/set-2/attempt-1": reported(610),
-            "close/set-2/attempt-2": reported(630),
+            "close/baseline/attempt-1": reported(500),
+            "close/baseline/attempt-2": reported(520),
+            "close/set-2/baseline/attempt-1": reported(610),
+            "close/set-2/baseline/attempt-2": reported(630),
         },
     )
 
@@ -237,14 +238,14 @@ def test_separate_attempts_made_for_an_evaluator_are_its_own_and_every_attempt_i
         )
 
     scorecard = run_sweep(
-        tasks=[
+        experiments=fake_baseline_experiments([
             Task(
                 task_id="close",
                 prompt="Close the item.",
                 success_rule=lambda attempt, response: TaskOutcome(success=True, source=SOURCE),
                 attempts=2,
             )
-        ],
+        ]),
         agent_target=target,
         metrics=[
             OUTCOME,
@@ -271,19 +272,19 @@ def test_separate_attempts_made_for_an_evaluator_are_its_own_and_every_attempt_i
 
 
 def test_the_usage_of_a_confidence_follow_up_is_reported_with_its_attempt_when_the_agent_target_reports_it():
-    # close/attempt-1: 790 for the Attempt and 120 for its follow-up, 910 tokens.
-    # close/attempt-2: 812 for the Attempt. Its follow-up was sent and reported no usage: 812 is partial.
-    # close/attempt-3: the invocation failed, so no follow-up was sent.
+    # close/baseline/attempt-1: 790 for the Attempt and 120 for its follow-up, 910 tokens.
+    # close/baseline/attempt-2: 812 for the Attempt. Its follow-up was sent and reported no usage: 812 is partial.
+    # close/baseline/attempt-3: the invocation failed, so no follow-up was sent.
     # Sweep: 790 + 120 + 812 = 1722 tokens, a partial sum.
     scorecard = sweep(
         {"close": ["success", "success", "error"]},
         metrics=("brier_based_score",),
-        invocations={"close/attempt-1": reported(790, "resp_1"), "close/attempt-2": reported(812, "resp_2")},
+        invocations={"close/baseline/attempt-1": reported(790, "resp_1"), "close/baseline/attempt-2": reported(812, "resp_2")},
         confidence={
-            "close/attempt-1": ConfidenceResponse(
-                attempt_id="close/attempt-1", output="80", invocation=reported(120, "resp_1_confidence")
+            "close/baseline/attempt-1": ConfidenceResponse(
+                attempt_id="close/baseline/attempt-1", output="80", invocation=reported(120, "resp_1_confidence")
             ),
-            "close/attempt-2": "70",
+            "close/baseline/attempt-2": "70",
         },
     )
 
@@ -309,9 +310,9 @@ def test_the_usage_of_a_confidence_follow_up_is_reported_with_its_attempt_when_t
     }
     assert third["confidence_follow_up"] is None
     assert per_attempt(usage) == [
-        ("close/attempt-1", "completed", "complete", 910),
-        ("close/attempt-2", "completed", "partial", 812),
-        ("close/attempt-3", "failed", "unavailable", None),
+        ("close/baseline/attempt-1", "completed", "complete", 910),
+        ("close/baseline/attempt-2", "completed", "partial", 812),
+        ("close/baseline/attempt-3", "failed", "unavailable", None),
     ]
     assert usage["sweep"] == {
         "coverage": "partial",
@@ -321,12 +322,12 @@ def test_the_usage_of_a_confidence_follow_up_is_reported_with_its_attempt_when_t
         "missing": [
             {
                 "use": "confidence_follow_up",
-                "attempt_id": "close/attempt-2",
+                "attempt_id": "close/baseline/attempt-2",
                 "reason": "the agent target recorded nothing of the confidence request",
             },
             {
                 "use": "agent_invocation",
-                "attempt_id": "close/attempt-3",
+                "attempt_id": "close/baseline/attempt-3",
                 "reason": "the agent target recorded nothing of the invocation",
             },
         ],
@@ -337,11 +338,11 @@ def test_the_usage_of_a_confidence_follow_up_is_reported_with_its_attempt_when_t
 
 def test_failed_cancelled_and_retried_attempts_are_in_the_usage_with_their_statuses_and_what_they_used():
     # Three planned Attempts, each retried once at most.
-    #   close/attempt-1          fails after it used 410 tokens, and is made again
-    #   close/attempt-1/retry-1  fails too, and nothing was recorded of it
-    #   close/attempt-2          answers after its time limit having used 812 tokens, and is made again
-    #   close/attempt-2/retry-1  completes with 790 tokens
-    #   close/attempt-3          is aborted when the sweep is cancelled, and nothing was recorded of it
+    #   close/baseline/attempt-1          fails after it used 410 tokens, and is made again
+    #   close/baseline/attempt-1/retry-1  fails too, and nothing was recorded of it
+    #   close/baseline/attempt-2          answers after its time limit having used 812 tokens, and is made again
+    #   close/baseline/attempt-2/retry-1  completes with 790 tokens
+    #   close/baseline/attempt-3          is aborted when the sweep is cancelled, and nothing was recorded of it
     # Known: 410 + 812 + 790 = 2012 tokens, a partial sum. No Task has two Attempts with a task outcome,
     # so outcome consistency has no value, and what its Attempts used is reported all the same.
     scorecard = sweep(
@@ -349,31 +350,31 @@ def test_failed_cancelled_and_retried_attempts_are_in_the_usage_with_their_statu
         attempts=3,
         limits=ExecutionLimits(attempt_timeout_seconds=1.0, max_retries=1),
         honours_time_limits=False,
-        invocations={"close/attempt-2": reported(812), "close/attempt-2/retry-1": reported(790)},
+        invocations={"close/baseline/attempt-2": reported(812), "close/baseline/attempt-2/retry-1": reported(790)},
         invocation_errors={
-            "close/attempt-1": InvocationFailed("the platform answered HTTP 500", invocation=reported(410))
+            "close/baseline/attempt-1": InvocationFailed("the platform answered HTTP 500", invocation=reported(410))
         },
     )
 
     usage = scorecard["token_usage"]
     assert per_attempt(usage) == [
-        ("close/attempt-1", "retried", "complete", 410),
-        ("close/attempt-1/retry-1", "failed", "unavailable", None),
-        ("close/attempt-2", "retried", "complete", 812),
-        ("close/attempt-2/retry-1", "completed", "complete", 790),
-        ("close/attempt-3", "cancelled", "unavailable", None),
+        ("close/baseline/attempt-1", "retried", "complete", 410),
+        ("close/baseline/attempt-1/retry-1", "failed", "unavailable", None),
+        ("close/baseline/attempt-2", "retried", "complete", 812),
+        ("close/baseline/attempt-2/retry-1", "completed", "complete", 790),
+        ("close/baseline/attempt-3", "cancelled", "unavailable", None),
     ]
     assert [entry["retry_of"] for entry in usage["attempts"]] == [
         None,
-        "close/attempt-1",
+        "close/baseline/attempt-1",
         None,
-        "close/attempt-2",
+        "close/baseline/attempt-2",
         None,
     ]
     assert (usage["sweep"]["coverage"], usage["sweep"]["total_tokens"]) == ("partial", 2012)
     assert [(missing["attempt_id"], missing["reason"]) for missing in usage["sweep"]["missing"]] == [
-        ("close/attempt-1/retry-1", "the agent target recorded nothing of the invocation"),
-        ("close/attempt-3", "the agent target recorded nothing of the invocation"),
+        ("close/baseline/attempt-1/retry-1", "the agent target recorded nothing of the invocation"),
+        ("close/baseline/attempt-3", "the agent target recorded nothing of the invocation"),
     ]
     assert metric(scorecard)["value"] is None
     assert per_evaluator(usage) == {OUTCOME: ("partial", 2012, False, True)}
@@ -384,22 +385,22 @@ def follow_up_usage(confidence):
     scorecard = sweep(
         {"close": ["success"]},
         metrics=("brier_based_score",),
-        invocations={"close/attempt-1": reported(790)},
-        confidence={"close/attempt-1": confidence},
+        invocations={"close/baseline/attempt-1": reported(790)},
+        confidence={"close/baseline/attempt-1": confidence},
     )
     (attempt,) = scorecard["token_usage"]["attempts"]
     return attempt
 
 
 def test_the_usage_of_a_confidence_response_that_belongs_to_another_attempt_is_not_attributed():
-    elsewhere = ConfidenceResponse(attempt_id="close/attempt-9", output="80", invocation=reported(120))
+    elsewhere = ConfidenceResponse(attempt_id="close/baseline/attempt-9", output="80", invocation=reported(120))
 
     attempt = follow_up_usage(elsewhere)
 
     assert attempt["confidence_follow_up"] == {
         "basis": "missing",
         "total_tokens": None,
-        "reason": "the confidence response belongs to Attempt 'close/attempt-9', not to this Attempt",
+        "reason": "the confidence response belongs to Attempt 'close/baseline/attempt-9', not to this Attempt",
         "response_id": None,
         "request_ids": {},
         "evaluation_run": None,
@@ -692,11 +693,11 @@ def test_a_recalculation_keeps_the_usage_of_the_sweep_whose_evidence_it_scores_a
     earlier = supplied(
         sweep(
             {"close": ["success", "failure"]},
-            invocations={"close/attempt-1": reported(790), "close/attempt-2": reported(812)},
+            invocations={"close/baseline/attempt-1": reported(790), "close/baseline/attempt-2": reported(812)},
         )
     )
     correction = OutcomeCorrection(
-        attempt_id="close/attempt-2",
+        attempt_id="close/baseline/attempt-2",
         task_outcome=TaskOutcome(success=True, source="manual review"),
         provenance="J. Jansen: the check ran too early",
     )
@@ -735,10 +736,10 @@ def test_a_recalculation_keeps_what_the_customer_reported_for_generated_variatio
 
 
 def test_usage_that_the_supplied_evidence_does_not_give_fails_the_recalculation():
-    earlier = supplied(sweep({"close": ["success", "failure"]}, invocations={"close/attempt-1": reported(790)}))
+    earlier = supplied(sweep({"close": ["success", "failure"]}, invocations={"close/baseline/attempt-1": reported(790)}))
     earlier["token_usage"]["sweep"]["total_tokens"] = 5
     correction = OutcomeCorrection(
-        attempt_id="close/attempt-2",
+        attempt_id="close/baseline/attempt-2",
         task_outcome=TaskOutcome(success=True, source="manual review"),
         provenance="J. Jansen: the check ran too early",
     )
@@ -749,7 +750,7 @@ def test_usage_that_the_supplied_evidence_does_not_give_fails_the_recalculation(
 
 def test_the_report_shows_token_usage_in_a_section_of_its_own_and_not_among_the_metrics():
     # 790 tokens for the first Attempt. The second reported nothing: the sweep total is a partial sum.
-    scorecard = sweep({"close": ["success", "success"]}, invocations={"close/attempt-1": reported(790, "resp_1")})
+    scorecard = sweep({"close": ["success", "success"]}, invocations={"close/baseline/attempt-1": reported(790, "resp_1")})
 
     report = assert_faithful_rendering(render_report(scorecard), scorecard)
 

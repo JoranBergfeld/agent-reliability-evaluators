@@ -47,6 +47,7 @@ from tests.fakes import (
     todo_list,
 )
 from tests.report_reader import assert_faithful_rendering
+from tests.fakes import fake_baseline_experiments
 
 SOURCE = "final state of the fake service"
 RULE = "The item is marked done in the to-do service."
@@ -90,7 +91,7 @@ def sweep(
     ]
     return supplied(
         run_sweep(
-            tasks=tasks,
+            experiments=fake_baseline_experiments(tasks),
             agent_target=target,
             metrics=metrics,
             clock=target.clock,
@@ -123,7 +124,7 @@ METRICS_FROM_TASK_OUTCOMES = (
     "brier_based_score",
 )
 HALF = ["success", "success", "failure", "failure"]
-RATINGS = {"close/attempt-1": "75", "close/attempt-2": "75", "close/attempt-3": "75", "close/attempt-4": "25"}
+RATINGS = {"close/baseline/attempt-1": "75", "close/baseline/attempt-2": "75", "close/baseline/attempt-3": "75", "close/baseline/attempt-4": "25"}
 
 
 def test_recalculating_with_a_corrected_task_outcome_gives_a_new_scorecard_that_uses_it():
@@ -132,7 +133,7 @@ def test_recalculating_with_a_corrected_task_outcome_gives_a_new_scorecard_that_
     assert metric(earlier)["value"] == 0
 
     recalculated = recalculate(
-        earlier_scorecard=earlier, outcome_corrections=[corrected("close/attempt-3", success=True)]
+        earlier_scorecard=earlier, outcome_corrections=[corrected("close/baseline/attempt-3", success=True)]
     )
 
     outcome_consistency = metric(recalculated)
@@ -164,7 +165,7 @@ def test_the_corrected_outcome_is_used_in_every_metric_that_is_calculated_from_t
     assert metric(earlier, "strict_confidence_discrimination")["value"] == 0.5
 
     recalculated = recalculate(
-        earlier_scorecard=earlier, outcome_corrections=[corrected("close/attempt-3", success=True)]
+        earlier_scorecard=earlier, outcome_corrections=[corrected("close/baseline/attempt-3", success=True)]
     )
 
     brier = metric(recalculated, "brier_based_score")
@@ -172,7 +173,7 @@ def test_the_corrected_outcome_is_used_in_every_metric_that_is_calculated_from_t
     assert brier["value"] == 0.9375
     assert brier["details"]["mean_squared_error"] == 0.0625
     assert brier["details"]["pairs"][2] == {
-        "attempt_id": "close/attempt-3",
+        "attempt_id": "close/baseline/attempt-3",
         "task_id": "close",
         "rating": "75",
         "confidence": 0.75,
@@ -189,24 +190,24 @@ def test_the_attempt_carries_the_corrected_outcome_and_retains_the_record_it_rep
     earlier = sweep({"close": HALF})
 
     recalculated = recalculate(
-        earlier_scorecard=earlier, outcome_corrections=[corrected("close/attempt-3", success=True)]
+        earlier_scorecard=earlier, outcome_corrections=[corrected("close/baseline/attempt-3", success=True)]
     )
 
-    third = attempt(recalculated, "close/attempt-3")
+    third = attempt(recalculated, "close/baseline/attempt-3")
     assert third["task_outcome"] == {"success": True, "source": REVIEW}
     assert third["superseded_task_outcomes"] == [
         {"task_outcome": {"success": False, "source": SOURCE}, "correction_provenance": PROVENANCE}
     ]
-    assert attempt(recalculated, "close/attempt-4")["task_outcome"] == {"success": False, "source": SOURCE}
-    assert attempt(recalculated, "close/attempt-4")["superseded_task_outcomes"] == []
-    assert attempt(earlier, "close/attempt-3")["superseded_task_outcomes"] == []
+    assert attempt(recalculated, "close/baseline/attempt-4")["task_outcome"] == {"success": False, "source": SOURCE}
+    assert attempt(recalculated, "close/baseline/attempt-4")["superseded_task_outcomes"] == []
+    assert attempt(earlier, "close/baseline/attempt-3")["superseded_task_outcomes"] == []
 
 
 def test_the_new_scorecard_marks_the_earlier_result_as_superseded_and_says_what_superseded_it():
     earlier = sweep({"close": HALF})
 
     recalculated = recalculate(
-        earlier_scorecard=earlier, outcome_corrections=[corrected("close/attempt-3", success=True)]
+        earlier_scorecard=earlier, outcome_corrections=[corrected("close/baseline/attempt-3", success=True)]
     )
 
     assert recalculated["superseded_results"] == [
@@ -214,7 +215,7 @@ def test_the_new_scorecard_marks_the_earlier_result_as_superseded_and_says_what_
             "status": "superseded",
             "outcome_corrections": [
                 {
-                    "attempt_id": "close/attempt-3",
+                    "attempt_id": "close/baseline/attempt-3",
                     "task_id": "close",
                     "task_outcome": {"success": True, "source": REVIEW},
                     "provenance": PROVENANCE,
@@ -294,7 +295,7 @@ def sweep_with_every_kind_of_evidence():
         action_types=ACTION_TYPES,
     )
     scorecard = run_sweep(
-        tasks=[task],
+        experiments=fake_baseline_experiments([task]),
         agent_target=target,
         metrics=[*METRICS_FROM_TASK_OUTCOMES, *OTHER_METRICS],
         action_evidence=declared,
@@ -308,7 +309,7 @@ def test_a_correction_changes_nothing_but_the_task_outcome_it_names_and_the_metr
 
     recalculated = recalculate(
         earlier_scorecard=earlier,
-        outcome_corrections=[corrected("close/attempt-3", success=True)],
+        outcome_corrections=[corrected("close/baseline/attempt-3", success=True)],
         action_evidence=declared,
     )
 
@@ -321,14 +322,14 @@ def test_a_correction_changes_nothing_but_the_task_outcome_it_names_and_the_metr
         assert metric(earlier, metric_id)["state"] == "available"
         assert metric(recalculated, metric_id) == metric(earlier, metric_id)
     for before, after in zip(earlier["attempts"], recalculated["attempts"], strict=True):
-        if before["attempt_id"] == "close/attempt-3":
+        if before["attempt_id"] == "close/baseline/attempt-3":
             before = {
                 **before,
                 "task_outcome": after["task_outcome"],
                 "superseded_task_outcomes": after["superseded_task_outcomes"],
             }
         assert after == before
-    third = attempt(recalculated, "close/attempt-3")
+    third = attempt(recalculated, "close/baseline/attempt-3")
     assert third["confidence"]["rating"] == "75"
     assert [event["tool_name"] for event in third["action_evidence"]["events"]] == ["get_item"]
     assert [measurement["resource_type"] for measurement in third["resource_measurements"]] == [
@@ -337,20 +338,20 @@ def test_a_correction_changes_nothing_but_the_task_outcome_it_names_and_the_metr
     ]
     assert [assessment["violated"] for assessment in third["violation_assessments"]] == [False]
     assert third["operational_constraints"] == [LEAVE_UNRELATED.to_dict()]
-    (violation,) = attempt(recalculated, "close/attempt-2")["violation_assessments"]
+    (violation,) = attempt(recalculated, "close/baseline/attempt-2")["violation_assessments"]
     assert violation["severity"] == {"label": "high", "level": "high"}
 
 
 def test_the_corrected_outcome_is_the_one_supplied_whatever_the_confidence_rating_of_the_attempt():
     # Earlier: ratings of 100 on a success and 0 on a failure, squared errors 0 and 0, score 1.
     # Both outcomes are corrected against the ratings: (1 - 0)^2 = 1 and (0 - 1)^2 = 1, mean 1, score 0.
-    ratings = {"close/attempt-1": "100", "close/attempt-2": "0"}
+    ratings = {"close/baseline/attempt-1": "100", "close/baseline/attempt-2": "0"}
     earlier = sweep({"close": ["success", "failure"]}, metrics=["brier_based_score"], ratings=ratings)
     assert metric(earlier, "brier_based_score")["value"] == 1
 
     recalculated = recalculate(
         earlier_scorecard=earlier,
-        outcome_corrections=[corrected("close/attempt-1", success=False), corrected("close/attempt-2", success=True)],
+        outcome_corrections=[corrected("close/baseline/attempt-1", success=False), corrected("close/baseline/attempt-2", success=True)],
     )
 
     assert metric(recalculated, "brier_based_score")["value"] == 0
@@ -373,15 +374,15 @@ def test_a_task_outcome_that_was_not_known_during_the_sweep_can_be_supplied_late
         {"close": HALF},
         metrics=["outcome_consistency", "brier_based_score"],
         ratings=RATINGS,
-        not_known_yet=["close/attempt-3", "close/attempt-4"],
+        not_known_yet=["close/baseline/attempt-3", "close/baseline/attempt-4"],
     )
-    assert attempt(earlier, "close/attempt-3")["execution_status"] == "completed"
-    assert attempt(earlier, "close/attempt-3")["task_outcome"] is None
+    assert attempt(earlier, "close/baseline/attempt-3")["execution_status"] == "completed"
+    assert attempt(earlier, "close/baseline/attempt-3")["task_outcome"] is None
     assert metric(earlier, "outcome_consistency")["value"] == 1
     assert metric(earlier, "outcome_consistency")["counts"]["attempts"] == {
         "total": 4,
         "valid": 2,
-        "missing": [{"reason": "no task outcome recorded", "count": 2, "ids": ["close/attempt-3", "close/attempt-4"]}],
+        "missing": [{"reason": "no task outcome recorded", "count": 2, "ids": ["close/baseline/attempt-3", "close/baseline/attempt-4"]}],
         "excluded": [],
     }
     assert metric(earlier, "brier_based_score")["counts"]["confidence_outcome_pairs"]["valid"] == 2
@@ -389,8 +390,8 @@ def test_a_task_outcome_that_was_not_known_during_the_sweep_can_be_supplied_late
     recalculated = recalculate(
         earlier_scorecard=earlier,
         outcome_corrections=[
-            corrected("close/attempt-3", success=False, source="label by the support team"),
-            corrected("close/attempt-4", success=False, source="label by the support team"),
+            corrected("close/baseline/attempt-3", success=False, source="label by the support team"),
+            corrected("close/baseline/attempt-4", success=False, source="label by the support team"),
         ],
     )
 
@@ -404,7 +405,7 @@ def test_a_task_outcome_that_was_not_known_during_the_sweep_can_be_supplied_late
     brier = metric(recalculated, "brier_based_score")
     assert brier["value"] == 0.8125
     assert brier["counts"]["confidence_outcome_pairs"] == {"total": 4, "valid": 4, "missing": [], "excluded": []}
-    third = attempt(recalculated, "close/attempt-3")
+    third = attempt(recalculated, "close/baseline/attempt-3")
     assert third["task_outcome"] == {"success": False, "source": "label by the support team"}
     assert third["superseded_task_outcomes"] == [{"task_outcome": None, "correction_provenance": PROVENANCE}]
     (superseded,) = recalculated["superseded_results"]
@@ -416,18 +417,18 @@ def test_a_recalculated_scorecard_can_be_corrected_again_and_keeps_every_earlier
     second_provenance = "A. de Vries on 2026-12-01: the first review read the wrong item"
     earlier = sweep({"close": HALF})
     first = supplied(
-        recalculate(earlier_scorecard=earlier, outcome_corrections=[corrected("close/attempt-3", success=True)])
+        recalculate(earlier_scorecard=earlier, outcome_corrections=[corrected("close/baseline/attempt-3", success=True)])
     )
 
     second = recalculate(
         earlier_scorecard=first,
         outcome_corrections=[
-            corrected("close/attempt-3", success=False, source="second review", provenance=second_provenance)
+            corrected("close/baseline/attempt-3", success=False, source="second review", provenance=second_provenance)
         ],
     )
 
     assert metric(second)["value"] == 0
-    third = attempt(second, "close/attempt-3")
+    third = attempt(second, "close/baseline/attempt-3")
     assert third["task_outcome"] == {"success": False, "source": "second review"}
     assert third["superseded_task_outcomes"] == [
         {"task_outcome": {"success": False, "source": SOURCE}, "correction_provenance": PROVENANCE},
@@ -441,7 +442,7 @@ def test_a_recalculated_scorecard_can_be_corrected_again_and_keeps_every_earlier
     assert metric(latest)["value"] == 0.25
     assert latest["outcome_corrections"] == [
         {
-            "attempt_id": "close/attempt-3",
+            "attempt_id": "close/baseline/attempt-3",
             "task_id": "close",
             "task_outcome": {"success": False, "source": "second review"},
             "provenance": second_provenance,
@@ -453,12 +454,12 @@ def test_a_recalculated_scorecard_can_be_corrected_again_and_keeps_every_earlier
 def test_a_correction_for_an_attempt_that_is_not_in_the_supplied_evidence_fails_the_recalculation():
     earlier = sweep({"close": HALF})
 
-    with pytest.raises(RecalculationFailed, match="recalculation failed: .*no Attempt 'close/attempt-9'"):
+    with pytest.raises(RecalculationFailed, match="recalculation failed: .*no Attempt 'close/baseline/attempt-9'"):
         recalculate(
             earlier_scorecard=earlier,
             outcome_corrections=[
-                corrected("close/attempt-3", success=True),
-                corrected("close/attempt-9", success=True),
+                corrected("close/baseline/attempt-3", success=True),
+                corrected("close/baseline/attempt-9", success=True),
             ],
         )
 
@@ -466,12 +467,12 @@ def test_a_correction_for_an_attempt_that_is_not_in_the_supplied_evidence_fails_
 def test_two_corrections_for_the_same_attempt_are_ambiguous_and_fail_the_recalculation():
     earlier = sweep({"close": HALF})
 
-    with pytest.raises(RecalculationFailed, match="more than one task outcome is supplied for 'close/attempt-3'"):
+    with pytest.raises(RecalculationFailed, match="more than one task outcome is supplied for 'close/baseline/attempt-3'"):
         recalculate(
             earlier_scorecard=earlier,
             outcome_corrections=[
-                corrected("close/attempt-3", success=True),
-                corrected("close/attempt-3", success=False),
+                corrected("close/baseline/attempt-3", success=True),
+                corrected("close/baseline/attempt-3", success=False),
             ],
         )
 
@@ -479,32 +480,32 @@ def test_two_corrections_for_the_same_attempt_are_ambiguous_and_fail_the_recalcu
 def test_a_correction_that_matches_more_than_one_attempt_in_the_supplied_evidence_fails_the_recalculation():
     # No metric is scored, so that it is not an Evaluator that refuses the evidence.
     earlier = sweep({"close": HALF}, metrics=[])
-    earlier["attempts"].append(dict(attempt(earlier, "close/attempt-3")))
+    earlier["attempts"].append(dict(attempt(earlier, "close/baseline/attempt-3")))
 
-    with pytest.raises(RecalculationFailed, match="more than one Attempt has the identity 'close/attempt-3'"):
-        recalculate(earlier_scorecard=earlier, outcome_corrections=[corrected("close/attempt-3", success=True)])
+    with pytest.raises(RecalculationFailed, match="more than one Attempt has the identity 'close/baseline/attempt-3'"):
+        recalculate(earlier_scorecard=earlier, outcome_corrections=[corrected("close/baseline/attempt-3", success=True)])
 
 
 def test_a_task_outcome_for_an_attempt_whose_execution_did_not_complete_fails_the_recalculation():
     # An execution failure is not a task failure, and no later label makes it a scored Attempt.
     earlier = sweep({"close": ["success", "error", "success"]})
 
-    with pytest.raises(RecalculationFailed, match="'close/attempt-2' did not complete"):
-        recalculate(earlier_scorecard=earlier, outcome_corrections=[corrected("close/attempt-2", success=False)])
+    with pytest.raises(RecalculationFailed, match="'close/baseline/attempt-2' did not complete"):
+        recalculate(earlier_scorecard=earlier, outcome_corrections=[corrected("close/baseline/attempt-2", success=False)])
 
 
 @pytest.mark.parametrize(
     ("correction", "problem"),
     [
-        (lambda: corrected("close/attempt-3", success=True, provenance=""), "provenance"),
-        (lambda: corrected("close/attempt-3", success=True, provenance=None), "provenance"),
+        (lambda: corrected("close/baseline/attempt-3", success=True, provenance=""), "provenance"),
+        (lambda: corrected("close/baseline/attempt-3", success=True, provenance=None), "provenance"),
         (lambda: corrected("", success=True), "attempt_id"),
         (
-            lambda: OutcomeCorrection(attempt_id="close/attempt-3", task_outcome=True, provenance=PROVENANCE),
+            lambda: OutcomeCorrection(attempt_id="close/baseline/attempt-3", task_outcome=True, provenance=PROVENANCE),
             "TaskOutcome with its source",
         ),
-        (lambda: corrected("close/attempt-3", success=True, source=""), "source"),
-        (lambda: corrected("close/attempt-3", success=0.5), "binary"),
+        (lambda: corrected("close/baseline/attempt-3", success=True, source=""), "source"),
+        (lambda: corrected("close/baseline/attempt-3", success=0.5), "binary"),
     ],
 )
 def test_a_correction_without_its_provenance_or_without_a_sourced_binary_outcome_is_rejected(correction, problem):
@@ -514,7 +515,7 @@ def test_a_correction_without_its_provenance_or_without_a_sourced_binary_outcome
 
 @pytest.mark.parametrize(
     "corrections",
-    [[], [{"attempt_id": "close/attempt-3", "task_outcome": {"success": True, "source": REVIEW}}], None],
+    [[], [{"attempt_id": "close/baseline/attempt-3", "task_outcome": {"success": True, "source": REVIEW}}], None],
 )
 def test_a_recalculation_without_a_correction_it_can_read_fails(corrections):
     earlier = sweep({"close": HALF})
@@ -539,11 +540,11 @@ def without(key):
 
 def with_attempt(**evidence):
     """The record of the third Attempt in the supplied evidence, with some of it changed."""
-    return changed(lambda scorecard: attempt(scorecard, "close/attempt-3").update(evidence))
+    return changed(lambda scorecard: attempt(scorecard, "close/baseline/attempt-3").update(evidence))
 
 
 def without_attempt_evidence(key):
-    return changed(lambda scorecard: attempt(scorecard, "close/attempt-3").pop(key))
+    return changed(lambda scorecard: attempt(scorecard, "close/baseline/attempt-3").pop(key))
 
 
 def instead(supplied_instead):
@@ -566,31 +567,31 @@ def condition_of_kind(kind):
         (without("metrics"), "no metric results"),
         (without("schema_version"), "schema version None"),
         (changed(lambda scorecard: scorecard.update(schema_version=2)), "schema version 2"),
-        (changed(lambda scorecard: scorecard["attempts"].append("close/attempt-5")), "the Attempt at position 5"),
-        (with_attempt(task_outcome={"success": 0.5, "source": SOURCE}), "'close/attempt-3'.*binary"),
-        (with_attempt(task_outcome={"success": True}), "'close/attempt-3'.*source"),
-        (with_attempt(task_outcome=True), "'close/attempt-3'.*task outcome"),
-        (with_attempt(execution_status="exploded"), "'close/attempt-3'.*not an execution status"),
-        (with_attempt(task_id=""), "'close/attempt-3'.*task_id"),
-        (without_attempt_evidence("task_outcome"), "'close/attempt-3'.*task_outcome"),
-        (without_attempt_evidence("confidence"), "'close/attempt-3'.*confidence"),
+        (changed(lambda scorecard: scorecard["attempts"].append("close/baseline/attempt-5")), "the Attempt at position 5"),
+        (with_attempt(task_outcome={"success": 0.5, "source": SOURCE}), "'close/baseline/attempt-3'.*binary"),
+        (with_attempt(task_outcome={"success": True}), "'close/baseline/attempt-3'.*source"),
+        (with_attempt(task_outcome=True), "'close/baseline/attempt-3'.*task outcome"),
+        (with_attempt(execution_status="exploded"), "'close/baseline/attempt-3'.*not an execution status"),
+        (with_attempt(task_id=""), "'close/baseline/attempt-3'.*task_id"),
+        (without_attempt_evidence("task_outcome"), "'close/baseline/attempt-3'.*task_outcome"),
+        (without_attempt_evidence("confidence"), "'close/baseline/attempt-3'.*confidence"),
         (without_attempt_evidence("attempt_id"), "the Attempt at position 3.*attempt_id"),
-        (with_attempt(reviewed_by="J. Jansen"), "'close/attempt-3'.*reviewed_by"),
+        (with_attempt(reviewed_by="J. Jansen"), "'close/baseline/attempt-3'.*reviewed_by"),
         (
             with_attempt(
                 confidence={"rating": "150", "normalized": 1.5, "original_response": "150", "unavailable_reason": None}
             ),
-            "'close/attempt-3'.*outside 0 to 100",
+            "'close/baseline/attempt-3'.*outside 0 to 100",
         ),
         (
             with_attempt(
                 confidence={"rating": "75", "normalized": 0.5, "original_response": "75", "unavailable_reason": None}
             ),
-            "'close/attempt-3'.*confidence",
+            "'close/baseline/attempt-3'.*confidence",
         ),
         (
             with_attempt(superseded_task_outcomes=[{"task_outcome": None}]),
-            "'close/attempt-3'.*correction_provenance",
+            "'close/baseline/attempt-3'.*correction_provenance",
         ),
         (
             changed(lambda scorecard: scorecard.update(superseded_results={"status": "superseded"})),
@@ -599,23 +600,23 @@ def condition_of_kind(kind):
         (without("experiments"), "its experiments are not a list"),
         (
             with_attempt(lifecycle=[{"point": "teardown", "succeeded": True, "error": None}]),
-            "'close/attempt-3'.*'teardown' is not a point at which a customer control is invoked",
+            "'close/baseline/attempt-3'.*'teardown' is not a point at which a customer control is invoked",
         ),
         (
             with_attempt(lifecycle=[{"point": "clean_up", "succeeded": True, "error": "the service was down"}]),
-            "'close/attempt-3'.*lifecycle",
+            "'close/baseline/attempt-3'.*lifecycle",
         ),
-        (with_attempt(intended_condition={"role": "baseline"}), "'close/attempt-3'.*condition_id"),
-        (with_attempt(intended_condition=condition_of_kind("outage")), "'close/attempt-3'.*'outage' is not a kind"),
-        (with_attempt(intended_condition=condition_of_kind(None)), "'close/attempt-3'.*intended_condition"),
+        (with_attempt(intended_condition={"role": "baseline"}), "'close/baseline/attempt-3'.*condition_id"),
+        (with_attempt(intended_condition=condition_of_kind("outage")), "'close/baseline/attempt-3'.*'outage' is not a kind"),
+        (with_attempt(intended_condition=condition_of_kind(None)), "'close/baseline/attempt-3'.*intended_condition"),
         (
             with_attempt(intended_condition={**condition_of_kind("fault"), "role": "baseline"}),
-            "'close/attempt-3'.*the baseline is not a variation, so it has no kind",
+            "'close/baseline/attempt-3'.*the baseline is not a variation, so it has no kind",
         ),
-        (with_attempt(starting_state="pristine"), "'close/attempt-3'.*not a starting-state policy"),
+        (with_attempt(starting_state="pristine"), "'close/baseline/attempt-3'.*not a starting-state policy"),
         (
             with_attempt(observed_condition={"met": "yes", "source": "log", "observations": {}}),
-            "'close/attempt-3'.*met",
+            "'close/baseline/attempt-3'.*met",
         ),
         (
             changed(lambda scorecard: scorecard.update(cost_estimate={"total": 12})),
@@ -638,7 +639,7 @@ def test_supplied_evidence_that_does_not_validate_fails_the_recalculation(supply
     with pytest.raises(
         RecalculationFailed, match=f"recalculation failed: the supplied evidence does not validate: .*{problem}"
     ):
-        recalculate(earlier_scorecard=earlier, outcome_corrections=[corrected("close/attempt-3", success=True)])
+        recalculate(earlier_scorecard=earlier, outcome_corrections=[corrected("close/baseline/attempt-3", success=True)])
 
 
 def with_metric(of, /, **result):
@@ -667,8 +668,8 @@ def with_metric(of, /, **result):
             "the result of 'calibration' is recorded without the Attempts its Evaluator used",
         ),
         (
-            with_metric("outcome_consistency", attempts_used={"attempt_ids": ["close/attempt-9"], "shared_with": []}),
-            "the Evaluator of 'outcome_consistency' used Attempt 'close/attempt-9', which is not in the attempt-level",
+            with_metric("outcome_consistency", attempts_used={"attempt_ids": ["close/baseline/attempt-9"], "shared_with": []}),
+            "the Evaluator of 'outcome_consistency' used Attempt 'close/baseline/attempt-9', which is not in the attempt-level",
         ),
     ],
 )
@@ -678,7 +679,7 @@ def test_earlier_metric_results_that_cannot_be_read_fail_the_recalculation(suppl
     with pytest.raises(
         RecalculationFailed, match=f"recalculation failed: the supplied evidence does not validate: .*{problem}"
     ):
-        recalculate(earlier_scorecard=earlier, outcome_corrections=[corrected("close/attempt-3", success=True)])
+        recalculate(earlier_scorecard=earlier, outcome_corrections=[corrected("close/baseline/attempt-3", success=True)])
 
 
 @pytest.mark.parametrize(
@@ -708,7 +709,7 @@ def test_supplied_evidence_that_does_not_reproduce_the_earlier_result_fails_the_
         match="recalculation failed: the supplied evidence does not validate: it does not reproduce the earlier "
         f"result of 'outcome_consistency', which differs in: {differs_in}$",
     ):
-        recalculate(earlier_scorecard=earlier, outcome_corrections=[corrected("close/attempt-4", success=True)])
+        recalculate(earlier_scorecard=earlier, outcome_corrections=[corrected("close/baseline/attempt-4", success=True)])
 
 
 def test_a_metric_that_needs_a_declaration_is_not_recalculated_without_it():
@@ -718,7 +719,7 @@ def test_a_metric_that_needs_a_declaration_is_not_recalculated_without_it():
         RecalculationFailed,
         match="recalculation failed: 'distributional_trajectory_consistency' needs action evidence to be declared",
     ):
-        recalculate(earlier_scorecard=earlier, outcome_corrections=[corrected("close/attempt-3", success=True)])
+        recalculate(earlier_scorecard=earlier, outcome_corrections=[corrected("close/baseline/attempt-3", success=True)])
 
 
 def test_a_declaration_other_than_the_one_the_earlier_result_was_calculated_with_fails_the_recalculation():
@@ -735,7 +736,7 @@ def test_a_declaration_other_than_the_one_the_earlier_result_was_calculated_with
     ):
         recalculate(
             earlier_scorecard=earlier,
-            outcome_corrections=[corrected("close/attempt-3", success=True)],
+            outcome_corrections=[corrected("close/baseline/attempt-3", success=True)],
             action_evidence=another,
         )
 
@@ -753,7 +754,7 @@ def test_an_earlier_value_that_differs_only_in_its_last_binary_digit_is_the_same
     metric(earlier, "resource_consistency")["value"] = elsewhere
 
     recalculated = recalculate(
-        earlier_scorecard=earlier, outcome_corrections=[corrected("close/attempt-3", success=True)]
+        earlier_scorecard=earlier, outcome_corrections=[corrected("close/baseline/attempt-3", success=True)]
     )
 
     assert metric(recalculated, "outcome_consistency")["value"] == 0.25
@@ -771,7 +772,7 @@ def test_the_acceptance_criterion_is_assessed_again_on_the_recalculated_result()
 
     recalculated = recalculate(
         earlier_scorecard=earlier,
-        outcome_corrections=[corrected("close/attempt-3", success=True)],
+        outcome_corrections=[corrected("close/baseline/attempt-3", success=True)],
         acceptance_criteria=[AT_LEAST_A_FIFTH],
     )
 
@@ -793,7 +794,7 @@ def test_a_recalculation_that_would_drop_an_acceptance_criterion_of_the_earlier_
         RecalculationFailed,
         match="the earlier scorecard assessed an acceptance criterion for 'outcome_consistency', and none is declared",
     ):
-        recalculate(earlier_scorecard=earlier, outcome_corrections=[corrected("close/attempt-3", success=True)])
+        recalculate(earlier_scorecard=earlier, outcome_corrections=[corrected("close/baseline/attempt-3", success=True)])
 
 
 def test_the_supplied_scorecard_is_left_as_it_was_and_the_new_scorecard_is_json_of_its_own():
@@ -801,7 +802,7 @@ def test_the_supplied_scorecard_is_left_as_it_was_and_the_new_scorecard_is_json_
     as_supplied = deepcopy(earlier)
 
     recalculated = recalculate(
-        earlier_scorecard=earlier, outcome_corrections=[corrected("close/attempt-3", success=True)]
+        earlier_scorecard=earlier, outcome_corrections=[corrected("close/baseline/attempt-3", success=True)]
     )
 
     assert earlier == as_supplied
@@ -1125,7 +1126,7 @@ def sweep_with_an_evaluator_configured_on_its_own():
         evidence_source="service-side effects", record=calls_that_change_an_item, action_types=ACTION_TYPES
     )
     scorecard = run_sweep(
-        tasks=[Task(task_id="close", prompt="Close the item.", success_rule=item_is_done, attempts=2)],
+        experiments=fake_baseline_experiments([Task(task_id="close", prompt="Close the item.", success_rule=item_is_done, attempts=2)]),
         agent_target=target,
         metrics=[
             "outcome_consistency",
@@ -1146,23 +1147,23 @@ def test_each_metric_is_recalculated_from_the_attempts_and_with_the_declaration_
 
     recalculated = recalculate(
         earlier_scorecard=earlier,
-        outcome_corrections=[corrected("close/attempt-2", success=True)],
+        outcome_corrections=[corrected("close/baseline/attempt-2", success=True)],
         metrics=[ConfiguredEvaluator(metric_id=DISTRIBUTIONAL, action_evidence=effects)],
         action_evidence=native,
     )
 
     assert metric(recalculated, "outcome_consistency")["value"] == 1
     assert metric(recalculated, "outcome_consistency")["attempts_used"]["attempt_ids"] == [
-        "close/attempt-1",
-        "close/attempt-2",
+        "close/baseline/attempt-1",
+        "close/baseline/attempt-2",
     ]
     assert metric(recalculated, SEQUENTIAL) == metric(earlier, SEQUENTIAL)
     assert metric(recalculated, DISTRIBUTIONAL) == metric(earlier, DISTRIBUTIONAL)
     assert metric(recalculated, DISTRIBUTIONAL)["attempts_used"] == {
-        "attempt_ids": ["close/set-2/attempt-1", "close/set-2/attempt-2"],
+        "attempt_ids": ["close/set-2/baseline/attempt-1", "close/set-2/baseline/attempt-2"],
         "shared_with": [],
     }
-    assert attempt(recalculated, "close/set-2/attempt-2") == attempt(earlier, "close/set-2/attempt-2")
+    assert attempt(recalculated, "close/set-2/baseline/attempt-2") == attempt(earlier, "close/set-2/baseline/attempt-2")
 
 
 def test_an_evaluator_that_is_not_given_the_declaration_it_was_configured_with_fails_the_recalculation():
@@ -1171,7 +1172,7 @@ def test_an_evaluator_that_is_not_given_the_declaration_it_was_configured_with_f
     with pytest.raises(RecalculationFailed, match=f"it does not reproduce the earlier result of '{DISTRIBUTIONAL}'"):
         recalculate(
             earlier_scorecard=earlier,
-            outcome_corrections=[corrected("close/attempt-2", success=True)],
+            outcome_corrections=[corrected("close/baseline/attempt-2", success=True)],
             action_evidence=native,
         )
 
@@ -1190,7 +1191,7 @@ def test_a_recalculation_scores_the_metrics_of_the_earlier_scorecard_and_no_othe
     with pytest.raises(RecalculationFailed, match=problem):
         recalculate(
             earlier_scorecard=earlier,
-            outcome_corrections=[corrected("close/attempt-3", success=True)],
+            outcome_corrections=[corrected("close/baseline/attempt-3", success=True)],
             metrics=metrics,
         )
 
@@ -1201,7 +1202,7 @@ def test_a_recalculation_scores_the_metrics_of_the_earlier_scorecard_and_no_othe
 def test_the_report_of_a_recalculated_scorecard_shows_the_superseded_result_apart_from_the_current_one():
     earlier = sweep({"close": HALF})
     recalculated = recalculate(
-        earlier_scorecard=earlier, outcome_corrections=[corrected("close/attempt-3", success=True)]
+        earlier_scorecard=earlier, outcome_corrections=[corrected("close/baseline/attempt-3", success=True)]
     )
 
     report = assert_faithful_rendering(render_report(recalculated), recalculated)
@@ -1245,7 +1246,7 @@ def test_a_recalculated_scorecard_is_delivered_to_a_location_of_its_own_and_the_
     earlier = json.loads(kept["scorecard.json"])
 
     recalculated = recalculate(
-        earlier_scorecard=earlier, outcome_corrections=[corrected("close/attempt-3", success=True)]
+        earlier_scorecard=earlier, outcome_corrections=[corrected("close/baseline/attempt-3", success=True)]
     )
     ArtifactLocation(tmp_path / "recalculated").deliver(recalculated)
 
@@ -1253,7 +1254,7 @@ def test_a_recalculated_scorecard_is_delivered_to_a_location_of_its_own_and_the_
     assert json.loads((delivered / "scorecard.json").read_text(encoding="utf-8")) == recalculated
     evidence = json.loads((delivered / "evidence.json").read_text(encoding="utf-8"))
     assert evidence["attempts"] == recalculated["attempts"]
-    assert attempt(evidence, "close/attempt-3")["superseded_task_outcomes"] == [
+    assert attempt(evidence, "close/baseline/attempt-3")["superseded_task_outcomes"] == [
         {"task_outcome": {"success": False, "source": SOURCE}, "correction_provenance": PROVENANCE}
     ]
     assert_faithful_rendering((delivered / "report.html").read_text(encoding="utf-8"), recalculated)
@@ -1263,18 +1264,18 @@ def test_a_recalculated_scorecard_is_delivered_to_a_location_of_its_own_and_the_
 def test_two_attempts_with_one_identity_in_the_supplied_evidence_fail_the_recalculation_whatever_is_corrected():
     # Evidence is matched by Attempt identity everywhere, so the evidence itself is refused.
     earlier = sweep({"close": HALF}, metrics=[])
-    earlier["attempts"].append(dict(attempt(earlier, "close/attempt-3")))
+    earlier["attempts"].append(dict(attempt(earlier, "close/baseline/attempt-3")))
 
     with pytest.raises(
         RecalculationFailed,
-        match="the supplied evidence does not validate: more than one Attempt has the identity 'close/attempt-3'",
+        match="the supplied evidence does not validate: more than one Attempt has the identity 'close/baseline/attempt-3'",
     ):
-        recalculate(earlier_scorecard=earlier, outcome_corrections=[corrected("close/attempt-1", success=False)])
+        recalculate(earlier_scorecard=earlier, outcome_corrections=[corrected("close/baseline/attempt-1", success=False)])
 
 
 def test_corrections_given_as_they_are_produced_are_all_recorded():
     earlier = sweep({"close": HALF})
-    produced = (corrected(attempt_id, success=True) for attempt_id in ("close/attempt-3", "close/attempt-4"))
+    produced = (corrected(attempt_id, success=True) for attempt_id in ("close/baseline/attempt-3", "close/baseline/attempt-4"))
 
     recalculated = recalculate(earlier_scorecard=earlier, outcome_corrections=produced)
 
@@ -1282,8 +1283,8 @@ def test_corrections_given_as_they_are_produced_are_all_recorded():
     assert metric(recalculated)["value"] == 1
     (superseded,) = recalculated["superseded_results"]
     assert [correction["attempt_id"] for correction in superseded["outcome_corrections"]] == [
-        "close/attempt-3",
-        "close/attempt-4",
+        "close/baseline/attempt-3",
+        "close/baseline/attempt-4",
     ]
 
 
@@ -1322,7 +1323,7 @@ def limited_sweep(
     return supplied(
         run_sweep(
             **{
-                "tasks": tasks,
+                "experiments": fake_baseline_experiments(tasks),
                 "agent_target": target,
                 "metrics": ["outcome_consistency"],
                 "cancellation": lambda: target.cancel_requested,
@@ -1351,7 +1352,7 @@ def test_a_partial_scorecard_with_retries_and_a_timed_out_attempt_is_recalculate
     assert earlier["status"] == "partial"
 
     recalculated = recalculate(
-        earlier_scorecard=earlier, outcome_corrections=[corrected("close/attempt-2/retry-1", success=True)]
+        earlier_scorecard=earlier, outcome_corrections=[corrected("close/baseline/attempt-2/retry-1", success=True)]
     )
 
     assert metric(recalculated)["value"] == 0
@@ -1360,18 +1361,18 @@ def test_a_partial_scorecard_with_retries_and_a_timed_out_attempt_is_recalculate
         assert recalculated[part] == earlier[part]
     assert recalculated["status"] == "partial"
     assert [entry["attempts_not_completed"][0]["attempt_id"] for entry in recalculated["missing"]] == [
-        "close/attempt-3/retry-1"
+        "close/baseline/attempt-3/retry-1"
     ]
     # A retried Attempt and its retry stay two Attempts, and only the one that was named is corrected.
     assert executions(recalculated) == executions(earlier)
     assert executions(recalculated)[1:5] == [
-        ("close/attempt-2", "retried", None),
-        ("close/attempt-2/retry-1", "completed", "close/attempt-2"),
-        ("close/attempt-3", "retried", None),
-        ("close/attempt-3/retry-1", "timed_out", "close/attempt-3"),
+        ("close/baseline/attempt-2", "retried", None),
+        ("close/baseline/attempt-2/retry-1", "completed", "close/baseline/attempt-2"),
+        ("close/baseline/attempt-3", "retried", None),
+        ("close/baseline/attempt-3/retry-1", "timed_out", "close/baseline/attempt-3"),
     ]
-    assert attempt(recalculated, "close/attempt-2") == attempt(earlier, "close/attempt-2")
-    assert attempt(recalculated, "close/attempt-2/retry-1")["task_outcome"] == {"success": True, "source": REVIEW}
+    assert attempt(recalculated, "close/baseline/attempt-2") == attempt(earlier, "close/baseline/attempt-2")
+    assert attempt(recalculated, "close/baseline/attempt-2/retry-1")["task_outcome"] == {"success": True, "source": REVIEW}
     assert json.loads(to_json(recalculated)) == recalculated
 
 
@@ -1423,18 +1424,45 @@ def test_a_recalculation_keeps_the_record_of_each_set_of_attempts():
 
     recalculated = recalculate(
         earlier_scorecard=earlier,
-        outcome_corrections=[corrected("close/attempt-2", success=True)],
+        outcome_corrections=[corrected("close/baseline/attempt-2", success=True)],
         metrics=[ConfiguredEvaluator(metric_id=DISTRIBUTIONAL, action_evidence=effects)],
         action_evidence=native,
     )
 
-    assert [(entry["task_id"], entry["attempt_set"]) for entry in recalculated["tasks_without_experiment"]] == [
+    assert [(entry["task_id"], entry["attempt_set"]) for entry in recalculated["experiments"]] == [
         ("close", 1),
         ("close", 2),
     ]
     for part in EXECUTION_RECORD:
         assert recalculated[part] == earlier[part]
     assert recalculated["status"] == "complete"
+
+
+def test_a_historical_scorecard_with_tasks_without_experiments_can_still_be_recalculated():
+    earlier = limited_sweep({"close": ["success", "failure"]})
+    (record,) = earlier["experiments"]
+    earlier["experiments"] = []
+    earlier["tasks_without_experiment"] = [
+        {key: record[key] for key in ("task_id", "attempt_set", "limits", "execution")}
+    ]
+    for entry in earlier["attempts"]:
+        entry.update(
+            experiment_id=None,
+            starting_state=None,
+            intended_condition=None,
+            observed_condition=None,
+            lifecycle=[],
+        )
+
+    recalculated = recalculate(
+        earlier_scorecard=earlier, outcome_corrections=[corrected("close/baseline/attempt-2", success=True)]
+    )
+
+    assert metric(earlier)["value"] == 0
+    assert metric(recalculated)["value"] == 1
+    assert recalculated["experiments"] == []
+    assert recalculated["tasks_without_experiment"] == earlier["tasks_without_experiment"]
+    assert [entry["experiment_id"] for entry in recalculated["attempts"]] == [None, None]
 
 
 def test_an_outcome_supplied_later_does_not_turn_an_execution_failure_into_a_value():
@@ -1444,16 +1472,17 @@ def test_an_outcome_supplied_later_does_not_turn_an_execution_failure_into_a_val
     # Scoring them would give p = 1/2 and the value 0. The metric still has no result.
     earlier = limited_sweep(
         {"close": ["success", cancelling("failure"), "success"]},
-        not_known_yet={"close/attempt-1", "close/attempt-2"},
+        not_known_yet={"close/baseline/attempt-1", "close/baseline/attempt-2"},
     )
     assert metric(earlier)["state"] is None
-    assert metric(earlier)["execution_failure"]["task_ids"] == ["close"]
+    assert metric(earlier)["execution_failure"]["experiment_ids"] == ["close"]
+    assert metric(earlier)["execution_failure"]["task_ids"] == []
 
     recalculated = recalculate(
         earlier_scorecard=earlier,
         outcome_corrections=[
-            corrected("close/attempt-1", success=True),
-            corrected("close/attempt-2", success=False),
+            corrected("close/baseline/attempt-1", success=True),
+            corrected("close/baseline/attempt-2", success=False),
         ],
     )
 
@@ -1464,7 +1493,7 @@ def test_an_outcome_supplied_later_does_not_turn_an_execution_failure_into_a_val
     assert [entry["kind"] for entry in recalculated["missing"]] == ["attempt_evidence", "metric_result"]
     # The outcomes are on the Attempts all the same, each with the record that it had none before.
     assert [entry["task_outcome"]["success"] for entry in recalculated["attempts"]] == [True, False]
-    assert attempt(recalculated, "close/attempt-1")["superseded_task_outcomes"] == [
+    assert attempt(recalculated, "close/baseline/attempt-1")["superseded_task_outcomes"] == [
         {"task_outcome": None, "correction_provenance": PROVENANCE}
     ]
     assert recalculated["superseded_results"][0]["metrics"][0] == metric(earlier)
@@ -1479,22 +1508,23 @@ def test_a_correction_that_leaves_nothing_to_calculate_from_attempts_that_were_c
     earlier = limited_sweep(
         {"close": [taking(40, "success"), taking(40, "failure"), taking(40, "success")]},
         limits=ExecutionLimits(total_timeout_seconds=60),
-        ratings={"close/attempt-1": "90", "close/attempt-2": "10"},
+        ratings={"close/baseline/attempt-1": "90", "close/baseline/attempt-2": "10"},
         metrics=["strict_confidence_discrimination"],
     )
     discrimination = "strict_confidence_discrimination"
     assert metric(earlier, discrimination)["value"] == 1
-    assert metric(earlier, discrimination)["cut_short"] == {"experiment_ids": [], "task_ids": ["close"]}
+    assert metric(earlier, discrimination)["cut_short"] == {"experiment_ids": ["close"], "task_ids": []}
     assert [entry["kind"] for entry in earlier["missing"]] == ["attempt_evidence"]
 
     recalculated = recalculate(
-        earlier_scorecard=earlier, outcome_corrections=[corrected("close/attempt-2", success=True)]
+        earlier_scorecard=earlier, outcome_corrections=[corrected("close/baseline/attempt-2", success=True)]
     )
 
     current = metric(recalculated, discrimination)
     assert current["state"] is None
     assert current["value"] is None
-    assert current["execution_failure"]["task_ids"] == ["close"]
+    assert current["execution_failure"]["experiment_ids"] == ["close"]
+    assert current["execution_failure"]["task_ids"] == []
     assert current["cut_short"] == metric(earlier, discrimination)["cut_short"]
     assert [entry["kind"] for entry in recalculated["missing"]] == ["attempt_evidence", "metric_result"]
     assert recalculated["missing"][0] == earlier["missing"][0]
@@ -1507,13 +1537,13 @@ def test_a_correction_that_leaves_nothing_to_calculate_from_attempts_that_were_c
     ("script", "options", "named"),
     [
         # It reached its time limit, and the agent target stopped there.
-        (["success", taking(45, "failure"), "success"], {}, "close/attempt-2"),
+        (["success", taking(45, "failure"), "success"], {}, "close/baseline/attempt-2"),
         # It answered after its time limit: a late answer is not scored, in a sweep or afterwards.
-        (["success", taking(45, "failure"), "success"], {"honours_time_limits": False}, "close/attempt-2"),
+        (["success", taking(45, "failure"), "success"], {"honours_time_limits": False}, "close/baseline/attempt-2"),
         # Its invocation was aborted when the sweep was cancelled.
-        (["success", "success", cancelling("aborted")], {}, "close/attempt-3"),
+        (["success", "success", cancelling("aborted")], {}, "close/baseline/attempt-3"),
         # It failed to execute and was made again. Its retry is another Attempt.
-        (["success", "error", "success", "failure"], {"attempts": {"close": 3}}, "close/attempt-2"),
+        (["success", "error", "success", "failure"], {"attempts": {"close": 3}}, "close/baseline/attempt-2"),
     ],
 )
 def test_no_task_outcome_can_be_supplied_for_an_attempt_that_timed_out_was_late_was_cancelled_or_was_retried(
@@ -1529,10 +1559,10 @@ def test_no_task_outcome_can_be_supplied_for_an_attempt_that_timed_out_was_late_
 
 
 def in_execution_of(task_id, **record):
-    """The execution record of a Task given without an experiment, with some of it changed."""
+    """The execution record of a Task's experiment, with some of it changed."""
 
     def change(scorecard):
-        (entry,) = [entry for entry in scorecard["tasks_without_experiment"] if entry["task_id"] == task_id]
+        (entry,) = [entry for entry in scorecard["experiments"] if entry["task_id"] == task_id]
         entry["execution"].update(record)
 
     return changed(change)
@@ -1559,16 +1589,16 @@ def in_execution_of(task_id, **record):
         (in_execution_of("close", attempts_completed=4), "'close'.*is not what this version records"),
         (in_execution_of("close", attempts_abandoned=1), "'close'.*is not what this version records"),
         (
-            changed(lambda scorecard: scorecard["tasks_without_experiment"][0]["limits"].update(max_retries=-1)),
+            changed(lambda scorecard: scorecard["experiments"][0]["limits"].update(max_retries=-1)),
             "'close'.*max_retries",
         ),
         (
-            changed(lambda scorecard: attempt(scorecard, "close/attempt-2/retry-1").pop("retry_of")),
-            "'close/attempt-2/retry-1'.*retry_of",
+            changed(lambda scorecard: attempt(scorecard, "close/baseline/attempt-2/retry-1").pop("retry_of")),
+            "'close/baseline/attempt-2/retry-1'.*retry_of",
         ),
         (
-            changed(lambda scorecard: attempt(scorecard, "close/attempt-2/retry-1").update(retry_of="close/attempt-9")),
-            "'close/attempt-2/retry-1' retries 'close/attempt-9', which is not in the attempt-level evidence",
+            changed(lambda scorecard: attempt(scorecard, "close/baseline/attempt-2/retry-1").update(retry_of="close/baseline/attempt-9")),
+            "'close/baseline/attempt-2/retry-1' retries 'close/baseline/attempt-9', which is not in the attempt-level evidence",
         ),
         (
             changed(lambda scorecard: metric(scorecard).update(cut_short={"experiment_ids": ["x"], "task_ids": []})),
@@ -1589,4 +1619,4 @@ def test_an_execution_record_that_does_not_validate_or_is_not_reproduced_fails_t
     with pytest.raises(
         RecalculationFailed, match=f"recalculation failed: the supplied evidence does not validate: .*{problem}"
     ):
-        recalculate(earlier_scorecard=earlier, outcome_corrections=[corrected("close/attempt-1", success=False)])
+        recalculate(earlier_scorecard=earlier, outcome_corrections=[corrected("close/baseline/attempt-1", success=False)])

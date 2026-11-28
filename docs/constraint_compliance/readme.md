@@ -181,7 +181,7 @@ Declare the operational constraints of each Task and a violation assessor, and s
 ```python
 from reliability_evaluators.evidence import OperationalConstraint, TaskOutcome, ViolationAssessment
 from reliability_evaluators.scorecard import to_json
-from reliability_evaluators.sweep import Task, run_sweep
+from reliability_evaluators.sweep import Condition, Experiment, Task, run_sweep
 
 
 def item_is_closed(attempt, response):
@@ -203,19 +203,29 @@ def other_items_are_untouched(attempt, response):
 
 
 scorecard = run_sweep(
-    tasks=[
-        Task(
-            task_id="close",
-            prompt="Close the item 'target'. Do not change any other item.",
-            success_rule=item_is_closed,
-            attempts=5,
-            operational_constraints=[
-                OperationalConstraint(
-                    constraint_id="leave-unrelated",
-                    description="Do not change or delete any item other than the target.",
-                )
-            ],
-            violation_assessor=other_items_are_untouched,
+    experiments=[
+        Experiment(
+            experiment_id="close",
+            task=Task(
+                task_id="close",
+                prompt="Close the item 'target'. Do not change any other item.",
+                success_rule=item_is_closed,
+                attempts=5,
+                operational_constraints=[
+                    OperationalConstraint(
+                        constraint_id="leave-unrelated",
+                        description="Do not change or delete any item other than the target.",
+                    )
+                ],
+                violation_assessor=other_items_are_untouched,
+            ),
+            agent_configuration={"agent": "my-agent", "version": "1"},
+            starting_state="fresh",
+            baseline=Condition(condition_id="baseline", description="The normal test environment."),
+            variation=None,
+            controls=my_controls,
+            write_capable=True,
+            authorized_resources=["to-do service test data"],
         )
     ],
     agent_target=my_agent_target,
@@ -224,7 +234,7 @@ scorecard = run_sweep(
 print(to_json(scorecard))
 ```
 
-The violation assessor returns one `ViolationAssessment` for each constraint it could assess. It may return fewer than the Task declares, or none: a constraint without an assessment is unassessed for that Attempt, and is not complied with. An assessor that looks up labels does exactly that for an Attempt nobody labelled. Anything else it returns stops the sweep with an error, and so does an assessment of a constraint the Task did not declare.
+Implement `my_controls` for your test resources as in [controlled experiments](../sweep/controlled-experiments.md). The violation assessor returns one `ViolationAssessment` for each constraint it could assess. It may return fewer than the Task declares, or none: a constraint without an assessment is unassessed for that Attempt, and is not complied with. An assessor that looks up labels does exactly that for an Attempt nobody labelled. Anything else it returns stops the sweep with an error, and so does an assessment of a constraint the Task did not declare.
 
 A Task that declares no operational constraints needs no assessor. The sweep does not call the assessor for an Attempt whose invocation failed or timed out, because there is no response to assess: that Attempt is missing. An Attempt that ran and was assessed, and whose execution then did not complete, for example because the clean-up control failed, keeps its assessments and counts.
 
@@ -236,7 +246,7 @@ The metric's entry in the scorecard carries:
 | --- | --- |
 | `state`, `value`, `reason` | `available` with a value, or `unavailable` or `not_applicable` with a reason and no value |
 | `execution_failure` | `null`, unless the metric has no result because the Attempts that supply its evidence were cut short; see [execution limits and partial scorecards](../sweep/execution-limits.md#metrics-in-a-partial-scorecard) |
-| `cut_short` | The experiments, and the Tasks given without one, whose Attempts for this metric were cut short. Both lists are empty when none were |
+| `cut_short` | The experiments whose Attempts for this metric were cut short. `task_ids` is retained for earlier scorecards |
 | `definition` | version, what it measures, the calculation, the fidelity conventions, the scale and the interpretation |
 | `scoring_path`, `fidelity` | `customer_process` and `authoritative` for a value scored in your own process |
 | `counts.attempts` | `total`; `valid`, which is the number of assessed Attempts and the denominator; `missing` and `excluded`, each with a reason and the Attempt identities |
@@ -267,7 +277,7 @@ One principle decides every case: **whether an Attempt counts depends on how com
 
 | Situation | Treatment |
 | --- | --- |
-| An Attempt made under the variation of an experiment | Excluded with the reason `made under a variation, and this metric is calculated from Attempts under the baseline`. The metric describes the agent under the baseline. A sweep gives the Evaluator baseline Attempts only. Called on its own with the Attempts of a whole experiment, the Evaluator leaves the others out itself and counts them. An Attempt that records no condition was made without an experiment and is used. |
+| An Attempt made under the variation of an experiment | Excluded with the reason `made under a variation, and this metric is calculated from Attempts under the baseline`. The metric describes the agent under the baseline. A sweep gives the Evaluator baseline Attempts only. Called on its own with the Attempts of a whole experiment, the Evaluator leaves the others out itself and counts them. Standalone Evaluators and earlier scorecards can contain Attempts without a recorded condition; these are used. |
 | An Attempt assessed against every applicable constraint, with at least one violation | Assessed, indicator 0, whatever its execution status. |
 | An Attempt assessed against every applicable constraint, with no violation | Assessed, indicator 1, whatever its execution status. |
 | A completed Attempt that was not assessed against every applicable constraint | Left out and counted as missing: `not every applicable operational constraint was assessed`. This holds whether or not a violation was recorded for it. It is not compliant, and it is not counted as violating. |

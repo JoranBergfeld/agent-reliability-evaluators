@@ -21,10 +21,10 @@ When Foundry gives no result for a metric, the sweep still returns a scorecard. 
 
 ```python
 from reliability_evaluators.managed_scoring import FoundryManagedScoring, FoundryProject
-from reliability_evaluators.sweep import ConfiguredEvaluator, Task, run_sweep
+from reliability_evaluators.sweep import ConfiguredEvaluator, run_sweep
 
 scorecard = run_sweep(
-    tasks=[Task(task_id="close", prompt="Close the item.", success_rule=item_is_closed, attempts=5)],
+    experiments=experiments,
     agent_target=my_agent_target,
     metrics=[ConfiguredEvaluator(metric_id="outcome_consistency", scoring_path="foundry_managed")],
     managed_scoring=FoundryManagedScoring(
@@ -33,7 +33,7 @@ scorecard = run_sweep(
 )
 ```
 
-The scoring path is declared per metric. A metric selected by its identity alone is scored in your own process, so one sweep can use both paths. The sweep scores each metric on the path you declared and on no other.
+`experiments` are your [declared experiments](../sweep/controlled-experiments.md), including the agent configuration, policy and actual controls. The scoring path is declared per metric. A metric selected by its identity alone is scored in your own process, so one sweep can use both paths. The sweep scores each metric on the path you declared and on no other.
 
 Any of the twelve metrics can be selected this way, alone or together. Everything else is declared as on the other path: the trajectory metrics take your [action evidence](../sequential_trajectory_consistency/readme.md#what-you-declare), a robustness metric needs an experiment with a variation of its kind, and the predictability metrics ask the agent for its confidence. Only where the calculation runs changes.
 
@@ -133,7 +133,7 @@ For each Attempt an evaluator is given its identity, its Task, its execution sta
 | Calibration, strict confidence discrimination and Brier-based score | The task outcome and the confidence evidence: the rating as the agent wrote it with the whole response it was read from, or the reason there is no rating. The intended condition |
 | Constraint compliance and conditional harm severity | The operational constraints with their descriptions, and the violation assessments with their evidence, source and severity rating. The intended condition |
 
-The intended condition is the condition an Attempt was made under in its experiment, with its role, description and parameters. Every evaluator is sent it: the nine metrics of nominal behaviour leave out the Attempts made under a variation, and the three robustness metrics compare them with the baseline. An Attempt made without an experiment has none.
+The intended condition is the condition an Attempt was made under in its experiment, with its role, description and parameters. Every evaluator is sent it: the nine metrics of nominal behaviour leave out the Attempts made under a variation, and the three robustness metrics compare them with the baseline. Earlier evidence made without an experiment has none.
 
 So the text of a prompt variant, the agent's answer to the confidence request, the evidence text of a violation assessment and the description and parameters of a condition are stored in your project when you score those metrics there.
 
@@ -215,7 +215,7 @@ Foundry-managed scoring has limits that scoring in your own process does not hav
 
 **The size of a run is what limits a sweep.** Every row of a run carries the evidence, and the run for the parts of a result has one row for every six bytes of it. Both grow with the sweep, so the request grows with its square.
 
-The table gives, for each Evaluator, the largest sweep whose runs fit in 2,000,000 bytes. It was measured on this machine with the derived evaluators, on synthetic sweeps of Tasks with five Attempts each and identities like `task-7/attempt-3`. Your sweep will differ: identities and texts that have less in common deflate less, and a result names every Task and Attempt it leaves out. The sweeps of the nine metrics that are not robustness metrics were of Tasks given without an experiment. An Attempt made in an experiment is also sent with its intended condition, so fewer of them fit. How many fewer was not measured.
+The table gives, for each Evaluator, the largest sweep whose runs fit in 2,000,000 bytes. It was measured on this machine with the derived evaluators, on synthetic sweeps of Tasks with five Attempts each and identities like `task-7/attempt-3`. Your sweep will differ: identities and texts that have less in common deflate less, and a result names every Task and Attempt it leaves out. This historical measurement used Tasks without experiments for the nine metrics that are not robustness metrics. New sweeps require experiments and send their intended conditions too, so fewer Attempts may fit; the new limit has not been measured.
 
 | Evaluator | Largest sweep that fits | Rows of its second run | Rows at 100 Attempts |
 | --- | --- | --- | --- |
@@ -273,7 +273,7 @@ The metric's entry has the same fields as a customer-process entry, and these di
   "reason": "no Task has at least two Attempts with a task outcome",
   "counts": {
     "tasks": {"total": 2, "valid": 0, "missing": [], "excluded": [{"reason": "fewer than two Attempts with a task outcome", "count": 2, "ids": ["close", "archive"]}]},
-    "attempts": {"total": 2, "valid": 0, "missing": [], "excluded": [{"reason": "its Task has fewer than two Attempts with a task outcome", "count": 2, "ids": ["close/attempt-1", "archive/attempt-1"]}]}
+    "attempts": {"total": 2, "valid": 0, "missing": [], "excluded": [{"reason": "its Task has fewer than two Attempts with a task outcome", "count": 2, "ids": ["close/baseline/attempt-1", "archive/baseline/attempt-1"]}]}
   },
   "execution_failure": null,
   "scoring_path": "foundry_managed",

@@ -4,7 +4,7 @@ An Evaluator sweep makes the Attempts you plan, under the limits you set. When s
 
 Nothing here lowers a metric. Only a completed Attempt has a task outcome. An Attempt that timed out, was cancelled or was retried is not a failed Task.
 
-Everything on this page holds for a Task in a [controlled experiment](controlled-experiments.md) and for a Task given without one. Where the two differ, it says so.
+Every Task is run in a [controlled experiment](controlled-experiments.md).
 
 ## Attempt counts and limits belong to the Task
 
@@ -23,7 +23,7 @@ close = Task(
 archive = Task(task_id="archive", prompt="Archive the item.", success_rule=item_is_archived, attempts=3)
 ```
 
-Pass a Task to `run_sweep(tasks=[...])`, or put it in an `Experiment`. In an experiment, `attempts` is the number of Attempts under each condition, and the Task's limits are the limits of the experiment.
+Put each Task in an `Experiment` and pass the experiments to `run_sweep(experiments=[...])`. `attempts` is the number of Attempts under each condition, and the Task's limits are the limits of the experiment.
 
 | Limit | Meaning | Default |
 | --- | --- | --- |
@@ -64,7 +64,7 @@ In an experiment, an Attempt that timed out is still verified and cleaned up by 
 A planned Attempt whose invocation `failed` or `timed_out` is made again, up to `max_retries` times.
 
 - The retried Attempt stays in the evidence. Its status becomes `retried` and its `execution_error` keeps why it did not complete.
-- The retry is another Attempt with its own identity, such as `close/attempt-2/retry-1`. Its `retry_of` names the Attempt it retries.
+- The retry is another Attempt with its own identity, such as `close/baseline/attempt-2/retry-1`. Its `retry_of` names the Attempt it retries.
 - A completed Attempt is never retried, whatever its task outcome. Retrying task failures would hide the instability the metrics measure.
 - An Attempt that a customer control failed for (`setup_failed`, `condition_not_met`, `cleanup_failed`) is not retried. A retry is for an invocation of the agent. A failing control says that the test setup is broken, and making the Attempt again would not show otherwise.
 - A cancelled Attempt is not retried. No retry starts after the sweep was cancelled or the total time limit was reached.
@@ -72,9 +72,7 @@ A planned Attempt whose invocation `failed` or `timed_out` is made again, up to 
 
 ### What a retry does about state
 
-A Task given without an experiment has no controls. Nothing prepares or restores its state, for an Attempt or for a retry.
-
-In an experiment, a retry is an Attempt like any other, and gets the controls that the starting-state policy gives every Attempt:
+A retry is an Attempt like any other, and gets the controls that the starting-state policy gives every Attempt:
 
 | Starting-state policy | The retried Attempt | Its retry |
 | --- | --- | --- |
@@ -97,7 +95,7 @@ import threading
 stop = threading.Event()  # set it from a signal handler, a watchdog or another thread
 
 scorecard = run_sweep(
-    tasks=tasks, agent_target=my_agent_target, metrics=["outcome_consistency"], cancellation=stop.is_set
+    experiments=experiments, agent_target=my_agent_target, metrics=["outcome_consistency"], cancellation=stop.is_set
 )
 ```
 
@@ -110,17 +108,17 @@ The sweep asks before every Attempt and every retry. Once the answer is `True`, 
 
 ## Concurrency
 
-Attempts run one after another, Task by Task and then experiment by experiment, unless you declare otherwise:
+Attempts run one after another, experiment by experiment, unless you declare otherwise:
 
 ```python
 scorecard = run_sweep(
-    tasks=tasks, agent_target=my_agent_target, metrics=["outcome_consistency"], max_concurrent_attempts=4
+    experiments=experiments, agent_target=my_agent_target, metrics=["outcome_consistency"], max_concurrent_attempts=4
 )
 ```
 
-Then up to four Attempts of the Tasks given without an experiment are in flight at once, across those Tasks. The agent target and everything you supply for them (task-success rules, violation assessors, the action recorder and `cancellation`) are called from several threads and must be safe for that. Attempts that overlap can disturb shared state and timing measurements. Controlling that is yours.
+Then up to four independent experiments can be in flight at once. Writable experiments run together only when their `authorized_resources` are disjoint; name all resources they read or may change, using the same name for a shared resource. Read-only experiments can run alongside each other but cannot declare resource dependencies, so they never overlap writable experiments. The agent target, controls, task-success rules, violation assessors, action recorder and clock can be called from several threads and must be safe for that. Attempts that overlap can disturb shared state and timing measurements. Controlling that is yours.
 
-The Attempts of an experiment always run one after another, and after the Tasks given without one. Each of them depends on the state your controls prepare, and a later experiment depends on whether an earlier one restored a shared test resource.
+The Attempts of an experiment always run one after another. A later writable experiment waits for an earlier experiment that shares a resource; it is not started if that resource was not restored. A read-only experiment is not started after any resource was left unrestored, because it cannot name its dependencies. Other writable experiments continue.
 
 The scorecard records what was declared:
 
@@ -141,7 +139,7 @@ Without the declaration it records `"mode": "sequential"` and `"max_concurrent_a
 "missing": [
   {
     "kind": "attempt_evidence",
-    "experiment_id": null,
+    "experiment_id": "close",
     "task_id": "close",
     "attempt_set": 1,
     "status": "timed_out",
@@ -154,7 +152,7 @@ Without the declaration it records `"mode": "sequential"` and `"max_concurrent_a
 
 | `kind` | What is missing | Fields |
 | --- | --- | --- |
-| `attempt_evidence` | Planned Attempts that were not made or did not complete. | `experiment_id` (`null` for a Task given without an experiment), `task_id` and `attempt_set`; `status` and `reason` of the execution, as below; `attempts_not_made`; `attempts_not_completed`, with each Attempt's execution status and error |
+| `attempt_evidence` | Planned Attempts that were not made or did not complete. | `experiment_id`, `task_id` and `attempt_set`; `status` and `reason` of the execution, as below; `attempts_not_made`; `attempts_not_completed`, with each Attempt's execution status and error |
 | `metric_result` | The result of a selected metric. | `metric_id`, `reason`, `experiment_ids`, `task_ids`. Both lists are empty when it is [Foundry-managed scoring that gave no result](../managed_scoring/readme.md#when-managed-scoring-gives-no-result), and not the Attempts that were cut short |
 
 A metric that is an unavailable measurement is a result. It does not make a scorecard partial.
@@ -163,12 +161,12 @@ A third status, `reporting_failed`, never appears in a scorecard. It is the stat
 
 ### One record of what was planned and what was made
 
-An experiment is what you declared as an `Experiment`. A Task given without one is not an experiment, and the scorecard does not list it as one. Both get the same record of their execution limits and of what became of their planned Attempts:
+An experiment is what you declared as an `Experiment`. The scorecard records its execution limits and what became of its planned Attempts:
 
 - `experiments` has one entry per declared experiment: [what it declared](controlled-experiments.md#what-the-scorecard-records), then `attempt_set`, `limits` and `execution`.
-- `tasks_without_experiment` has one entry per Task given without an experiment: `task_id`, then `attempt_set`, `limits` and `execution`.
+- `tasks_without_experiment` is empty for new sweeps. Earlier scorecards can still have entries there.
 
-`attempt_set` is 1 unless [Evaluators need separate Attempts](several-evaluators.md#when-separate-attempts-are-made). Then every Task and experiment is attempted again in a later set, with an entry of its own: a Task under the same `task_id` and the next `attempt_set`, an experiment under the identity `<experiment>/set-2`. Each set is made under the Task's limits anew.
+`attempt_set` is 1 unless [Evaluators need separate Attempts](several-evaluators.md#when-separate-attempts-are-made). Then every experiment is attempted again in a later set, with an entry under the identity `<experiment>/set-2` and the next `attempt_set`. Each set is made under the Task's limits anew.
 
 ```json
 "limits": {"attempt_timeout_seconds": 60, "total_timeout_seconds": 600, "max_retries": 1},
@@ -215,18 +213,18 @@ A metric has no result when its Evaluator cannot calculate a value and the Attem
   "reason": null,
   "execution_failure": {
     "reason": "the Attempts that supply this metric's evidence were cut short, and what was collected does not permit a calculation: no Task has at least two Attempts with a task outcome",
-    "experiment_ids": [],
-    "task_ids": ["close"]
+    "experiment_ids": ["close"],
+    "task_ids": []
   }
 }
 ```
 
-`experiment_ids` and `task_ids` name the experiments, and the Tasks given without one, whose Attempts were cut short.
+`experiment_ids` names the experiments whose Attempts were cut short. `task_ids` is retained for earlier scorecards with Tasks outside experiments.
 
 Every selected metric also says where its Attempts were cut short, whether or not it has a result:
 
 ```json
-"cut_short": {"experiment_ids": [], "task_ids": ["close"]}
+"cut_short": {"experiment_ids": ["close"], "task_ids": []}
 ```
 
 Both lists are empty when none were. A metric that is `available` with a `cut_short` that is not empty has a value that rests on less than was planned.
@@ -244,21 +242,21 @@ A [recalculation](late-and-corrected-outcomes.md#a-partial-scorecard-an-executio
 
 An acceptance criterion on a metric without a result is not assessed, and the execution failure is its reason. A metric that kept its result in a partial scorecard is assessed like any other. To require a minimum amount of evidence, put `minimum_counts` in the criterion: see [acceptance criteria](../acceptance_criteria/readme.md).
 
-Which Attempts supply a metric's evidence depends on the metric. Most are calculated from the Attempts of Tasks given without an experiment and from Attempts under the baseline of an experiment: for them, Attempts under a variation that were not made make the scorecard partial and do not, on their own, leave the metric without a result. A metric that compares a kind of variation with the baseline, such as fault robustness, is calculated from both conditions of the experiments that declare that kind, taken together. When Evaluators need separate Attempts, each is judged by the Attempts of its own set.
+Which Attempts supply a metric's evidence depends on the metric. Most are calculated from Attempts under the baseline of an experiment: for them, Attempts under a variation that were not made make the scorecard partial and do not, on their own, leave the metric without a result. A metric that compares a kind of variation with the baseline, such as fault robustness, is calculated from both conditions of the experiments that declare that kind, taken together. When Evaluators need separate Attempts, each is judged by the Attempts of its own set.
 
 ## Choices made here
 
 The specification leaves these open. They are stated so that you can disagree with them knowingly.
 
-- **Limits belong to the Task.** The Task already carries its number of Attempts, in an experiment and without one. An experiment has no second set of limits.
-- **A Task given without an experiment is not an experiment.** It has no condition and no starting-state policy to record. It is listed under `tasks_without_experiment` with the same `limits` and `execution` as an experiment has.
+- **Limits belong to the Task.** The Task already carries its number of Attempts. An experiment has no second set of limits.
+- **Every Task belongs to an experiment.** The experiment records its condition and starting-state policy.
 - **The status of an execution says how the making of the Attempts ended, not whether each Attempt completed.** It is `completed` when every planned Attempt was made, as controlled experiments already had it. Attempts that did not complete are counted next to it and make the scorecard partial.
 - **The sweep does not interrupt invocations.** It hands the limit to the agent target and measures. Abandoning a running invocation would let it overlap the next Attempt in a sweep that is declared sequential.
 - **A late answer is not scored.** An Attempt that ends after its limit is `timed_out` even when the agent answered.
 - **`retried` replaces the status, not the Attempt.** A retried Attempt reads `retried`. Whether it had failed or timed out is in its `execution_error`.
 - **A retry follows the starting-state policy and adds nothing to it.** Fresh state is prepared again. Continuing state continues.
 - **Only an invocation of the agent is retried.** A failed customer control is not.
-- **Concurrency is for Tasks given without an experiment.** The Attempts of an experiment are never in flight together.
+- **Concurrency is across independent experiments.** The Attempts of an experiment are never in flight together.
 - **A scorecard is partial as soon as one planned Attempt has no completed execution.** This holds even when every metric could still be calculated. It is also partial when Foundry-managed scoring gave no result for a selected metric, even when every Attempt completed.
 - **A metric without a result has no metric state.** Execution status is separate from metric state, so an execution failure is shown as `state: null` with `execution_failure`, not as a fifth state.
 - **A metric loses its result only when its Attempts were cut short.** Where every planned Attempt was made and some completed, the Evaluator's own result stands, an unavailable measurement included: only the Evaluator knows whether the Attempts it left out could have changed it. Conditional harm severity with no observed violation stays unavailable when one Attempt of several failed to execute.

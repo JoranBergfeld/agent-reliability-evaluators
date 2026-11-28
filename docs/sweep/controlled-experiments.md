@@ -1,6 +1,6 @@
 # Controlled experiments in the Evaluator sweep
 
-An experiment tells the Evaluator sweep what state each Attempt starts from, which condition it runs under, and how to check that the condition really occurred. You declare the experiment before any Attempt is made and supply four controls. The sweep invokes the controls around every Attempt.
+An experiment tells the Evaluator sweep what state each Attempt starts from, which condition it runs under, and how to check that the condition really occurred. Every sweep Attempt requires an experiment: declare it before any Attempt is made and supply four controls. The sweep invokes the controls around every Attempt.
 
 The sweep never looks inside your agent's tools. It also never assumes that the agent, Foundry or your service resets a conversation or any external state. If state has to be reset, your prepare control resets it.
 
@@ -67,7 +67,7 @@ scorecard = run_sweep(experiments=[experiment], agent_target=my_agent_target, me
 | `variation` | The one intended difference from the baseline, or `None` for an experiment with a baseline only. There is no default. A variation declares its `kind`, which says what it changes. |
 | `controls` | An object with the four controls below. |
 | `write_capable` | Whether the agent or the controls can change anything outside the conversation. There is no default. |
-| `authorized_resources` | The names of the test resources the experiment may change. Required when `write_capable` is true, and not allowed otherwise. |
+| `authorized_resources` | The names of all test resources a write-capable experiment reads or may change, including shared dependencies. Required when `write_capable` is true, and not allowed otherwise. |
 | `prompt_variants` | The equivalent wordings of the Task's prompt that you supply or approve. Required when the variation is of the kind `"prompt"`, and not allowed otherwise. |
 
 An experiment that leaves one of these out, or declares one that cannot be used, is rejected when it is created. A sweep is rejected before any Attempt is made when two experiments have the same identity, when a Task is declared more than once, or when two Attempts would get the same identity.
@@ -157,7 +157,7 @@ A control that cannot do its work raises an exception. `verify_condition` return
 
 A label is not an observation. If `verify_condition` returns anything other than an `ObservedCondition`, the condition counts as not verified.
 
-The sweep passes `authorized_resources` to the controls and records them. It cannot stop a control or an agent from changing something else.
+The sweep passes `authorized_resources` to the controls and records them. It cannot stop a control or an agent from changing something else. Use consistent names for shared resources; if you cannot name all dependencies, run sequentially.
 
 ## Starting-state policy
 
@@ -172,7 +172,7 @@ A retry is an Attempt like any other and follows the same policy: under `fresh` 
 
 Under `continuing`, each Attempt starts from the state the previous Attempt under the same condition left. The variation does not continue from the baseline: it gets its own prepared state, so that the two differ only by the declared variation. Under a prompt variation each prompt variant gets its own prepared state in the same way: `prepare_state` is invoked before the first Attempt under each variant and `clean_up` after its last.
 
-State continues only when you declare `continuing`. Tasks passed to `run_sweep(tasks=...)` without an experiment have no controls: nothing prepares or restores their state, and their Attempts record `"starting_state": null`, meaning that no policy was declared.
+State continues only when you declare `continuing`. A sweep does not accept a Task outside an experiment or infer a starting-state policy from the agent target.
 
 ## When a control fails
 
@@ -191,7 +191,7 @@ An Attempt keeps the status of the first thing that went wrong. If `clean_up` th
 
 ### What stops, and what continues
 
-- **`clean_up` fails.** The later Attempts of that experiment are not made, because they would start from state that was not restored. Later experiments that share one of its `authorized_resources` are not started. Every other experiment continues.
+- **`clean_up` fails.** The later Attempts of that experiment are not made, because they would start from state that was not restored. Later writable experiments that share one of its `authorized_resources` are not started. Read-only experiments cannot name resource dependencies and are conservatively stopped after any resource was left unrestored. Other writable experiments continue.
 - **`prepare_state` fails under `continuing`.** The later Attempts of that experiment are not made, because they would continue from state that was never prepared. `clean_up` is invoked. Other experiments continue.
 - **`prepare_state` fails under `fresh`.** Only that Attempt has a failed setup. The next Attempt prepares its own state.
 
@@ -278,7 +278,7 @@ When an Evaluator needs Attempts that are made differently from another's, the e
 }
 ```
 
-`attempt_set`, `limits` and `execution` are described in [execution limits and partial scorecards](execution-limits.md#one-record-of-what-was-planned-and-what-was-made). A Task given without an experiment has the same three under `tasks_without_experiment`, and is not listed as an experiment.
+`attempt_set`, `limits` and `execution` are described in [execution limits and partial scorecards](execution-limits.md#one-record-of-what-was-planned-and-what-was-made). New sweeps leave `tasks_without_experiment` empty; it is retained for earlier scorecards.
 
 ## Limits in this version
 

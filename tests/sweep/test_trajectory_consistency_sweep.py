@@ -14,6 +14,7 @@ from reliability_evaluators.evidence import ActionEvent, TaskOutcome
 from reliability_evaluators.scorecard import to_json
 from reliability_evaluators.sweep import ActionEvidenceDeclaration, Task, run_sweep
 from tests.fakes import FakeActingAgentTarget
+from tests.fakes import fake_baseline_experiments
 
 DISTRIBUTIONAL = "distributional_trajectory_consistency"
 SEQUENTIAL = "sequential_trajectory_consistency"
@@ -56,7 +57,7 @@ def sweep(actions, metrics=BOTH, outcomes=None):
     declared = ActionEvidenceDeclaration(
         evidence_source="service-side effects", record=logged_by_the_service, action_types=ACTION_TYPES
     )
-    return run_sweep(tasks=tasks, agent_target=target, metrics=metrics, action_evidence=declared)
+    return run_sweep(experiments=fake_baseline_experiments(tasks), agent_target=target, metrics=metrics, action_evidence=declared)
 
 
 def metric(scorecard, metric_id):
@@ -177,7 +178,7 @@ def test_an_attempt_that_was_not_recorded_is_missing_evidence_in_the_scorecard()
         assert entry["counts"]["attempts"] == {
             "total": 3,
             "valid": 2,
-            "missing": [{"reason": "no action recording", "count": 1, "ids": ["close/attempt-3"]}],
+            "missing": [{"reason": "no action recording", "count": 1, "ids": ["close/baseline/attempt-3"]}],
             "excluded": [],
         }
         assert entry["counts"]["attempt_pairs"]["valid"] == 1
@@ -202,7 +203,7 @@ def test_a_confirmed_empty_attempt_is_scored_sequentially_and_makes_its_task_und
             {"reason": "an Attempt with a confirmed empty action sequence", "count": 1, "ids": ["close"]},
         ],
     }
-    assert distributional["evidence"] == {"attempt_ids": ["archive/attempt-1", "archive/attempt-2"]}
+    assert distributional["evidence"] == {"attempt_ids": ["archive/baseline/attempt-1", "archive/baseline/attempt-2"]}
 
 
 def test_an_invocation_that_fails_is_left_out_of_the_comparison():
@@ -216,7 +217,7 @@ def test_an_invocation_that_fails_is_left_out_of_the_comparison():
         entry = metric(scorecard, metric_id)
         assert entry["value"] == 1
         assert entry["counts"]["attempts"]["excluded"] == [
-            {"reason": "execution status is not completed", "count": 1, "ids": ["close/attempt-2"]},
+            {"reason": "execution status is not completed", "count": 1, "ids": ["close/baseline/attempt-2"]},
         ]
 
 
@@ -244,11 +245,11 @@ def test_an_attempt_that_called_a_tool_with_no_declared_action_type_excludes_its
             {
                 "reason": "its Task has an Attempt that used a tool with no declared action type: purge_items",
                 "count": 3,
-                "ids": ["close/attempt-1", "close/attempt-2", "close/attempt-3"],
+                "ids": ["close/baseline/attempt-1", "close/baseline/attempt-2", "close/baseline/attempt-3"],
             },
         ]
         assert entry["details"]["tool_names_without_action_type"] == ["purge_items"]
-        assert entry["evidence"] == {"attempt_ids": ["archive/attempt-1", "archive/attempt-2"]}
+        assert entry["evidence"] == {"attempt_ids": ["archive/baseline/attempt-1", "archive/baseline/attempt-2"]}
 
 
 def test_no_eligible_task_gives_unavailable_measurements_with_reasons_and_counts():
@@ -298,7 +299,7 @@ def test_a_trajectory_metric_without_declared_action_evidence_is_rejected_before
     )
 
     with pytest.raises(ValueError, match="action evidence to be declared"):
-        run_sweep(tasks=[always], agent_target=target, metrics=[metric_id])
+        run_sweep(experiments=fake_baseline_experiments([always]), agent_target=target, metrics=[metric_id])
 
     assert target.service_log == {}
 

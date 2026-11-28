@@ -229,7 +229,7 @@ The sweep makes `attempts` Attempts under the baseline and as many under the fau
 
 The same Attempts can feed other metrics in the same sweep. Outcome consistency and the other metrics of repeated Attempts are scored on the baseline Attempts only, so selecting `outcome_consistency` and `fault_robustness` together makes each Attempt once: see [several Evaluators in one sweep](../sweep/several-evaluators.md).
 
-The sweep rejects the selection of `fault_robustness` before any Attempt is made when no experiment declares a variation of the kind `fault`. Fault robustness uses only the experiments that do. Tasks given without an experiment, experiments with a baseline only, and experiments whose variation declares no kind are not part of it.
+The sweep rejects the selection of `fault_robustness` before any Attempt is made when no experiment declares a variation of the kind `fault`. Fault robustness uses only the experiments that do. Experiments with a baseline only and experiments whose variation declares no kind are not part of it.
 
 ## Scoring it in your Foundry project
 
@@ -247,7 +247,7 @@ A sweep that is too large for one managed run has no result for the metric, and 
 | --- | --- |
 | `state`, `value`, `reason` | `available` with a value, or `unavailable` with a reason and no value |
 | `execution_failure` | `null`, unless the metric has no result because the Attempts that supply its evidence were cut short; see [execution limits and partial scorecards](../sweep/execution-limits.md#metrics-in-a-partial-scorecard) |
-| `cut_short` | The experiments, and the Tasks given without one, whose Attempts for this metric were cut short. Both lists are empty when none were |
+| `cut_short` | The experiments whose Attempts for this metric were cut short. `task_ids` is retained for earlier scorecards |
 | `definition` | version, what it measures, the calculation, the fidelity conventions, the scale and the interpretation |
 | `scoring_path`, `fidelity` | `customer_process` and `authoritative` for a value scored in your own process |
 | `counts.tasks` | `total`: the Tasks of the experiments that declare a fault. `valid`: the compared Tasks. `excluded`: the Tasks that lack a valid Attempt under the baseline, under the fault, or under both, with their identities |

@@ -7,6 +7,7 @@ scorecard. Expected values are calculated by hand.
 """
 
 import json
+from dataclasses import replace
 
 import pytest
 
@@ -1057,17 +1058,17 @@ def test_a_new_run_for_every_attempt_does_not_reset_what_the_agent_changed(todo_
     assert metric(scorecard, "outcome_consistency")["value"] == pytest.approx(0.36, abs=1e-12)
 
 
-def test_the_target_puts_no_starting_state_policy_in_the_place_of_one_that_was_not_declared(todo_service):
-    # A Task given without an experiment: no control prepares its state, so both Attempts work on
-    # the same state of the service, and the second fails as above. p = 1/2, (2 * 0.5 - 1)^2 = 0.
-    todo_service.prepare_attempt(STATE)
-    task = TodoFixtureSweep(todo_service, state=STATE).experiment(attempts=2).task
+def test_the_target_preserves_the_declared_continuing_state_policy(todo_service):
+    # The control prepares the state once; the second Attempt sees the first's changes.
+    # p = 1/2, (2 * 0.5 - 1)^2 = 0.
+    experiment = TodoFixtureSweep(todo_service, state=STATE).experiment(attempts=2, starting_state="continuing")
 
-    scorecard = run_sweep(tasks=[task], agent_target=cloud_target(todo_service), metrics=["outcome_consistency"])
+    scorecard = run_sweep(experiments=[experiment], agent_target=cloud_target(todo_service), metrics=["outcome_consistency"])
 
     first, second = scorecard["attempts"]
     assert [first["task_outcome"]["success"], second["task_outcome"]["success"]] == [True, False]
-    assert [first["starting_state"], second["starting_state"]] == [None, None]
+    assert [first["starting_state"], second["starting_state"]] == ["continuing", "continuing"]
+    assert scorecard["experiments"][0]["agent_configuration"] == {"agent": "todo-prompt"}
     assert metric(scorecard, "outcome_consistency")["value"] == 0
 
 
@@ -1119,12 +1120,12 @@ def test_the_agent_is_sent_the_prompt_exactly_as_it_is_unless_the_customer_compo
 
 def test_an_input_the_customer_composed_is_what_the_agent_is_sent_and_is_recorded_as_it_was_sent(todo_service):
     # This Task's prompt does not say which state to work on. The customer composes that in front of it.
-    todo_service.prepare_attempt(STATE)
     fixture = TodoFixtureSweep(todo_service, state=STATE)
     task = Task(task_id="todo", prompt=TASK_PROMPT, success_rule=fixture.success_rule, attempts=1)
+    experiment = replace(fixture.experiment(attempts=1), task=task)
     target = cloud_target(todo_service, compose_input=lambda request: f"Use attempt_id {STATE}. {request.prompt}")
 
-    scorecard = run_sweep(tasks=[task], agent_target=target, metrics=["outcome_consistency"])
+    scorecard = run_sweep(experiments=[experiment], agent_target=target, metrics=["outcome_consistency"])
 
     (attempt,) = scorecard["attempts"]
     assert attempt["task_outcome"] == {"success": True, "source": OUTCOME_SOURCE}
