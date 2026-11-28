@@ -1,5 +1,6 @@
 """Stand up, re-attach to and tear down the disposable live fixture. Creates billable Azure resources."""
 
+import contextlib
 import hashlib
 import io
 import json
@@ -47,27 +48,41 @@ ARM_RESOURCE = "https://management.azure.com"
 
 
 class LiveFixtureError(RuntimeError):
-    pass
+    """Something the fixture needs of Azure failed. `status` is the HTTP status of a request that was answered with an error."""
+
+    def __init__(self, message, status=None):
+        super().__init__(message)
+        self.status = status
 
 
 @dataclass
-class LiveFixture:
-    """A provisioned fixture. `hosted_agent` is None when its deployment failed (see `hosted_agent_error`)."""
+class ProvisionedProject:
+    """A Foundry project in a resource group of its own, reached as the signed-in Azure CLI identity."""
 
     resource_group: str
     subscription: str
     location: str
     project_endpoint: str
+
+    def access_token(self):
+        """A bearer token for the project's REST API, for the signed-in Azure CLI identity."""
+        return bearer_token(self.subscription).reveal()
+
+    def project_request(self, method, path, body=None, headers=None, raw=None):
+        """Call the Foundry project's REST API as the signed-in Azure CLI identity."""
+        return request_json(method, self.project_endpoint + path, request_content(body, raw), headers,
+                            bearer=bearer_token(self.subscription))
+
+
+@dataclass
+class LiveFixture(ProvisionedProject):
+    """A provisioned fixture. `hosted_agent` is None when its deployment failed (see `hosted_agent_error`)."""
+
     model_deployment: str
     prompt_agent: str
     hosted_agent: str | None
     hosted_agent_error: str | None
     service: TodoService
-
-    def project_request(self, method, path, body=None, headers=None, raw=None):
-        """Call the Foundry project's REST API as the signed-in Azure CLI identity."""
-        return request_json(method, self.project_endpoint + path, request_content(body, raw), headers,
-                        bearer=bearer_token(self.subscription))
 
     def summary(self):
         """What was provisioned, without keys or subscription identifiers."""
@@ -79,38 +94,54 @@ class LiveFixture:
         }
 
 
+def project_endpoint_of(resource_group):
+    """The endpoint of the fixture's project. Its Foundry account is named after its resource group."""
+    return f"https://{resource_group.removeprefix('rg-')}.services.ai.azure.com/api/projects/{PROJECT}"
+
+
+def new_resource_group(ticket, location, subscription, log):
+    """Create the resource group a fixture goes into, under a name that `teardown` accepts, and return that name."""
+    require_subscription(subscription)
+    group = f"rg-are-{ticket}-{uuid.uuid4().hex[:8]}"
+    if not GROUP_PATTERN.match(group):
+        raise LiveFixtureError(f"Ticket label {ticket!r} must be lowercase letters and digits")
+    if az(subscription, "group", "exists", "--name", group):
+        raise LiveFixtureError(f"Refusing to reuse existing resource group {group}")
+    az(subscription, "group", "create", "--name", group, "--location", location,
+       "--tags", "purpose=are-live-fixture", "cleanup=delete-after-check")
+    log(f"Created resource group {group}")
+    return group
+
+
+@contextlib.contextmanager
+def torn_down_on_failure(group, subscription, log):
+    """Whatever fails inside tears the resource group down again before it is raised."""
+    try:
+        yield
+    except BaseException as error:
+        log(f"Provisioning failed, tearing down {group}: {error}")
+        teardown(group, subscription, log)
+        raise
+
+
 def provision(ticket, location="swedencentral", subscription="Sandbox", log=print):
     """Create a new resource group holding the to-do service, a Foundry project and both agents.
 
     A failure to deploy the hosted agent is recorded on the returned fixture. Any other failure
     tears the resource group down again before raising.
     """
-    require_subscription(subscription)
-    suffix = uuid.uuid4().hex[:8]
-    group = f"rg-are-{ticket}-{suffix}"
-    if not GROUP_PATTERN.match(group):
-        raise LiveFixtureError(f"Ticket label {ticket!r} must be lowercase letters and digits")
-    if az(subscription, "group", "exists", "--name", group):
-        raise LiveFixtureError(f"Refusing to reuse existing resource group {group}")
-    account = group.removeprefix("rg-")
-    az(subscription, "group", "create", "--name", group, "--location", location,
-        "--tags", "purpose=are-live-fixture", "cleanup=delete-after-check")
-    log(f"Created resource group {group}")
-    try:
-        project = create_project(subscription, group, account, location, log)
-        service = _deploy_service(subscription, group, suffix, location, log)
+    group = new_resource_group(ticket, location, subscription, log)
+    with torn_down_on_failure(group, subscription, log):
+        project = create_project(subscription, group, group.removeprefix("rg-"), location, log)
+        service = _deploy_service(subscription, group, group.rsplit("-", 1)[1], location, log)
         fixture = LiveFixture(
             resource_group=group, subscription=subscription, location=location,
-            project_endpoint=f"https://{account}.services.ai.azure.com/api/projects/{PROJECT}",
+            project_endpoint=project_endpoint_of(group),
             model_deployment=MODEL_DEPLOYMENT, prompt_agent=PROMPT_AGENT, hosted_agent=None,
             hosted_agent_error=None, service=service,
         )
         log("Registering the prompt agent")
         _register_prompt_agent(fixture, Secret(project["id"]))
-    except BaseException as error:
-        log(f"Provisioning failed, tearing down {group}: {error}")
-        teardown(group, subscription, log)
-        raise
     try:
         log("Deploying the hosted agent")
         _deploy_hosted_agent(fixture)
@@ -125,7 +156,6 @@ def connect(resource_group, subscription="Sandbox"):
     """Re-attach to a fixture provisioned earlier, reading its keys back from Azure."""
     require_group_name(resource_group)
     require_subscription(subscription)
-    account = resource_group.removeprefix("rg-")
     app = az(subscription, "containerapp", "show", "--resource-group", resource_group,
               "--name", "todo-" + resource_group.rsplit("-", 1)[1])
     settings = HiddenDict(
@@ -134,7 +164,7 @@ def connect(resource_group, subscription="Sandbox"):
     fixture = LiveFixture(
         resource_group=resource_group, subscription=subscription,
         location=app["location"].replace(" ", "").lower(),
-        project_endpoint=f"https://{account}.services.ai.azure.com/api/projects/{PROJECT}",
+        project_endpoint=project_endpoint_of(resource_group),
         model_deployment=MODEL_DEPLOYMENT, prompt_agent=PROMPT_AGENT, hosted_agent=None,
         hosted_agent_error=None,
         service=TodoService("https://" + app["properties"]["configuration"]["ingress"]["fqdn"],
@@ -175,7 +205,7 @@ def _has_agent(fixture, name):
         fixture.project_request("GET", f"/agents/{name}?api-version=v1")
         return True
     except LiveFixtureError as error:
-        if not str(error).startswith("HTTP 404"):
+        if error.status != 404:
             raise
         return False
 
@@ -313,7 +343,7 @@ def _register_prompt_agent(fixture, project_id):
         try:
             return fixture.project_request("POST", f"/agents/{PROMPT_AGENT}/versions?api-version=v1", definition)
         except LiveFixtureError as error:
-            if attempt == 19 or not str(error).startswith(("HTTP 401", "HTTP 403")):
+            if attempt == 19 or error.status not in (401, 403):
                 raise
             time.sleep(15)
 
@@ -451,6 +481,10 @@ def request_json(method, url, content=None, headers=None, bearer=None):
 
     `content` is what `request_content` gives. `bearer` is a Secret, and `url` may be one. Nothing a caller
     passes here is shown by a failure, and a failure is chained to nothing.
+
+    The rule for repeating a request is the offering's own, in `FoundryProject.request`. It is
+    written out here because the fixture does not depend on the offering's source, and sends
+    what a `FoundryProject` does not: requests to Azure Resource Manager, and content that is not JSON.
     """
     for attempt in range(6):
         try:
@@ -463,5 +497,5 @@ def request_json(method, url, content=None, headers=None, bearer=None):
             time.sleep(min(2 ** attempt * 5, 60))
             continue
         if status >= 400:
-            raise LiveFixtureError(f"HTTP {status}: {answered.decode(errors='replace')}")
+            raise LiveFixtureError(f"HTTP {status}: {answered.decode(errors='replace')}", status)
         return hidden(json.loads(answered)) if answered else None
