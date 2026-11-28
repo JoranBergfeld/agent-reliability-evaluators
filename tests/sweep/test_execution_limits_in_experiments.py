@@ -392,7 +392,7 @@ def test_independent_experiments_can_run_concurrently_when_declared():
 
 
 def test_a_read_only_experiment_does_not_overlap_a_write_capable_one():
-    # A read-only experiment cannot name resources, so its dependencies on a writer are unknown.
+    # A read-only experiment never overlaps a write-capable one.
     def experiment(task_id, write_capable):
         return Experiment(
             experiment_id=task_id,
@@ -454,48 +454,96 @@ def test_experiments_that_share_a_resource_do_not_overlap():
     assert [attempt["execution_status"] for attempt in scorecard["attempts"]] == ["failed", "failed"]
 
 
-def test_an_unrestored_resource_stops_a_reader_with_unknown_dependencies_but_not_an_unrelated_writer():
+def synthetic_experiment(task_id, *, writes=(), reads=(), controls=None):
+    return Experiment(
+        experiment_id=task_id,
+        task=Task(
+            task_id=task_id,
+            prompt=f"Do {task_id}.",
+            success_rule=lambda attempt, response: TaskOutcome(success=True, source=OUTCOME_SOURCE),
+            attempts=1,
+        ),
+        agent_configuration={"agent": "synthetic"},
+        starting_state="fresh",
+        baseline=BASELINE,
+        variation=None,
+        controls=controls or NoControls(),
+        write_capable=bool(writes),
+        authorized_resources=list(writes),
+        read_resources=list(reads),
+    )
+
+
+def test_an_unrestored_resource_stops_only_the_experiments_that_read_or_change_it():
     class FailedCleanup(NoControls):
         def clean_up(self, context):
             raise RuntimeError("could not restore the resource")
 
-    def experiment(task_id, *, resource=None, controls=None):
-        return Experiment(
-            experiment_id=task_id,
-            task=Task(
-                task_id=task_id,
-                prompt=f"Do {task_id}.",
-                success_rule=lambda attempt, response: TaskOutcome(success=True, source=OUTCOME_SOURCE),
-                attempts=1,
-            ),
-            agent_configuration={"agent": "synthetic"},
-            starting_state="fresh",
-            baseline=BASELINE,
-            variation=None,
-            controls=controls or NoControls(),
-            write_capable=resource is not None,
-            authorized_resources=[] if resource is None else [resource],
-        )
-
     for concurrency in (1, 2):
         scorecard = run_sweep(
             experiments=[
-                experiment("writer", resource="shared", controls=FailedCleanup()),
-                experiment("reader"),
-                experiment("unrelated", resource="other"),
+                synthetic_experiment("writer", writes=["shared"], controls=FailedCleanup()),
+                synthetic_experiment("dependent-reader", reads=["shared"]),
+                synthetic_experiment("independent-reader"),
+                synthetic_experiment("other-reader", reads=["other"]),
+                synthetic_experiment("dependent-writer", writes=["own"], reads=["shared"]),
+                synthetic_experiment("unrelated-writer", writes=["other"]),
             ],
-            agent_target=FakeAgentTarget({"writer": ["success"], "reader": ["success"], "unrelated": ["success"]}),
+            agent_target=FakeAgentTarget(
+                {
+                    task_id: ["success"]
+                    for task_id in (
+                        "writer",
+                        "dependent-reader",
+                        "independent-reader",
+                        "other-reader",
+                        "dependent-writer",
+                        "unrelated-writer",
+                    )
+                }
+            ),
             metrics=["outcome_consistency"],
             max_concurrent_attempts=concurrency,
         )
         assert [(attempt["task_id"], attempt["execution_status"]) for attempt in scorecard["attempts"]] == [
             ("writer", "cleanup_failed"),
-            ("unrelated", "completed"),
-        ]
-        reader = experiment_record(scorecard, "reader")["execution"]
-        assert (reader["status"], reader["attempts_recorded"]) == ("stopped", 0)
-        assert "did not restore" in reader["reason"]
+            ("independent-reader", "completed"),
+            ("other-reader", "completed"),
+            ("unrelated-writer", "completed"),
+        ], concurrency
+        for stopped in ("dependent-reader", "dependent-writer"):
+            record = experiment_record(scorecard, stopped)["execution"]
+            assert (record["status"], record["attempts_recorded"]) == ("stopped", 0)
+            assert record["reason"] == (
+                "experiment 'writer' did not restore the test resource 'shared': "
+                "clean_up failed after Attempt 'writer/baseline/attempt-1': RuntimeError: could not restore the resource"
+            )
         assert scorecard["status"] == "partial"
+
+
+def test_an_experiment_that_reads_a_resource_does_not_overlap_one_that_changes_it():
+    scorecard = run_sweep(
+        experiments=[
+            synthetic_experiment("writer", writes=["shared"]),
+            synthetic_experiment("reading-writer", writes=["own"], reads=["shared"]),
+        ],
+        agent_target=MeetingAgentTarget(wait_seconds=0.1),
+        metrics=["outcome_consistency"],
+        max_concurrent_attempts=2,
+    )
+
+    assert [attempt["execution_status"] for attempt in scorecard["attempts"]] == ["failed", "failed"]
+
+
+def test_experiments_that_only_read_the_same_resource_can_overlap():
+    scorecard = run_sweep(
+        experiments=[synthetic_experiment(task_id, reads=["shared"]) for task_id in ("close", "archive")],
+        agent_target=MeetingAgentTarget(wait_seconds=1),
+        metrics=["outcome_consistency"],
+        max_concurrent_attempts=2,
+    )
+
+    assert [attempt["execution_status"] for attempt in scorecard["attempts"]] == ["completed", "completed"]
 
 
 def test_every_task_is_listed_under_its_declared_experiment():

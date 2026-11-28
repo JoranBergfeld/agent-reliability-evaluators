@@ -67,7 +67,8 @@ scorecard = run_sweep(experiments=[experiment], agent_target=my_agent_target, me
 | `variation` | The one intended difference from the baseline, or `None` for an experiment with a baseline only. There is no default. A variation declares its `kind`, which says what it changes. |
 | `controls` | An object with the four controls below. |
 | `write_capable` | Whether the agent or the controls can change anything outside the conversation. There is no default. |
-| `authorized_resources` | The names of all test resources a write-capable experiment reads or may change, including shared dependencies. Required when `write_capable` is true, and not allowed otherwise. |
+| `authorized_resources` | The names of the test resources a write-capable experiment may change. Required when `write_capable` is true, and not allowed otherwise. |
+| `read_resources` | Optional. The names of test resources the experiment reads and does not change, including shared dependencies. Any experiment, read-only ones included, may declare them; they grant no authority to change anything. Recorded in the scorecard when declared. |
 | `prompt_variants` | The equivalent wordings of the Task's prompt that you supply or approve. Required when the variation is of the kind `"prompt"`, and not allowed otherwise. |
 
 An experiment that leaves one of these out, or declares one that cannot be used, is rejected when it is created. A sweep is rejected before any Attempt is made when two experiments have the same identity, when a Task is declared more than once, or when two Attempts would get the same identity.
@@ -157,7 +158,7 @@ A control that cannot do its work raises an exception. `verify_condition` return
 
 A label is not an observation. If `verify_condition` returns anything other than an `ObservedCondition`, the condition counts as not verified.
 
-The sweep passes `authorized_resources` to the controls and records them. It cannot stop a control or an agent from changing something else. Use consistent names for shared resources; if you cannot name all dependencies, run sequentially.
+The sweep passes `authorized_resources` to the controls and records them, with any `read_resources`. It cannot stop a control or an agent from changing something else. Use consistent names for shared resources; if you cannot name all dependencies, run sequentially.
 
 ## Starting-state policy
 
@@ -191,7 +192,7 @@ An Attempt keeps the status of the first thing that went wrong. If `clean_up` th
 
 ### What stops, and what continues
 
-- **`clean_up` fails.** The later Attempts of that experiment are not made, because they would start from state that was not restored. Later writable experiments that share one of its `authorized_resources` are not started. Read-only experiments cannot name resource dependencies and are conservatively stopped after any resource was left unrestored. Other writable experiments continue.
+- **`clean_up` fails.** The later Attempts of that experiment are not made, because they would start from state that was not restored. Later experiments that name one of its `authorized_resources`, in their own `authorized_resources` or `read_resources`, are not started. Unrelated experiments continue, read-only ones included. A read-only experiment that names no `read_resources` is treated as depending on no test resource.
 - **`prepare_state` fails under `continuing`.** The later Attempts of that experiment are not made, because they would continue from state that was never prepared. `clean_up` is invoked. Other experiments continue.
 - **`prepare_state` fails under `fresh`.** Only that Attempt has a failed setup. The next Attempt prepares its own state.
 

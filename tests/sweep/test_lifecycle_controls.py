@@ -507,11 +507,30 @@ class NoCleanUp:
         ({"write_capable": True, "authorized_resources": [""]}, "identifies the test resources"),
         ({"write_capable": True, "authorized_resources": "todo-list/add"}, "as a list of names"),
         ({"write_capable": False}, "not write-capable"),
+        ({"read_resources": "todo-list/shared"}, "reads as a list of names"),
+        ({"read_resources": [" "]}, "reads as a list of names"),
+        ({"read_resources": ["todo-list/add"]}, "already authorized to change"),
     ],
 )
 def test_an_experiment_that_is_not_fully_declared_is_rejected(declared, problem):
     with pytest.raises(ValueError, match=problem):
         Fixture().experiment(**declared)
+
+
+def test_a_read_only_experiment_names_what_it_reads_without_being_authorized_to_change_it():
+    reader = Fixture().experiment(
+        write_capable=False, authorized_resources=[], read_resources=["todo-list/shared"]
+    )
+
+    assert reader.authorized_resources == ()
+    record = reader.to_dict()
+    assert (record["write_capable"], record["authorized_resources"], record["read_resources"]) == (
+        False,
+        [],
+        ["todo-list/shared"],
+    )
+    # A declaration without read dependencies is recorded as before.
+    assert "read_resources" not in Fixture().experiment().to_dict()
 
 
 def test_a_sweep_whose_experiments_cannot_be_told_apart_is_rejected():

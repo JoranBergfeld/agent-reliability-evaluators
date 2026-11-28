@@ -253,6 +253,9 @@ class Experiment:
     write_capable: bool
     # The test resources a write-capable experiment reads or is authorized to change, by name.
     authorized_resources: Sequence[str] = ()
+    # The test resources the experiment reads and does not change, by name. Naming them grants
+    # no write authority. An experiment that depends on a resource left unrestored is not started.
+    read_resources: Sequence[str] = ()
     # The equivalent wordings of the Task's instruction, which the customer supplies or approves.
     # Declared with a variation of the kind prompt, and only with one. The sweep generates none:
     # under the variation the agent is given the exact text of each, and nothing else changes.
@@ -315,6 +318,19 @@ class Experiment:
             )
         if resources and not self.write_capable:
             raise ValueError(f"{this} is not write-capable, so it is authorized to change nothing, got {resources!r}")
+        read = self.read_resources
+        if isinstance(read, str) or any(not isinstance(resource, str) or not resource.strip() for resource in read):
+            raise ValueError(f"{this} identifies the test resources it reads as a list of names, got {read!r}")
+        object.__setattr__(self, "read_resources", tuple(read))
+        changed = set(self.authorized_resources).intersection(read)
+        if changed:
+            raise ValueError(
+                f"{this} is already authorized to change {sorted(changed)!r}, so it does not also name them as read"
+            )
+
+    def resource_dependencies(self) -> tuple[str, ...]:
+        """Every test resource the experiment may change or reads, in the order declared."""
+        return (*self.authorized_resources, *self.read_resources)
 
     def _require_prompt_variants(self, this: str) -> None:
         variants = self.prompt_variants
@@ -384,6 +400,8 @@ class Experiment:
             "variation": None if self.variation is None else self.variation.to_dict(),
             "write_capable": self.write_capable,
             "authorized_resources": list(self.authorized_resources),
+            # Recorded only when declared, so that a declaration without them is recorded as before.
+            **({"read_resources": list(self.read_resources)} if self.read_resources else {}),
             # The exact texts of a prompt variation: the Task's own prompt, and each variant.
             **(
                 {

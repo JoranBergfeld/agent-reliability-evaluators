@@ -116,9 +116,9 @@ scorecard = run_sweep(
 )
 ```
 
-Then up to four independent experiments can be in flight at once. Writable experiments run together only when their `authorized_resources` are disjoint; name all resources they read or may change, using the same name for a shared resource. Read-only experiments can run alongside each other but cannot declare resource dependencies, so they never overlap writable experiments. The agent target, controls, task-success rules, violation assessors, action recorder and clock can be called from several threads and must be safe for that. Attempts that overlap can disturb shared state and timing measurements. Controlling that is yours.
+Then up to four independent experiments can be in flight at once. Experiments run together only when none of them changes a resource that another names in its `authorized_resources` or `read_resources`; name every resource an experiment reads in `read_resources`, using the same name for a shared resource. Read-only experiments can run alongside each other, also when they read the same resource, but never overlap writable experiments. The agent target, controls, task-success rules, violation assessors, action recorder and clock can be called from several threads and must be safe for that. Attempts that overlap can disturb shared state and timing measurements. Controlling that is yours.
 
-The Attempts of an experiment always run one after another. A later writable experiment waits for an earlier experiment that shares a resource; it is not started if that resource was not restored. A read-only experiment is not started after any resource was left unrestored, because it cannot name its dependencies. Other writable experiments continue.
+The Attempts of an experiment always run one after another. A later experiment waits for an earlier experiment that changes a resource it reads or changes; it is not started if that resource was not restored. Experiments that do not name the unrestored resource continue, read-only ones included.
 
 The scorecard records what was declared:
 

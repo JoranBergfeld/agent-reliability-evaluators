@@ -100,7 +100,7 @@ The sets are made one after another: every experiment for the first set, then ev
 
 The first set is identified exactly as in a sweep with one set. An Attempt's `task_id` is the Task either way.
 
-An experiment that is run again is a run of its own. It has its own entry under `experiments` in the scorecard, with its `attempt_set` too, and your controls are invoked around each of its Attempts with the experiment identity `<experiment>/set-2`. A test resource that an experiment did not restore stops every later writable experiment that names it, in the same set and in later ones; a read-only experiment is also stopped because its dependencies cannot be named.
+An experiment that is run again is a run of its own. It has its own entry under `experiments` in the scorecard, with its `attempt_set` too, and your controls are invoked around each of its Attempts with the experiment identity `<experiment>/set-2`. A test resource that an experiment did not restore stops every later experiment that names it in its `authorized_resources` or `read_resources`, in the same set and in later ones; other experiments continue.
 
 Two recordings are the same when they have the same `evidence_source` and the same `record` callable. A different callable is a different requirement, also when it happens to read the same data.
 

@@ -88,11 +88,12 @@ def run_sweep(
     every Attempt and never assumes that the agent target resets conversation or external state.
 
     Attempts run one after another by default. With `max_concurrent_attempts` above 1,
-    experiments with disjoint authorized resources can run concurrently, while Attempts
-    within each experiment remain sequential. An experiment that shares a resource with
-    another waits for it to finish and is not started if that resource was not restored.
-    Read-only experiments cannot name their resource dependencies, so they never overlap
-    with writable experiments and do not start after any resource was left unrestored.
+    experiments run concurrently when none changes a test resource that another names in
+    its authorized or read resources, while Attempts within each experiment remain
+    sequential. An experiment that reads or changes a resource another changes waits for
+    it to finish and is not started if that resource was not restored. Read-only
+    experiments never overlap with writable experiments, and unrelated experiments, the
+    read-only ones included, continue after a resource was left unrestored.
     The agent target, controls, task-success rules, evidence recorders and clock may be
     called from several threads and must be safe for that. Shared state and timing are the
     caller's to control.
