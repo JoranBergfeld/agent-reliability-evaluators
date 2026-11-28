@@ -9,13 +9,11 @@ import json
 import shutil
 import subprocess
 import time
-import urllib.error
-import urllib.request
-from dataclasses import dataclass
 from time import perf_counter
 from typing import Any, Callable
 
 from ..evidence import ActionEvent, ResourceMeasurement, ResourceType
+from ..foundry import Answer, BearerToken, NotAnswered, send
 from .interface import CUSTOMER_CODE, AgentResponse, AttemptRequest, InvocationFailed, IsolatedFollowUp
 
 API_VERSION = "v1"
@@ -67,13 +65,30 @@ class AzureCliCredential:
             command = [az, "account", "get-access-token", "--resource", TOKEN_RESOURCE, "--only-show-errors", "-o", "json"]
             if self._subscription:
                 command += ["--subscription", self._subscription]
+            failed = self._ask(command)
+            if failed is not None:
+                raise RuntimeError(f"the Azure CLI gave no token for the Foundry project: {failed}")
+        return self._token
+
+    def _ask(self, command: list[str]) -> str | None:
+        """Ask the Azure CLI for a token and keep it. Returns why it gave none, or None when it gave one.
+
+        What the Azure CLI printed holds the token. It is read here and goes no further, so that
+        it is no variable of a function an error is raised in.
+        """
+        try:
             result = subprocess.run(command, text=True, capture_output=True, timeout=120)
-            if result.returncode:
-                raise RuntimeError(f"the Azure CLI gave no token for the Foundry project: {result.stderr.strip()}")
+        except (OSError, subprocess.SubprocessError) as error:
+            return f"it did not run to its end ({type(error).__name__})"
+        if result.returncode:
+            return result.stderr.strip()
+        try:
             token = json.loads(result.stdout)
             # Without an expiry time the token is not kept.
             self._token, self._expires_on = token["accessToken"], float(token.get("expires_on") or 0)
-        return self._token
+        except (ValueError, KeyError, TypeError):
+            return "it answered with something that holds no access token"
+        return None
 
 
 class UnsupportedAgent(Exception):
@@ -140,7 +155,8 @@ class FoundryHostedAgentTarget:
             # Identifies the Attempt on the platform. The response returns it.
             "metadata": {"attempt_id": request.attempt_id, "task_id": request.task_id},
         }
-        token = self._credential()
+        # Held as a BearerToken from here on, which shows itself in no error and no traceback.
+        token = BearerToken(self._credential())
         self._require_supported_agent(token)
         # The time limit the customer declared for the Attempt comes before the target's own.
         limit = self._timeout_seconds if request.timeout_seconds is None else request.timeout_seconds
@@ -176,7 +192,7 @@ class FoundryHostedAgentTarget:
         is made. The project does not report the model of a hosted agent. Its settings, which
         the project returns with its details, are not copied: they can hold secrets.
         """
-        agent = self._require_supported_agent(self._credential())
+        agent = self._require_supported_agent(BearerToken(self._credential()))
         endpoint = agent["agent_endpoint"]
         return {
             "agent_target": AGENT_TARGET,
@@ -188,7 +204,7 @@ class FoundryHostedAgentTarget:
             "version_selection_rules": (endpoint.get("version_selector") or {}).get("version_selection_rules"),
         }
 
-    def _require_supported_agent(self, token: str) -> dict[str, Any]:
+    def _require_supported_agent(self, token: BearerToken) -> dict[str, Any]:
         """What the project says about the agent, when it is a hosted agent that serves the Responses protocol.
 
         Raises otherwise. The agent is looked up once. An agent that is not supported is never sent a request.
@@ -216,59 +232,38 @@ class FoundryHostedAgentTarget:
         return self._agent
 
 
-@dataclass(frozen=True)
-class _Answer:
-    """An HTTP answer from the project, whatever its status."""
-
-    status: int
-    text: str
-    # The headers that identify the request on the platform, where the answer carried them.
-    request_ids: dict[str, str]
-
-    @property
-    def json(self) -> Any:
-        """The body as JSON, or None when it is not JSON."""
-        try:
-            return json.loads(self.text)
-        except ValueError:
-            return None
-
-
 def _send(
     method: str,
     url: str,
-    token: str,
+    token: BearerToken,
     timeout_seconds: float,
     body: dict[str, Any] | None = None,
     awaited: str = "the hosted agent",
-) -> _Answer:
+) -> Answer:
     """Send one request to the project. It is sent once: a request that may have reached the agent is not repeated."""
-    request = urllib.request.Request(
-        f"{url}?api-version={API_VERSION}",
-        data=None if body is None else json.dumps(body).encode(),
-        method=method,
-        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-    )
     try:
-        with urllib.request.urlopen(request, timeout=timeout_seconds) as answered:
-            return _answer(answered.status, answered)
-    except urllib.error.HTTPError as error:
-        return _answer(error.code, error)
-    except OSError as error:
-        # URLError is an OSError. No answer came back, so nothing is known about what the agent did.
-        reason = getattr(error, "reason", error)
-        if isinstance(reason, TimeoutError):
+        return send(
+            method,
+            f"{url}?api-version={API_VERSION}",
+            bearer=token,
+            content=None if body is None else json.dumps(body).encode(),
+            headers={"Content-Type": "application/json"},
+            timeout_seconds=timeout_seconds,
+        )
+    except NotAnswered as unanswered:
+        # No answer came back, so nothing is known about what the agent did.
+        if unanswered.timed_out:
             # The sweep records a TimeoutError as an Attempt that timed out.
-            raise TimeoutError(f"{awaited} did not answer within {timeout_seconds:g} seconds") from error
-        raise InvocationFailed(f"the Foundry project could not be reached: {reason}") from error
+            raise TimeoutError(f"{awaited} did not answer within {timeout_seconds:g} seconds") from None
+        raise InvocationFailed(f"the Foundry project could not be reached: {unanswered.reason}") from None
 
 
-def _answer(status: int, answered: Any) -> _Answer:
-    request_ids = {name: answered.headers[name] for name in REQUEST_ID_HEADERS if answered.headers.get(name)}
-    return _Answer(status, answered.read().decode(errors="replace"), request_ids)
+def _request_ids(answer: Answer) -> dict[str, str]:
+    """The headers that identify the request on the platform, where the answer carried them."""
+    return {name: answer.header(name) for name in REQUEST_ID_HEADERS if answer.header(name)}
 
 
-def _invocation(answer: _Answer, response: dict[str, Any], composed_input: str | None) -> dict[str, Any]:
+def _invocation(answer: Answer, response: dict[str, Any], composed_input: str | None) -> dict[str, Any]:
     """What the platform returned about one invocation, as it returned it.
 
     `response` is the response object of the answer, or empty when the answer has none.
@@ -282,7 +277,7 @@ def _invocation(answer: _Answer, response: dict[str, Any], composed_input: str |
         "api_version": API_VERSION,
         "composed_input": composed_input,
         "http_status": answer.status,
-        "request_ids": answer.request_ids,
+        "request_ids": _request_ids(answer),
         "agent": response.get("agent_reference"),
         "response_id": response.get("id"),
         "agent_session_id": response.get("agent_session_id"),
@@ -312,7 +307,7 @@ def _failure_of(response: dict[str, Any]) -> str | None:
     return None
 
 
-def _error_of(answer: _Answer) -> Any:
+def _error_of(answer: Answer) -> Any:
     """The error an answer without a response object carries: its `error`, or its body as it is."""
     body = answer.json
     return body["error"] if isinstance(body, dict) and "error" in body else answer.text[:_SHOWN_BODY]

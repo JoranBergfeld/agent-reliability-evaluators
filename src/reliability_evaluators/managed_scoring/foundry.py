@@ -8,12 +8,11 @@ from __future__ import annotations
 
 import json
 import shutil
-import socket
 import subprocess
 import time
-import urllib.error
-import urllib.request
 from typing import Any, Callable
+
+from ..foundry import BearerToken, NotAnswered, send
 
 # What a token for a Foundry project is issued for.
 TOKEN_RESOURCE = "https://ai.azure.com"
@@ -46,10 +45,28 @@ def azure_cli_token() -> str:
     if az is None:
         raise FoundryRequestError("az", "account get-access-token", None, "the Azure CLI (az) is not installed")
     command = [az, "account", "get-access-token", "--resource", TOKEN_RESOURCE, "--only-show-errors", "-o", "json"]
-    result = subprocess.run(command, text=True, capture_output=True, timeout=120)
+    failed, answered = _ran(command)
+    if failed is not None:
+        raise FoundryRequestError("az", "account get-access-token", None, failed)
+    return answered
+
+
+def _ran(command: list[str]) -> tuple[str | None, Any]:
+    """Why the Azure CLI gave no token, or None and the token it gave.
+
+    What the Azure CLI printed holds the token. It is read here and goes no further, so that
+    it is no variable of a function an error is raised in.
+    """
+    try:
+        result = subprocess.run(command, text=True, capture_output=True, timeout=120)
+    except (OSError, subprocess.SubprocessError) as error:
+        return f"the Azure CLI did not run to its end: {type(error).__name__}", None
     if result.returncode:
-        raise FoundryRequestError("az", "account get-access-token", None, result.stderr.strip())
-    return json.loads(result.stdout)["accessToken"]
+        return result.stderr.strip(), None
+    try:
+        return None, json.loads(result.stdout)["accessToken"]
+    except (ValueError, KeyError, TypeError):
+        return "the Azure CLI answered with something that holds no access token", None
 
 
 class FoundryProject:
@@ -69,7 +86,7 @@ class FoundryProject:
         self.endpoint = endpoint.rstrip("/")
         self._token = token
         self._timeout_seconds = timeout_seconds
-        self._held: tuple[str, float] | None = None
+        self._held: tuple[BearerToken, float] | None = None
 
     def request(self, method: str, path: str, body: Any = None, headers: dict[str, str] | None = None) -> Any:
         """Send one request to the project and return the JSON it answers with.
@@ -85,29 +102,33 @@ class FoundryProject:
         # The token may have expired during a long run. One new token, one more try.
         return self._send(method, path, body, headers, self._bearer(renew=True))
 
-    def _bearer(self, renew: bool = False) -> str:
+    def _bearer(self, renew: bool = False) -> BearerToken:
         if renew or self._held is None or time.monotonic() - self._held[1] > TOKEN_REUSE_SECONDS:
-            self._held = (self._token(), time.monotonic())
+            # Held as a BearerToken from here on, which shows itself in no error and no traceback.
+            self._held = (BearerToken(self._token()), time.monotonic())
         return self._held[0]
 
-    def _send(self, method: str, path: str, body: Any, headers: dict[str, str] | None, bearer: str) -> Any:
+    def _send(
+        self, method: str, path: str, body: Any, headers: dict[str, str] | None, bearer: BearerToken
+    ) -> Any:
         url = path if path.startswith(self.endpoint + "/") else self.endpoint + path
-        request = urllib.request.Request(
-            url,
-            data=None if body is None else json.dumps(body, allow_nan=False).encode("utf-8"),
-            method=method,
-            headers={"Content-Type": "application/json", "Authorization": f"Bearer {bearer}", **(headers or {})},
-        )
+        content = None if body is None else json.dumps(body, allow_nan=False).encode("utf-8")
         for attempt in range(1, 6):
             try:
-                with urllib.request.urlopen(request, timeout=self._timeout_seconds) as response:
-                    content = response.read()
-                    return json.loads(content) if content else None
-            except urllib.error.HTTPError as error:
-                raise FoundryRequestError(method, path, error.code, error.read().decode(errors="replace")) from None
-            except (urllib.error.URLError, TimeoutError, ConnectionError) as error:
+                answer = send(
+                    method,
+                    url,
+                    bearer=bearer,
+                    content=content,
+                    headers={"Content-Type": "application/json", **(headers or {})},
+                    timeout_seconds=self._timeout_seconds,
+                )
+            except NotAnswered as unanswered:
                 # Repeated only when it cannot have had an effect: it was never sent, or it only reads.
-                never_sent = isinstance(getattr(error, "reason", None), socket.gaierror)
-                if attempt == 5 or not (never_sent or method == "GET"):
-                    raise FoundryRequestError(method, path, None, f"{type(error).__name__}: {error}") from None
+                if attempt == 5 or not (unanswered.never_sent or method == "GET"):
+                    raise FoundryRequestError(method, path, None, unanswered.described) from None
                 time.sleep(min(5.0 * 2 ** (attempt - 1), 60.0))
+                continue
+            if not 200 <= answer.status < 300:
+                raise FoundryRequestError(method, path, answer.status, answer.text)
+            return json.loads(answer.text) if answer.text else None

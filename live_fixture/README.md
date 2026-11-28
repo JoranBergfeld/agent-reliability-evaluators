@@ -63,6 +63,14 @@ generated per fixture and live only in that resource group: in the container app
 which `connect` reads them back, and, for the agents' key, in the project connection and the hosted
 agent's settings.
 
+Nor is one shown by a failure. A failing live check prints its failure, and pytest prints the arguments
+of the function that failed, and every local variable when it is asked to. So the fixture holds every
+key and token as a `Secret` from the moment it exists, holds what Azure answers with in containers
+that do not show what they hold (`hidden.py`), and raises an error of its own, chained to nothing,
+where a request or the Azure CLI fails. `fixture.service.api_key` gives the agents' key itself: pass
+it straight to the setting or the tool that needs it. `tests/fixture/test_no_secret_in_a_failure.py`
+fails the fixture on purpose, without Azure, and searches everything the failure shows.
+
 ## A project with nothing in it
 
 A live check that needs neither agent nor the service can stand up much less: one Foundry account

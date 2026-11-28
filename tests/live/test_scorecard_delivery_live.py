@@ -18,14 +18,13 @@ import os
 import shutil
 import subprocess
 import time
-import urllib.error
-import urllib.request
 import uuid
 import zlib
 
 import pytest
 
 from live_fixture import TASK_PROMPT, connect, local_service, provision, strict_task_outcome, teardown
+from live_fixture.hidden import Secret, send
 from reliability_evaluators.agent_target.foundry_hosted import AzureCliCredential, FoundryHostedAgentTarget
 from reliability_evaluators.evidence import TaskOutcome
 from reliability_evaluators.managed_scoring import FoundryManagedScoring, FoundryProject, azure_cli_token
@@ -218,18 +217,15 @@ def output_items(project, managed_scoring):
 
 def answered_without_the_customers_token(live, path):
     """The HTTP status of a read with no token, and with a token of the same identity for another resource."""
-    other_resource = _az_json("account", "get-access-token", "--resource", "https://management.azure.com")
-    statuses = {}
-    for label, headers in (
-        ("no token", {}),
-        ("token for another resource", {"Authorization": f"Bearer {other_resource['accessToken']}"}),
-    ):
-        try:
-            with urllib.request.urlopen(urllib.request.Request(live.project_endpoint + path, headers=headers), timeout=120) as answer:
-                statuses[label] = answer.status
-        except urllib.error.HTTPError as error:
-            statuses[label] = error.code
-    return statuses
+    # Held as a Secret and sent by the fixture's sender, so that a failure here shows no token.
+    other_resource = Secret(
+        _az_json("account", "get-access-token", "--resource", "https://management.azure.com")["accessToken"]
+    )
+    url = live.project_endpoint + path
+    return {
+        "no token": send("GET", url, timeout=120)[0],
+        "token for another resource": send("GET", url, bearer=other_resource, timeout=120)[0],
+    }
 
 
 def test_a_customer_code_run_against_the_live_hosted_agent_delivers_the_scorecard_the_report_and_the_evidence(

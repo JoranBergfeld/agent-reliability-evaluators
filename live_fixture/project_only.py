@@ -11,7 +11,9 @@ from .provisioning import (
     GROUP_PATTERN,
     PROJECT,
     LiveFixtureError,
+    _access_token,
     _az,
+    _content,
     _create_project,
     _request,
     _require_group_name,
@@ -32,15 +34,12 @@ class LiveProject:
 
     def access_token(self):
         """A bearer token for the project's REST API, for the signed-in Azure CLI identity."""
-        return _az(self.subscription, "account", "get-access-token", "--resource", "https://ai.azure.com")[
-            "accessToken"
-        ]
+        return _access_token(self.subscription).reveal()
 
     def project_request(self, method, path, body=None, headers=None):
         """Call the Foundry project's REST API as the signed-in Azure CLI identity."""
         return _request(
-            method, self.project_endpoint + path, body,
-            {"Authorization": f"Bearer {self.access_token()}", **(headers or {})},
+            method, self.project_endpoint + path, _content(body), headers, bearer=_access_token(self.subscription)
         )
 
     def summary(self):
