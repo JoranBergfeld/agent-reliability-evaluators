@@ -258,6 +258,8 @@ Also observed, by hand on the first fixture:
 - The three responses whose headers were inspected each reported a cold session start (`x-ms-debug-latency-session-start-type: cold`).
 - One request made in the first minutes after the first fixture was provisioned got no answer within 300 seconds. It was made by a throwaway script, not by the target, and which of its requests it was is not known. It did not happen again, also not on the first invocation after the second fixture was provisioned.
 
+All twelve metrics in one sweep on this target were not part of this check. They were run later, for the [coverage matrix](../coverage_matrix/readme.md), which records what each metric did on a hosted agent from customer code.
+
 Not verified here: an agent that really speaks the Invocations protocol, a response with a status other than `completed`, an HTTP error from the agent endpoint, a hosted agent built with anything but Agent Framework, authentication in CI or with `azure-identity`, more than one Attempt at a time, and a conversation object in the place of `previous_response_id`. Foundry cloud evaluation as the entry point has its own target and its own [live observations](../foundry_cloud_evaluation/readme.md#observed-live). Nothing here says whether a confidence follow-up can be made when Foundry cloud evaluation makes the Attempts. The failure cases are covered by the default test run against a fake project that answers with the response shapes above.
 
 ### The confidence follow-up

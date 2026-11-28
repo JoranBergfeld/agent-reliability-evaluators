@@ -370,6 +370,15 @@ It ran twice on one fixture and passed both times, 13 checks in 9 minutes 29 sec
 - The run's `report_url` named the resource group, the Foundry account and the project, after an encoded identifier.
 - An eval and a run record the display name of the identity that created them, as `created_by`. The target does not copy it.
 
+### The confidence follow-up, observed for the coverage matrix
+
+Observed later on 2026-11-27, on another fixture (`rg-are-55-278c868e`), for the [coverage matrix](../coverage_matrix/readme.md). The records are in [`docs/coverage_matrix/evidence/`](../coverage_matrix/evidence/).
+
+- **By hand, before the target asked.** One Attempt of the fixture's prompt agent through the target, then requests to `POST /openai/v1/responses` that named the response of its output item in `previous_response_id`, with the agent and version the item named. With `tool_choice: none`: the confidence question was answered `100` in a completed response that named the Attempt's response as the one it continued and `none` as its tool choice, with no tool call. Its input items held the Attempt's prompt, the agent's answer and five `remote_function_call` items with their outputs. Told three times to create an item, the agent called nothing, and the service recorded no call. Told the same once without a tool choice, it created the item. The criteria this was held against were written down before the first request: [`cloud-follow-up-probe.json`](../coverage_matrix/evidence/cloud-follow-up-probe.json).
+- **Through the target, in a sweep.** In the run of the coverage matrix on a prompt agent through cloud evaluation, the target sent a follow-up after each of the 17 Attempts that completed. Every one was answered with a rating, and the service had recorded nothing more for the Attempt when its state was removed. Calibration and the Brier-based score were calculated from those ratings and equalled an independent calculation. Six more follow-ups in the supplement of that run were answered `100`, `100`, `50.0`, `90.0`, `60` and `80`.
+- **A hosted agent was not asked**, in the 19 Attempts of its run and the six of its supplement.
+- The same was seen once by hand for the token usage verification, which also continued the conversation the output item names: see [token usage](../token_usage/readme.md#the-confidence-follow-up).
+
 ### Resources
 
 One resource group was created for this work, in the subscription named `Sandbox`: `rg-are-45-f6638d25`, provisioned with `python -m live_fixture provision --ticket 45`. It held the fixture for everything above. It was deleted with the fixture's `teardown`, which took 29 minutes, and the soft-deleted Foundry account was purged. Afterwards a separate `az group exists` returned `false`, and no soft-deleted account of the fixture was listed. The evals, the runs and the code evaluator made above were in that project and went with it.
