@@ -73,6 +73,10 @@ class ActionEvidence:
         return {"source": self.source, "events": [event.to_dict() for event in self.events]}
 
 
+# The name under which an Evaluator takes the customer's `ActionTypeMapping`.
+ACTION_TYPE_DECLARATION = "action_types"
+
+
 @dataclass(frozen=True, kw_only=True)
 class ActionTypeMapping:
     """What a customer declares for the trajectory metrics. Nothing here has a default.

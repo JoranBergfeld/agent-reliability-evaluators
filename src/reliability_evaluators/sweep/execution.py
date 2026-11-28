@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import threading
 from dataclasses import dataclass
-from typing import Callable, Sequence
+from typing import Callable, Iterable, Sequence
 
-from ..evidence import Attempt, ConditionRole, ExecutionStatus, ExperimentStatus, VariationKind
+from ..evidence import Attempt, ConditionRole, ExecutionStatus, ExperimentStatus, TaskEvidence, VariationKind
 from ..scorecard import ExecutionRecord
 from .declaration import Experiment, Task
 
@@ -14,6 +14,34 @@ from .declaration import Experiment, Task
 RETRYABLE = (ExecutionStatus.FAILED, ExecutionStatus.TIMED_OUT)
 
 CANCELLED = "the sweep was cancelled"
+
+
+def execution_identity(planned_attempt_id: str, retry: int) -> str:
+    """The identity of an execution of a planned Attempt: its own for the first, and for a retry also which retry it is."""
+    return planned_attempt_id if retry == 0 else f"{planned_attempt_id}/retry-{retry}"
+
+
+def has_a_retry_left(attempt: Attempt, task: Task, retry: int) -> bool:
+    """Whether an Attempt that ended as this one did is made again under the limits of its Task.
+
+    `retry` says which retry the Attempt is, 0 for the first execution of a planned Attempt.
+    """
+    return attempt.execution_status in RETRYABLE and retry < task.limits.max_retries
+
+
+def group_under(
+    task_ids: Iterable[str], attempts: Iterable[Attempt], task_of: Callable[[Attempt], str] | None = None
+) -> tuple[TaskEvidence, ...]:
+    """The Attempts grouped under the Tasks that are named, each Task once, in the order they are named.
+
+    A Task that Attempts were planned for is a Task of the evidence also when none of them
+    was made. Every Attempt is one of a Task that is named: the Task it records, or the one
+    `task_of` gives for it.
+    """
+    by_task: dict[str, list[Attempt]] = {task_id: [] for task_id in task_ids}
+    for attempt in attempts:
+        by_task[attempt.task_id if task_of is None else task_of(attempt)].append(attempt)
+    return tuple(TaskEvidence(task_id, tuple(members)) for task_id, members in by_task.items())
 
 
 class Cancellation:

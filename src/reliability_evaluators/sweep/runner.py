@@ -12,6 +12,7 @@ from typing import Any, Callable, Mapping, Sequence
 from ..agent_target import AgentResponse, AgentTarget, AttemptRequest, InvocationFailed
 from ..evaluators import EVALUATORS, Evaluator, Fidelity, MetricResult, ScoringPath
 from ..evidence import (
+    ACTION_TYPE_DECLARATION,
     ActionEvidence,
     Attempt,
     ConditionRole,
@@ -38,7 +39,15 @@ from ..scorecard import (
 )
 from .confidence import ATTEMPT_NOT_COMPLETED, SWEEP_CANCELLED, elicit_confidence
 from .declaration import ActionEvidenceDeclaration, ConfiguredEvaluator, Experiment, NoTaskOutcomeYet, Task
-from .execution import RETRYABLE, AttemptGate, Cancellation, Execution, execution_of
+from .execution import (
+    AttemptGate,
+    Cancellation,
+    Execution,
+    execution_identity,
+    execution_of,
+    group_under,
+    has_a_retry_left,
+)
 from .lifecycle import ConfidenceFollowUp, planned_attempt_ids, run_experiments
 from .reuse import SharedAttempts, share_attempts
 
@@ -437,7 +446,7 @@ def _run_planned_attempts(
 
 
 # What an Evaluator is called with for a declaration it names, given what the customer declared for it.
-_EVALUATED_WITH = {"action_types": lambda action_evidence: action_evidence.mapping}
+_EVALUATED_WITH = {ACTION_TYPE_DECLARATION: lambda action_evidence: action_evidence.mapping}
 
 
 @dataclass(frozen=True)
@@ -461,9 +470,9 @@ class SelectedEvaluator:
         the evidence an Attempt gets. Evaluators share Attempts when their requirements match.
         """
         requirements: dict[str, Any] = {}
-        if "action_types" in self.declared:
+        if ACTION_TYPE_DECLARATION in self.declared:
             # The action types are applied when scoring. They do not change what is recorded.
-            action_evidence = self.declared["action_types"]
+            action_evidence = self.declared[ACTION_TYPE_DECLARATION]
             requirements["action_evidence"] = (action_evidence.evidence_source, action_evidence.record)
         if self.evaluator.needs_confidence:
             requirements["confidence"] = True
@@ -478,24 +487,20 @@ class SelectedEvaluator:
         none of them was made.
         """
         kind = self.evaluator.compares_variation
-        evidence = []
-        for execution in executions:
-            roles = execution.conditions_for(kind)
-            if roles:
-                # An Attempt made outside an experiment had no variation applied to it, so it is
-                # used as a baseline Attempt.
-                evidence.append(
-                    TaskEvidence(
-                        execution.task.task_id,
-                        tuple(
-                            attempt
-                            for attempt in attempts
-                            if attempt.task_id == execution.task.task_id
-                            and (attempt.condition_role or ConditionRole.BASELINE) in roles
-                        ),
-                    )
-                )
-        return tuple(evidence)
+        # The conditions the Evaluator is calculated from, of each Task it is calculated from.
+        used = {
+            execution.task.task_id: roles for execution in executions if (roles := execution.conditions_for(kind))
+        }
+        # An Attempt made outside an experiment had no variation applied to it, so it is used as
+        # a baseline Attempt.
+        return group_under(
+            used,
+            (
+                attempt
+                for attempt in attempts
+                if (attempt.condition_role or ConditionRole.BASELINE) in used.get(attempt.task_id, ())
+            ),
+        )
 
     def evaluated_with(self) -> tuple[Any, ...]:
         """What the Evaluator is called with after its evidence: the customer's declarations, in its order."""
@@ -539,9 +544,9 @@ def select_evaluator(
 ) -> SelectedEvaluator:
     configured = metric if isinstance(metric, ConfiguredEvaluator) else ConfiguredEvaluator(metric_id=metric)
     evaluator = _evaluator(configured.metric_id)
-    if configured.action_evidence is not None and "action_types" not in evaluator.declarations:
+    if configured.action_evidence is not None and ACTION_TYPE_DECLARATION not in evaluator.declarations:
         raise ValueError(f"{configured.metric_id!r} does not use action evidence, and it is configured with one")
-    declared = {"action_types": configured.action_evidence or action_evidence}
+    declared = {ACTION_TYPE_DECLARATION: configured.action_evidence or action_evidence}
     _require_declarations(evaluator, declared)
     return SelectedEvaluator(
         evaluator, {name: declared[name] for name in evaluator.declarations}, configured.scoring_path
@@ -557,7 +562,9 @@ def _evaluator(metric_id: str) -> Evaluator:
 
 def _require_declarations(evaluator: Evaluator, declared: dict[str, Any]) -> None:
     undeclared = {
-        "action_types": "action evidence to be declared: the evidence source and the action types have no default",
+        ACTION_TYPE_DECLARATION: (
+            "action evidence to be declared: the evidence source and the action types have no default"
+        ),
     }
     for name in evaluator.declarations:
         if declared[name] is None:
@@ -638,7 +645,11 @@ def _recorded_with(
     from is recorded with what the sweep declares.
     """
     return next(
-        (evaluator.declared["action_types"] for evaluator in shared.members if "action_types" in evaluator.declared),
+        (
+            evaluator.declared[ACTION_TYPE_DECLARATION]
+            for evaluator in shared.members
+            if ACTION_TYPE_DECLARATION in evaluator.declared
+        ),
         action_evidence,
     )
 
@@ -661,12 +672,10 @@ def _run_planned_attempt(
     while retries:
         retry = len(executions)
         attempt, follow_up = make_attempt(
-            task, first if retry == 0 else f"{first}/retry-{retry}", executions[-1].attempt_id if executions else None
+            task, execution_identity(first, retry), executions[-1].attempt_id if executions else None
         )
         attempt = follow_up(attempt)
-        retries = (
-            attempt.execution_status in RETRYABLE and retry < task.limits.max_retries and gate.may_start()
-        )
+        retries = has_a_retry_left(attempt, task, retry) and gate.may_start()
         if retries:
             # The Attempt stays in the evidence with why it did not complete. The retry is another Attempt.
             attempt = replace(attempt, execution_status=ExecutionStatus.RETRIED)

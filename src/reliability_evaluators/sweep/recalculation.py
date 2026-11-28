@@ -49,6 +49,7 @@ from ..scorecard import (
     read_preparation_usage,
 )
 from .declaration import ActionEvidenceDeclaration, ConfiguredEvaluator, ExecutionLimits
+from .execution import group_under
 from .runner import as_foundry_returned, score_in_foundry, scored_in_this_process, select_evaluator, SelectedEvaluator
 
 SUPERSEDED = "superseded"
@@ -647,15 +648,14 @@ def evidence_given(
     kind = evaluation.evaluator.evaluator.compares_variation
     if kind is None:
         # Every set of Attempts is made with the same Tasks and experiments, so each Task is named once.
-        by_task: dict[str, list[Attempt]] = {record.task_id: [] for record in earlier.executions}
+        task_ids = [record.task_id for record in earlier.executions]
         for attempt in attempts:
-            if attempt.task_id not in by_task:
+            if attempt.task_id not in task_ids:
                 raise EvidenceError(
                     f"Attempt {attempt.attempt_id!r} was made at Task {attempt.task_id!r}, "
                     "of which the scorecard has no execution record"
                 )
-            by_task[attempt.task_id].append(attempt)
-        return tuple(TaskEvidence(task_id, tuple(members)) for task_id, members in by_task.items())
+        return group_under(task_ids, attempts)
     # Every set of Attempts is made with the same experiments, so the Tasks compared are the same
     # whichever set the Evaluator was given, and each is named once.
     task_of = {
@@ -663,7 +663,6 @@ def evidence_given(
         for experiment_id, task_id, variation_kind in map(_recorded_experiment, earlier.experiments)
         if variation_kind == kind.value
     }
-    by_task = {task_id: [] for task_id in task_of.values()}
     for attempt in attempts:
         if attempt.experiment_id not in task_of:
             raise EvidenceError(
@@ -671,8 +670,7 @@ def evidence_given(
                 f"{attempt.attempt_id!r}, which was not made in an experiment whose variation is of the kind "
                 f"{kind.value!r}"
             )
-        by_task[task_of[attempt.experiment_id]].append(attempt)
-    return tuple(TaskEvidence(task_id, tuple(members)) for task_id, members in by_task.items())
+    return group_under(task_of.values(), attempts, lambda attempt: task_of[attempt.experiment_id])
 
 
 def _recorded_experiment(recorded: Any) -> tuple[str, str, Any]:

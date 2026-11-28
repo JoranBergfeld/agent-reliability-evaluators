@@ -19,7 +19,7 @@ from ..evidence import (
 )
 from .confidence import ATTEMPT_NOT_COMPLETED
 from .declaration import ControlContext, CustomerControls, Experiment, Task
-from .execution import RETRYABLE, AttemptGate, Execution, execution_of
+from .execution import AttemptGate, Execution, execution_identity, execution_of, has_a_retry_left
 
 # Completes an Attempt with its confidence evidence. It asks the agent only when a selected
 # metric uses confidence and the Attempt it is given completed.
@@ -125,7 +125,7 @@ def _run_experiment(
             retry = len(executions)
             controlled = _ControlledAttempt(
                 experiment,
-                context if retry == 0 else replace(context, attempt_id=f"{context.attempt_id}/retry-{retry}"),
+                replace(context, attempt_id=execution_identity(context.attempt_id, retry)),
             )
             controlled.make(
                 make_attempt,
@@ -135,9 +135,7 @@ def _run_experiment(
             )
             if fresh:
                 controlled.clean_up()
-            retryable = (
-                controlled.attempt.execution_status in RETRYABLE and retry < experiment.task.limits.max_retries
-            )
+            retryable = has_a_retry_left(controlled.attempt, experiment.task, retry)
             # What follows this Attempt, if anything does: its retry, or the next planned Attempt.
             proceeds = controlled.stop is None and (retryable or len(made) < len(plan)) and gate.may_start()
             retries = retryable and proceeds

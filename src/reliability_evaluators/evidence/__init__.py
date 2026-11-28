@@ -7,7 +7,7 @@ customer supplies again.
 Pure: standard library only, no I/O. The canonical metric definitions depend on it.
 """
 
-from .actions import ActionEvent, ActionEvidence, ActionTypeMapping
+from .actions import ACTION_TYPE_DECLARATION, ActionEvent, ActionEvidence, ActionTypeMapping
 from .attempt import (
     Attempt,
     ExecutionStatus,
@@ -39,6 +39,7 @@ from .invocation import InvocationEvidence
 from .reading import read_attempts
 
 __all__ = [
+    "ACTION_TYPE_DECLARATION",
     "NOT_UNDER_THE_BASELINE",
     "ActionEvent",
     "ActionEvidence",
