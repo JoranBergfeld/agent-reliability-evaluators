@@ -42,6 +42,7 @@ from dataclasses import dataclass, field
 from typing import Any, Callable
 
 from reliability_evaluators.managed_scoring import FoundryRequestError
+from tests.fake_eval_runs import FakeEvalRuns
 
 ENDPOINT = "https://fake.services.ai.azure.com/api/projects/fake"
 MODEL_DEPLOYMENT = "todo-gpt-41-mini"
@@ -100,6 +101,10 @@ class FakeAgent:
 
     def details(self, name: str) -> dict:
         latest = self.versions[-1]
+        definition: dict[str, Any] = {"kind": self.kind}
+        if self.kind == "hosted":
+            # The live project returned the hosted agent's settings with its details, secrets included.
+            definition["environment_variables"] = {"SYNTHETIC_SERVICE_KEY": "synthetic-secret"}
         return {
             "object": "agent",
             "id": name,
@@ -111,7 +116,7 @@ class FakeAgent:
                     "name": name,
                     "version": latest,
                     "status": "active",
-                    "definition": {"kind": self.kind},
+                    "definition": definition,
                 }
             },
             "agent_endpoint": {
@@ -126,7 +131,7 @@ class FakeAgent:
         }
 
 
-class FakeCloudEvaluationProject:
+class FakeCloudEvaluationProject(FakeEvalRuns):
     """The fake project. `request` is what a `FoundryProject` offers.
 
     `agents` are its agents by name, working on `todo_service`.
@@ -143,6 +148,9 @@ class FakeCloudEvaluationProject:
     """
 
     endpoint = ENDPOINT
+    _NOT_FOUND = '{"error": {"code": "not_found", "message": "unknown route"}}'
+    _UNFINISHED = {"per_model_usage": [], "per_testing_criteria_results": []}
+    _NO_ITEM = ""
 
     def __init__(
         self,
@@ -181,18 +189,10 @@ class FakeCloudEvaluationProject:
             raise self._refuses
         routes = (
             ("GET", r"/agents/([^/?]+)\?api-version=v1", self._agent),
-            ("POST", r"/openai/v1/evals", self._create_eval),
-            ("POST", r"/openai/v1/evals/([^/]+)/runs", self._create_run),
-            ("GET", r"/openai/v1/evals/([^/]+)/runs/([^/]+)", self._poll_run),
-            ("POST", r"/openai/v1/evals/([^/]+)/runs/([^/]+)/cancel", self._cancel_run),
-            ("GET", r"/openai/v1/evals/([^/]+)/runs/([^/]+)/output_items\?limit=(\d+)(?:&after=(\w+))?", self._items),
+            *self._eval_run_routes(),
             ("POST", r"/openai/v1/responses", self._follow_up),
         )
-        for route_method, pattern, handler in routes:
-            matched = re.fullmatch(pattern, path)
-            if method == route_method and matched:
-                return copy.deepcopy(handler(*matched.groups(), body=body))
-        raise FoundryRequestError(method, path, 404, '{"error": {"code": "not_found", "message": "unknown route"}}')
+        return self._answer(routes, method, path, body=body)
 
     def _agent(self, name, **_):
         if name not in self.agents:
@@ -261,16 +261,6 @@ class FakeCloudEvaluationProject:
             "error": {"code": None, "message": None, "correlation_id": None, "inner_error": None},
         }
 
-    def _poll_run(self, eval_id, run_id, **_):
-        self._polls[run_id] += 1
-        run = self.runs[run_id]
-        if run["status"] == "canceled":
-            return run
-        if self._never_finishes or self._polls[run_id] <= self._polls_until_finished:
-            unfinished = {"error": None, "per_model_usage": [], "per_testing_criteria_results": []}
-            return {**run, "status": "in_progress", **unfinished}
-        return run
-
     def _cancel_run(self, eval_id, run_id, **_):
         self.runs[run_id] = {
             **self.runs[run_id],
@@ -281,17 +271,6 @@ class FakeCloudEvaluationProject:
             "per_testing_criteria_results": [],
         }
         return self.runs[run_id]
-
-    def _items(self, eval_id, run_id, limit, after, **_):
-        items = self._output_items[run_id] if self.runs[run_id]["status"] == "completed" else []
-        start = 0 if after is None else next(n for n, item in enumerate(items, start=1) if item["id"] == after)
-        page = items[start : start + int(limit)]
-        return {
-            "data": page,
-            "first_id": page[0]["id"] if page else "",
-            "last_id": page[-1]["id"] if page else "",
-            "has_more": start + len(page) < len(items),
-        }
 
     def _execute(self, eval_id, run_id, target, input_messages, rows) -> tuple[dict | None, list[dict]]:
         """Validate the run and invoke the agent once for every row. A run that fails leaves no items."""

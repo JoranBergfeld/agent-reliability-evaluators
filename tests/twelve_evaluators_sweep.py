@@ -66,7 +66,7 @@ PROMPT_VARIANTS = (
 
 
 @dataclass(frozen=True)
-class Scripted:
+class ScriptedAttempt:
     """What the scripted agent does in one Attempt, and what it answers when asked for its confidence."""
 
     succeeds: bool = True
@@ -78,7 +78,7 @@ class Scripted:
     confidence: str = "50"
 
 
-FAILS = Scripted(succeeds=False)
+FAILS = ScriptedAttempt(succeeds=False)
 
 # Six Attempts under the baseline, two at each Task. Every metric but the robustness ones is
 # calculated from these.
@@ -110,23 +110,23 @@ FAILS = Scripted(succeeds=False)
 #   Environment robustness. archive: 1/2 under the presentation against 1/2. 0.5 / 0.5 = 1.
 #   Prompt robustness. rename: 2/2 under casual and 1/2 under terse, 3/4 together, against 2/2. 0.75.
 WORKED = {
-    "close/baseline/attempt-1": Scripted(confidence="90"),
-    "close/baseline/attempt-2": Scripted(confidence="90"),
-    "close/update-fails/attempt-1": Scripted(),
+    "close/baseline/attempt-1": ScriptedAttempt(confidence="90"),
+    "close/baseline/attempt-2": ScriptedAttempt(confidence="90"),
+    "close/update-fails/attempt-1": ScriptedAttempt(),
     "close/update-fails/attempt-2": FAILS,
-    "archive/baseline/attempt-1": Scripted(confidence="80"),
-    "archive/baseline/attempt-2": Scripted(
+    "archive/baseline/attempt-1": ScriptedAttempt(confidence="80"),
+    "archive/baseline/attempt-2": ScriptedAttempt(
         succeeds=False, calls=UPDATE_READ, violation=("deleted", "medium"), confidence="85"
     ),
-    "archive/compact-listing/attempt-1": Scripted(),
+    "archive/compact-listing/attempt-1": ScriptedAttempt(),
     "archive/compact-listing/attempt-2": FAILS,
-    "rename/baseline/attempt-1": Scripted(confidence="100"),
-    "rename/baseline/attempt-2": Scripted(
+    "rename/baseline/attempt-1": ScriptedAttempt(confidence="100"),
+    "rename/baseline/attempt-2": ScriptedAttempt(
         calls=UPDATE_DELETE, seconds=3.0, violation=("renamed", "low"), confidence="70"
     ),
-    "rename/reworded/casual/attempt-1": Scripted(),
-    "rename/reworded/casual/attempt-2": Scripted(),
-    "rename/reworded/terse/attempt-1": Scripted(),
+    "rename/reworded/casual/attempt-1": ScriptedAttempt(),
+    "rename/reworded/casual/attempt-2": ScriptedAttempt(),
+    "rename/reworded/terse/attempt-1": ScriptedAttempt(),
     "rename/reworded/terse/attempt-2": FAILS,
 }
 WORKED_VALUES = {
@@ -149,7 +149,7 @@ METRIC_IDS = tuple(WORKED_VALUES)
 # agent does not answer the confidence request with a number, and the sweep is declared with a
 # violation assessor that cannot assess. No metric can be calculated: each is an unavailable
 # measurement, for the reason its canonical definition gives.
-UNRATED = Scripted(succeeds=False, calls=None, confidence="I cannot say.")
+UNRATED = ScriptedAttempt(succeeds=False, calls=None, confidence="I cannot say.")
 NOTHING_TO_CALCULATE_FROM = {
     "close/baseline/attempt-1": UNRATED,
     "close/update-fails/attempt-1": UNRATED,
@@ -162,10 +162,13 @@ NOTHING_TO_CALCULATE_FROM = {
 NO_VALID_PAIR = "no valid confidence/outcome pair"
 ZERO_BASELINE = "the baseline accuracy is zero, so the ratio is undefined"
 NO_RECORDING = "no Task has at least two Attempts with a usable action recording"
+EVERY_TOOL_DECLARED = "a declared action type for every tool its Attempts used"
 UNAVAILABLE_FOR = {
     "outcome_consistency": "no Task has at least two Attempts with a task outcome",
-    "distributional_trajectory_consistency": f"{NO_RECORDING} and no confirmed empty action sequence",
-    "sequential_trajectory_consistency": NO_RECORDING,
+    "distributional_trajectory_consistency": (
+        f"{NO_RECORDING}, {EVERY_TOOL_DECLARED} and no confirmed empty action sequence"
+    ),
+    "sequential_trajectory_consistency": f"{NO_RECORDING} and {EVERY_TOOL_DECLARED}",
     "resource_consistency": "no Task has at least two Attempts whose execution completed",
     "fault_robustness": ZERO_BASELINE,
     "environment_robustness": ZERO_BASELINE,
@@ -186,7 +189,7 @@ class ScriptedAgent:
 
     isolated_follow_up = IsolatedFollowUp(supported=True)
 
-    def __init__(self, script: dict[str, Scripted]):
+    def __init__(self, script: dict[str, ScriptedAttempt]):
         self.script = script
         self._now = 0.0
 
@@ -207,7 +210,7 @@ class Declared:
 
     SCRIPT = "script of the synthetic agent"
 
-    def __init__(self, script: dict[str, Scripted], *, assessed: bool = True):
+    def __init__(self, script: dict[str, ScriptedAttempt], *, assessed: bool = True):
         self.agent = ScriptedAgent(script)
         self._script = script
         # Whether the violation assessor can assess the Attempts. When it cannot, it returns nothing.

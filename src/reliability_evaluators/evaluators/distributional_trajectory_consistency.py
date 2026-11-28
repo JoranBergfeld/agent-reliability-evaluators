@@ -19,7 +19,7 @@ CONFIRMED_EMPTY_ATTEMPT = "an Attempt with a confirmed empty action sequence"
 
 DEFINITION = MetricDefinition(
     metric=DISTRIBUTIONAL_TRAJECTORY_CONSISTENCY,
-    version="1.0.0",
+    version="2.0.0",
     measures="Whether repeated Attempts at the same Task use the same mix of action types.",
     calculation=(
         "The actions of each Attempt are mapped to action types and counted, giving the share of the "
@@ -48,9 +48,15 @@ DEFINITION = MetricDefinition(
         "Assumption (spec assumption 10): the metric is calculated over the eligible Tasks and excluded "
         "Tasks are counted with reasons. A Task needs at least two Attempts with a usable action "
         "recording. The metric is unavailable only when no Task is eligible.",
-        "An Attempt is left out, with a reason, when its execution did not complete, when its recording "
-        "is not from the declared evidence source, or when one of its action events has a tool name "
-        "with no declared action type.",
+        "An Attempt is left out, with a reason, when its execution did not complete or when its recording "
+        "is not from the declared evidence source.",
+        "An Attempt that used a tool with no declared action type cannot be compared, and it is not "
+        "dropped: its Task is excluded with a reason that names the tool names, and counted like any "
+        "other excluded Task. Dropping the Attempt would leave the Attempts that are alike, which could "
+        "only raise the value.",
+        "Nominal behaviour: the metric is calculated from the Attempts made under the baseline. An Attempt "
+        "that records a variation as its condition is excluded with a reason and counted, whoever calls "
+        "the Evaluator. An Attempt that records no condition was made without an experiment and is used.",
     ),
     scale=Scale(
         minimum=0.0,
@@ -83,8 +89,8 @@ def evaluate(tasks: Iterable[TaskEvidence], action_types: ActionTypeMapping) -> 
         pair_difference=jensen_shannon_divergence,
         mean_difference_name="mean_jensen_shannon_divergence",
         no_eligible_task=(
-            "no Task has at least two Attempts with a usable action recording "
-            "and no confirmed empty action sequence"
+            "no Task has at least two Attempts with a usable action recording, a declared action type for "
+            "every tool its Attempts used and no confirmed empty action sequence"
         ),
         undefined_task=_confirmed_empty_attempt,
     )

@@ -30,7 +30,7 @@ import pytest
 from live_fixture import teardown
 from live_fixture.project_only import connect_project, provision_project
 from reliability_evaluators.evaluators import outcome_consistency
-from reliability_evaluators.managed_scoring import FoundryManagedScoring, FoundryProject, azure_cli_token, derive_artifact
+from reliability_evaluators.managed_scoring import FoundryManagedScoring, FoundryProject, derive_artifact
 from reliability_evaluators.managed_scoring.grader import decode_result, result_parts
 from reliability_evaluators.scorecard import AcceptanceCriterion
 from tests.live.test_managed_outcome_consistency import sweep_on_the_fixture, synthetic_evidence
@@ -149,7 +149,7 @@ def live():
 @pytest.fixture(scope="module")
 def scoring(live):
     """Managed scoring as a customer sets it up: the project endpoint and the Azure CLI's identity."""
-    return FoundryManagedScoring(project=FoundryProject(live.project_endpoint, token=azure_cli_token))
+    return FoundryManagedScoring(project=FoundryProject(live.project_endpoint))
 
 
 def evaluation(live, name, evaluator_name, evaluator_version, fields):

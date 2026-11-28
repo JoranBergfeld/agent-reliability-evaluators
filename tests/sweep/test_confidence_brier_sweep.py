@@ -477,7 +477,7 @@ def test_the_scorecard_says_how_the_brier_based_score_is_defined_and_how_to_read
     definition = brier["definition"]
     conventions = " ".join(definition["fidelity_conventions"])
     assert (brier["name"], brier["dimension"]) == ("Brier-based score", "predictability")
-    assert definition["version"] == "1.0.0"
+    assert definition["version"] == "2.0.0"
     assert "1 minus the mean of (c - y)^2" in definition["calculation"]
     assert "not the raw loss" in conventions
     assert "pooled across Tasks and Attempts" in conventions

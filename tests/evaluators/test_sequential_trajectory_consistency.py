@@ -213,7 +213,10 @@ def test_no_eligible_task_is_an_unavailable_measurement_with_its_evidence_counts
 
     assert result.state.value == "unavailable"
     assert result.value is None
-    assert result.reason == "no Task has at least two Attempts with a usable action recording"
+    assert result.reason == (
+        "no Task has at least two Attempts with a usable action recording "
+        "and a declared action type for every tool its Attempts used"
+    )
     assert result.counts["tasks"].to_dict() == {
         "total": 2,
         "valid": 0,
@@ -286,21 +289,65 @@ def test_a_recording_from_another_evidence_source_is_not_mixed_in():
     }
 
 
-def test_an_attempt_with_an_action_that_has_no_declared_action_type_is_excluded_and_named():
-    # `purge_items` is not in the declared mapping, so the third Attempt cannot be typed.
-    # The remaining pair is identical: value 1.
-    result = evaluate({"task": [READ_THEN_UPDATE, READ_THEN_UPDATE, ["get_item", "purge_items"]]})
+def test_an_attempt_that_used_a_tool_with_no_declared_action_type_is_not_dropped_and_its_task_is_excluded():
+    # `purge_items` is not in the declared mapping, so the third Attempt of `task` cannot be typed, and the
+    # Task cannot be calculated. `other`: one substitution in two actions, distance 1/2, value 0.5.
+    # The metric is 0.5. Dropping the Attempt would leave `task` with two identical Attempts and a value
+    # of 1, and give (1 + 0.5) / 2 = 0.75: an Attempt that did something else would raise the value.
+    result = evaluate(
+        {
+            "task": [READ_THEN_UPDATE, READ_THEN_UPDATE, ["get_item", "purge_items"]],
+            "other": [READ_THEN_UPDATE, ["get_item", "delete_item"]],
+        }
+    )
 
-    assert result.value == 1
+    assert result.value == 0.5
+    assert result.counts["tasks"].to_dict() == {
+        "total": 2,
+        "valid": 1,
+        "missing": [],
+        "excluded": [
+            {
+                "reason": "an Attempt that used a tool with no declared action type: purge_items",
+                "count": 1,
+                "ids": ["task"],
+            },
+        ],
+    }
     assert result.counts["attempts"].to_dict() == {
-        "total": 3,
+        "total": 5,
         "valid": 2,
         "missing": [],
         "excluded": [
-            {"reason": "an action event has no declared action type", "count": 1, "ids": ["task/attempt-3"]},
+            {
+                "reason": "its Task has an Attempt that used a tool with no declared action type: purge_items",
+                "count": 3,
+                "ids": ["task/attempt-1", "task/attempt-2", "task/attempt-3"],
+            },
         ],
     }
     assert result.details["tool_names_without_action_type"] == ["purge_items"]
+    assert result.attempt_ids == ("other/attempt-1", "other/attempt-2")
+
+
+def test_two_identical_attempts_and_one_that_used_an_undeclared_tool_do_not_give_1():
+    # The third Attempt did what the others did and then called a tool that has no declared action type.
+    # Nothing shows that the three are alike, so there is no value. It is not 1.
+    result = evaluate({"task": [READ_THEN_UPDATE, READ_THEN_UPDATE, [*READ_THEN_UPDATE, "purge_items", "archive_all"]]})
+
+    assert result.state.value == "unavailable"
+    assert result.value is None
+    assert result.reason == (
+        "no Task has at least two Attempts with a usable action recording "
+        "and a declared action type for every tool its Attempts used"
+    )
+    assert [entry.to_dict() for entry in result.counts["tasks"].excluded] == [
+        {
+            "reason": "an Attempt that used a tool with no declared action type: archive_all, purge_items",
+            "count": 1,
+            "ids": ["task"],
+        }
+    ]
 
 
 @pytest.mark.parametrize("undeclared", [None, {"get_item": "read"}])

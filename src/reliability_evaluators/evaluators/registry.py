@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Callable
 
-from ..evidence import VariationKind
+from ..evidence import ACTION_TYPE_DECLARATION, VariationKind
 from . import (
     brier_based_score,
     calibration,
@@ -50,12 +50,12 @@ EVALUATORS: dict[str, Evaluator] = {
         Evaluator(
             distributional_trajectory_consistency.DEFINITION,
             distributional_trajectory_consistency.evaluate,
-            declarations=("action_types",),
+            declarations=(ACTION_TYPE_DECLARATION,),
         ),
         Evaluator(
             sequential_trajectory_consistency.DEFINITION,
             sequential_trajectory_consistency.evaluate,
-            declarations=("action_types",),
+            declarations=(ACTION_TYPE_DECLARATION,),
         ),
         Evaluator(resource_consistency.DEFINITION, resource_consistency.evaluate),
         Evaluator(

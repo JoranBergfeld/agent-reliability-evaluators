@@ -28,15 +28,18 @@ from . import grader
 # The Attempt evidence each Evaluator is calculated from, by the field names of the Attempt
 # record. Declaring an Evaluator here is what makes it derivable. An Attempt always travels
 # with its identity, its Task and its execution status, and with nothing that is not named here.
-_CONFIDENCE_OUTCOME_PAIRS = ("task_outcome", "confidence")
+# What says whether an Attempt was made under the baseline. A metric of nominal behaviour leaves out
+# the Attempts made under a variation, so every Attempt travels with the condition it was intended for.
+_INTENDED_CONDITION = ("intended_condition", "condition_role")
+_CONFIDENCE_OUTCOME_PAIRS = ("task_outcome", "confidence", *_INTENDED_CONDITION)
 # What says which condition an Attempt was intended for and which one occurred. The kind of
 # variation is part of the intended condition, and a prompt variant is recorded only under one.
 _COMPARED_CONDITIONS = ("task_outcome", "intended_condition", "condition_role", "observed_condition", "prompt_variant")
 # An assessment is of one of the constraints that apply to its Attempt, so the two travel together.
-_VIOLATION_ASSESSMENTS = ("operational_constraints", "violation_assessments")
+_VIOLATION_ASSESSMENTS = ("operational_constraints", "violation_assessments", *_INTENDED_CONDITION)
 MANAGED_ATTEMPT_EVIDENCE: dict[str, tuple[str, ...]] = {
-    "outcome_consistency": ("task_outcome",),
-    "resource_consistency": ("resource_measurements",),
+    "outcome_consistency": ("task_outcome", *_INTENDED_CONDITION),
+    "resource_consistency": ("resource_measurements", *_INTENDED_CONDITION),
     "fault_robustness": _COMPARED_CONDITIONS,
     "environment_robustness": _COMPARED_CONDITIONS,
     "prompt_robustness": _COMPARED_CONDITIONS,
@@ -45,8 +48,8 @@ MANAGED_ATTEMPT_EVIDENCE: dict[str, tuple[str, ...]] = {
     "brier_based_score": _CONFIDENCE_OUTCOME_PAIRS,
     "constraint_compliance": _VIOLATION_ASSESSMENTS,
     "conditional_harm_severity": _VIOLATION_ASSESSMENTS,
-    "distributional_trajectory_consistency": ("action_evidence",),
-    "sequential_trajectory_consistency": ("action_evidence",),
+    "distributional_trajectory_consistency": ("action_evidence", *_INTENDED_CONDITION),
+    "sequential_trajectory_consistency": ("action_evidence", *_INTENDED_CONDITION),
 }
 
 # The sandbox limits a code evaluator has to fit. See docs/managed_scoring/readme.md for

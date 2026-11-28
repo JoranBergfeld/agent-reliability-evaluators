@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 from typing import Any, Mapping
 
+from .acceptance import NOT_RECALCULATED
 from .assemble import TOKEN_USAGE, to_json
 
 _NO_VALUE = "\N{EM DASH}"
@@ -61,10 +62,12 @@ def render_summary(scorecard: Mapping[str, Any]) -> str:
 def _metric_row(entry: Mapping[str, Any]) -> list[str]:
     state = entry.get("state")
     acceptance = entry.get("acceptance")
+    # A Foundry-managed entry that a recalculation carried over rests on task outcomes that were corrected since.
+    out_of_date = ", not recalculated" if entry.get(NOT_RECALCULATED) else ""
     return [
         _text(entry.get("name")),
         # A metric that records no state has no result: its Attempts were cut short, or its scoring failed.
-        "no result" if state is None else _text(state),
+        ("no result" if state is None else _text(state)) + out_of_date,
         _text(entry.get("value")),
         _text(entry.get("scoring_path")),
         _text(acceptance.get("status")) if isinstance(acceptance, dict) else _NO_VALUE,

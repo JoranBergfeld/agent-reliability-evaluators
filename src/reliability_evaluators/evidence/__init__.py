@@ -7,7 +7,7 @@ customer supplies again.
 Pure: standard library only, no I/O. The canonical metric definitions depend on it.
 """
 
-from .actions import ActionEvent, ActionEvidence, ActionTypeMapping
+from .actions import ACTION_TYPE_DECLARATION, ActionEvent, ActionEvidence, ActionTypeMapping
 from .attempt import (
     Attempt,
     ExecutionStatus,
@@ -34,10 +34,13 @@ from .experiment import (
     VariationKind,
     json_data,
 )
-from .grouping import TaskEvidence, group_by_task, require_unambiguous
+from .grouping import NOT_UNDER_THE_BASELINE, TaskEvidence, group_by_task, require_unambiguous, under_the_baseline
+from .invocation import InvocationEvidence
 from .reading import read_attempts
 
 __all__ = [
+    "ACTION_TYPE_DECLARATION",
+    "NOT_UNDER_THE_BASELINE",
     "ActionEvent",
     "ActionEvidence",
     "ActionTypeMapping",
@@ -49,6 +52,7 @@ __all__ = [
     "EvidenceError",
     "ExecutionStatus",
     "ExperimentStatus",
+    "InvocationEvidence",
     "LifecyclePoint",
     "LifecycleStep",
     "ObservedCondition",
@@ -70,4 +74,5 @@ __all__ = [
     "read_attempts",
     "read_confidence_response",
     "require_unambiguous",
+    "under_the_baseline",
 ]

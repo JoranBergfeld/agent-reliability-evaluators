@@ -40,3 +40,8 @@ def _call(method, attempt_id, todo_id="", body=None):
             return json.dumps({"status": response.status, "body": json.load(response)})
     except urllib.error.HTTPError as error:
         return json.dumps({"status": error.code, "body": json.loads(error.read() or b"null")})
+    except OSError as error:
+        # Only text is kept of it: the error holds the frames of the standard library, and those hold the key.
+        unanswered = f"{type(error).__name__}: {getattr(error, 'reason', error)}"
+    # Raised here, after the handler, so that it is not chained to the error it describes.
+    raise RuntimeError(f"the to-do service did not answer: {unanswered}")

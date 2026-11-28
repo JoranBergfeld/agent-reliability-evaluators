@@ -23,7 +23,7 @@ NO_FAILURE = "no failure among the valid confidence/outcome pairs, so there is n
 
 DEFINITION = MetricDefinition(
     metric=STRICT_CONFIDENCE_DISCRIMINATION,
-    version="1.0.0",
+    version="2.0.0",
     measures="Whether successful Attempts received a higher confidence rating than failed ones.",
     calculation=(
         "Each valid confidence/outcome pair has a confidence c, the rating divided by 100. Every "
@@ -51,6 +51,9 @@ DEFINITION = MetricDefinition(
         "rating. Every other Attempt is counted with its reason, and is never scored as a confidence of 0 "
         "or as a task failure. The metric is unavailable when the valid pairs hold no success or no "
         "failure: there is then nothing to compare, and the value is not 0, 0.5 or 1.",
+        "Nominal behaviour: the metric is calculated from the Attempts made under the baseline. An Attempt "
+        "that records a variation as its condition is excluded with a reason and counted, whoever calls "
+        "the Evaluator. An Attempt that records no condition was made without an experiment and is used.",
     ),
     scale=Scale(
         minimum=0.0,

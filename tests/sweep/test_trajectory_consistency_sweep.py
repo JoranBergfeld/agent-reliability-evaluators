@@ -135,7 +135,7 @@ def test_the_scorecard_says_that_a_high_value_shows_neither_correctness_nor_comp
     for metric_id, calculation in ((DISTRIBUTIONAL, "base-2 Jensen-Shannon divergence"), (SEQUENTIAL, "Levenshtein")):
         entry = metric(scorecard, metric_id)
         definition = entry["definition"]
-        assert definition["version"] == "1.0.0"
+        assert definition["version"] == "2.0.0"
         assert calculation in definition["calculation"]
         assert "weighted equally" in definition["calculation"]
         assert "neither correctness nor compliance" in definition["interpretation"]
@@ -220,14 +220,49 @@ def test_an_invocation_that_fails_is_left_out_of_the_comparison():
         ]
 
 
+def test_an_attempt_that_called_a_tool_with_no_declared_action_type_excludes_its_task_from_both_metrics():
+    # `purge_items` has no declared action type. close: its third Attempt called it, so close cannot be
+    # calculated. archive: read, update against update, delete. Distributional 0.5, sequential 0.
+    # Dropping the Attempt would leave close with two identical Attempts and a Task value of 1, and give
+    # (1 + 0.5) / 2 = 0.75 and (1 + 0) / 2 = 0.5.
+    scorecard = sweep(
+        {"close": [READ_UPDATE, READ_UPDATE, [*READ_UPDATE, "purge_items"]], "archive": [READ_UPDATE, UPDATE_DELETE]}
+    )
+
+    assert metric(scorecard, DISTRIBUTIONAL)["value"] == 0.5
+    assert metric(scorecard, SEQUENTIAL)["value"] == 0
+    for metric_id in BOTH:
+        entry = metric(scorecard, metric_id)
+        assert entry["counts"]["tasks"]["excluded"] == [
+            {
+                "reason": "an Attempt that used a tool with no declared action type: purge_items",
+                "count": 1,
+                "ids": ["close"],
+            },
+        ]
+        assert entry["counts"]["attempts"]["excluded"] == [
+            {
+                "reason": "its Task has an Attempt that used a tool with no declared action type: purge_items",
+                "count": 3,
+                "ids": ["close/attempt-1", "close/attempt-2", "close/attempt-3"],
+            },
+        ]
+        assert entry["details"]["tool_names_without_action_type"] == ["purge_items"]
+        assert entry["evidence"] == {"attempt_ids": ["archive/attempt-1", "archive/attempt-2"]}
+
+
 def test_no_eligible_task_gives_unavailable_measurements_with_reasons_and_counts():
     scorecard = sweep({"close": [READ_UPDATE], "archive": [READ_UPDATE, NOT_LOGGED]})
 
     reasons = {
         DISTRIBUTIONAL: (
-            "no Task has at least two Attempts with a usable action recording and no confirmed empty action sequence"
+            "no Task has at least two Attempts with a usable action recording, a declared action type for every "
+            "tool its Attempts used and no confirmed empty action sequence"
         ),
-        SEQUENTIAL: "no Task has at least two Attempts with a usable action recording",
+        SEQUENTIAL: (
+            "no Task has at least two Attempts with a usable action recording "
+            "and a declared action type for every tool its Attempts used"
+        ),
     }
     for metric_id in BOTH:
         entry = metric(scorecard, metric_id)

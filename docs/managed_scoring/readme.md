@@ -63,10 +63,12 @@ FoundryManagedScoring(project=my_project).register(["outcome_consistency"])
 
 Every request goes to your project as the identity of the bearer token you supply. The offering has no identity of its own and stores no token.
 
-`FoundryProject(endpoint, token=...)` takes a function that returns a token for `https://ai.azure.com`.
+`FoundryProject(endpoint, credential=...)` takes a function that returns a token for `https://ai.azure.com`. The Foundry agent targets take it under the same name, `credential`, with the same default: there is one way to say who you are.
 
-- **Default: the Azure CLI.** `azure_cli_token` runs `az account get-access-token --resource https://ai.azure.com`. In CI this is whatever your pipeline signed in as before the sweep, for example with `az login --service-principal` or your platform's federated sign-in.
+- **Default: the Azure CLI.** `AzureCliCredential()` runs `az account get-access-token --resource https://ai.azure.com` and keeps the token until five minutes before it expires. Pass `AzureCliCredential(subscription="<name or id>")` when the signed-in identity has several tenants. In CI this is whatever your pipeline signed in as before the sweep, for example with `az login --service-principal` or your platform's federated sign-in.
 - **Your own function.** Pass any function that returns a token, for example one built on `azure-identity` if your project already uses it.
+
+The token is sent to an `https` endpoint only, or to this machine. It is held where no error and no traceback shows it: an error of a request names the request and the answer, never the token.
 
 **The choice made here:** the project is called over its REST API with the Python standard library (`urllib`), and the token comes from a function you choose. No Azure SDK is used and no package is needed. The Azure CLI is a tool on the runner, not a Python dependency, and you can replace it with your own token function.
 
@@ -124,14 +126,16 @@ For each Attempt an evaluator is given its identity, its Task, its execution sta
 
 | Evaluator | What is sent of an Attempt, beside its identity, its Task and its execution status |
 | --- | --- |
-| Outcome consistency | The task outcome with its source |
-| Distributional and sequential trajectory consistency | The source of the action evidence and the tool name of each action, in order. The arguments, the result and the error of an action are not sent: these metrics compare action types and nothing else of an action |
-| Resource consistency | The resource measurements, each with its type, value, unit, measurement boundary and whether it is reliably sourced |
+| Outcome consistency | The task outcome with its source, and the intended condition |
+| Distributional and sequential trajectory consistency | The source of the action evidence and the tool name of each action, in order. The arguments, the result and the error of an action are not sent: these metrics compare action types and nothing else of an action. The intended condition |
+| Resource consistency | The resource measurements, each with its type, value, unit, measurement boundary and whether it is reliably sourced, and the intended condition |
 | Fault, environment and prompt robustness | The task outcome, the intended condition with its role, kind, description and parameters, the observed condition with its source and observations, and the prompt variant with its exact text and source |
-| Calibration, strict confidence discrimination and Brier-based score | The task outcome and the confidence evidence: the rating as the agent wrote it with the whole response it was read from, or the reason there is no rating |
-| Constraint compliance and conditional harm severity | The operational constraints with their descriptions, and the violation assessments with their evidence, source and severity rating |
+| Calibration, strict confidence discrimination and Brier-based score | The task outcome and the confidence evidence: the rating as the agent wrote it with the whole response it was read from, or the reason there is no rating. The intended condition |
+| Constraint compliance and conditional harm severity | The operational constraints with their descriptions, and the violation assessments with their evidence, source and severity rating. The intended condition |
 
-So the text of a prompt variant, the agent's answer to the confidence request and the evidence text of a violation assessment are stored in your project when you score those metrics there.
+The intended condition is the condition an Attempt was made under in its experiment, with its role, description and parameters. Every evaluator is sent it: the nine metrics of nominal behaviour leave out the Attempts made under a variation, and the three robustness metrics compare them with the baseline. An Attempt made without an experiment has none.
+
+So the text of a prompt variant, the agent's answer to the confidence request, the evidence text of a violation assessment and the description and parameters of a condition are stored in your project when you score those metrics there.
 
 **What you declare for an Evaluator is sent with its evidence.** The trajectory metrics are calculated from the evidence source and the action types you declare, so those travel in the same string, behind the same digest. An evaluator in Foundry is given the submitted row and nothing else (observed), so a declaration has no other way to reach it.
 
@@ -211,7 +215,7 @@ Foundry-managed scoring has limits that scoring in your own process does not hav
 
 **The size of a run is what limits a sweep.** Every row of a run carries the evidence, and the run for the parts of a result has one row for every six bytes of it. Both grow with the sweep, so the request grows with its square.
 
-The table gives, for each Evaluator, the largest sweep whose runs fit in 2,000,000 bytes. It was measured on this machine with the derived evaluators, on synthetic sweeps of Tasks with five Attempts each and identities like `task-7/attempt-3`. Your sweep will differ: identities and texts that have less in common deflate less, and a result names every Task and Attempt it leaves out.
+The table gives, for each Evaluator, the largest sweep whose runs fit in 2,000,000 bytes. It was measured on this machine with the derived evaluators, on synthetic sweeps of Tasks with five Attempts each and identities like `task-7/attempt-3`. Your sweep will differ: identities and texts that have less in common deflate less, and a result names every Task and Attempt it leaves out. The sweeps of the nine metrics that are not robustness metrics were of Tasks given without an experiment. An Attempt made in an experiment is also sent with its intended condition, so fewer of them fit. How many fewer was not measured.
 
 | Evaluator | Largest sweep that fits | Rows of its second run | Rows at 100 Attempts |
 | --- | --- | --- | --- |
@@ -525,7 +529,9 @@ Rescore with the commit or tag of the offering that made the scorecard. Another 
 
 ### A recalculation is not a rescore
 
-[`recalculate`](../sweep/late-and-corrected-outcomes.md) applies task outcomes that were supplied or corrected after the run, and scores in your own process. It still refuses an earlier scorecard that holds a Foundry-managed metric, with or without a rescore. A corrected outcome would make the managed result out of date, and scoring it again in your own process would replace the result of the path you chose. Correcting a task outcome behind a Foundry-managed result is not supported in this version: run the sweep again.
+[`recalculate`](../sweep/late-and-corrected-outcomes.md) applies task outcomes that were supplied or corrected after the run. It scores in your own process the metrics that were scored there, and it never scores a Foundry-managed metric there instead: that would replace the result of the path you chose.
+
+A scorecard that holds a Foundry-managed metric can still be corrected. Give the recalculation your project as `managed_scoring`, and Foundry scores the metric again from the corrected evidence. Without it, the entry of the metric is carried into the new scorecard as it was and marked `not_recalculated`, with the Attempts whose corrected outcomes it does not rest on, and an acceptance criterion is not assessed on it. A Foundry-managed result that the corrections do not touch is carried as it is and stays current. A customer-process rescore is carried with the entry it belongs to: it is a result for the evidence that was submitted, and is not made again for corrected evidence. See [a metric that Foundry-managed scoring scored](../sweep/late-and-corrected-outcomes.md#a-metric-that-foundry-managed-scoring-scored).
 
 ## What stays in your project
 
@@ -785,7 +791,7 @@ Observed in Sweden Central in one more disposable Foundry project with no model 
 - **How often Foundry does not grade a row, and why.** Seen in single rows of a few runs, in no row of a probe of 843 rows, and in 148 rows of the same probe when other runs were in progress in the project. With the twelve second runs of one sweep in progress at once it was 22 of about 860 rows one time and none of about 730 another, and none of 523 in a run that was made alone. It looks like load on the project, which is why a part is asked for again only when the runs of the sweep have ended. Whether three runs for a part are enough when other sweeps are in progress in the same project was not seen, and not tried.
 - **A run nearer the limit than 1.98 million bytes** with a derived evaluator, and a run of more than 523 rows.
 - **Rows of one run graded by different builds of the sandbox**, which could deflate the same result differently.
-- **A metric that is not applicable.** The encoded result carries any state an Evaluator can return. Outcome consistency returns only `available` and `unavailable`, so no other state was returned through it.
+- **A metric that is not applicable, in a live project.** The encoded result carries any state an Evaluator can return. Constraint compliance and conditional harm severity return `not_applicable` for a sweep whose Tasks declare no operational constraint, and that comes back with its reason and counts from the fake project and from the derived evaluators on a development machine. It was not returned through a live project.
 - **The Evaluator-seam vectors in a live project.** Every vector runs against the derived evaluators on a development machine, called the way the sandbox calls them. In a live project each Evaluator scored two sweeps, one with a value and one with an unavailable measurement, and calibration a third.
 - **What the size limit of a run counts.** Two requests of different shape met it at the same number of bytes without whitespace. Whether another name, another evaluation or text outside ASCII moves it is not known, which is why the offering stays under it.
 - **Why a call of 52 to 58 seconds was graded some of the time**, and why a fast row beside a slow one was then not graded. Where a derived evaluator comes that close, expect either.

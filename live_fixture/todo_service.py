@@ -4,26 +4,35 @@ import contextlib
 import json
 import secrets
 import threading
-import urllib.error
-import urllib.request
 
+from .hidden import Secret, Unanswered, send
 from .service.server import make_server
 
 
 class TodoServiceError(RuntimeError):
-    pass
+    """The to-do service did not do what it was asked. `status` is the HTTP status it answered with, if it answered."""
+
+    def __init__(self, message, status=None):
+        super().__init__(message)
+        self.status = status
 
 
 class TodoService:
     """Prepares and inspects Attempts on a running to-do service using its administration key.
 
     `api_key` is the separate key the agents use; it cannot prepare or inspect Attempts.
+    Both keys are held as Secrets, so a failure shows neither.
     """
 
     def __init__(self, url, api_key, admin_key):
         self.url = url.rstrip("/")
-        self.api_key = api_key
-        self._admin_key = admin_key
+        self._api_key = api_key if isinstance(api_key, Secret) else Secret(api_key)
+        self._admin_key = admin_key if isinstance(admin_key, Secret) else Secret(admin_key)
+
+    @property
+    def api_key(self):
+        """The agents' key itself, for the tool or the setting that needs it."""
+        return self._api_key.reveal()
 
     def prepare_attempt(self, attempt_id):
         """Create the Attempt's own seeded state and return it."""
@@ -91,19 +100,19 @@ class TodoService:
         }
 
     def _admin(self, method, attempt_id, body=None):
-        request = urllib.request.Request(
-            f"{self.url}/admin/attempts/{attempt_id}",
-            data=json.dumps(body).encode() if body is not None else None,
-            method=method,
-            headers={"x-api-key": self._admin_key, "Content-Type": "application/json"},
-        )
         try:
-            with urllib.request.urlopen(request, timeout=60) as response:
-                return json.load(response)
-        except urllib.error.HTTPError as error:
+            status, answered = send(
+                method, f"{self.url}/admin/attempts/{attempt_id}",
+                json.dumps(body).encode() if body is not None else None,
+                {"Content-Type": "application/json"}, api_key=self._admin_key, timeout=60,
+            )
+        except Unanswered as unanswered:
+            raise TodoServiceError(f"{method} Attempt {attempt_id}: no answer: {unanswered.reason}") from None
+        if status >= 400:
             raise TodoServiceError(
-                f"{method} Attempt {attempt_id}: HTTP {error.code} {error.read().decode(errors='replace')}"
-            ) from error
+                f"{method} Attempt {attempt_id}: HTTP {status} {answered.decode(errors='replace')}", status
+            )
+        return json.loads(answered)
 
 
 @contextlib.contextmanager

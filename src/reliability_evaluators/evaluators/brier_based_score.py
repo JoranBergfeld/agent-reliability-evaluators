@@ -15,7 +15,7 @@ from .result import MetricDefinition, MetricResult, Scale
 
 DEFINITION = MetricDefinition(
     metric=BRIER_BASED_SCORE,
-    version="1.0.0",
+    version="2.0.0",
     measures=(
         "How close the agent's confidence rating was to the task outcome: the squared error between "
         "the two, inverted so that higher is better."
@@ -39,6 +39,9 @@ DEFINITION = MetricDefinition(
         "paper's heuristic fallback for a rating that cannot be read is not adopted.",
         "The rating states how likely the agent thinks the task succeeded, not how sure it is of its "
         "prediction.",
+        "Nominal behaviour: the metric is calculated from the Attempts made under the baseline. An Attempt "
+        "that records a variation as its condition is excluded with a reason and counted, whoever calls "
+        "the Evaluator. An Attempt that records no condition was made without an experiment and is used.",
     ),
     scale=Scale(
         minimum=0.0,

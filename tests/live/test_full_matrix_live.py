@@ -50,7 +50,7 @@ from reliability_evaluators.agent_target import AttemptRequest, foundry_cloud_ev
 from reliability_evaluators.agent_target.foundry_cloud_evaluation import FoundryCloudEvaluationTarget
 from reliability_evaluators.agent_target.foundry_hosted import AzureCliCredential, FoundryHostedAgentTarget
 from reliability_evaluators.agent_target.foundry_prompt_agent import FoundryPromptAgentTarget
-from reliability_evaluators.managed_scoring import FoundryManagedScoring, FoundryProject, azure_cli_token
+from reliability_evaluators.managed_scoring import FoundryManagedScoring, FoundryProject
 from reliability_evaluators.sweep import rescore_in_customer_process
 from reliability_evaluators.sweep.confidence import confidence_prompt
 from tests.full_matrix.declaration import SUCCESS_RULE_IN_WORDS, SUPPLEMENT_METRIC_IDS, MatrixSetup
@@ -187,7 +187,7 @@ def target_of(live, name, setup):
 
 def managed_scoring_in(live):
     return FoundryManagedScoring(
-        project=FoundryProject(live.project_endpoint, token=azure_cli_token), run_timeout_seconds=1800
+        project=FoundryProject(live.project_endpoint), run_timeout_seconds=1800
     )
 
 
@@ -438,7 +438,7 @@ def test_synthetic_scripted_sweep(live):
     if written_to.exists():
         pytest.skip(f"{written_to.name} exists: the synthetic sweep was made")
     scoring = FoundryManagedScoring(
-        project=FoundryProject(live.project_endpoint, token=azure_cli_token), run_timeout_seconds=1800
+        project=FoundryProject(live.project_endpoint), run_timeout_seconds=1800
     )
     declared = Declared(WORKED)
     started, clock = now(), time.monotonic()

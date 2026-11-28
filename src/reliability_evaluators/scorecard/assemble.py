@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from copy import deepcopy
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Iterable, Mapping, Sequence
@@ -17,7 +18,7 @@ from ..evaluators import (
     ScoringPath,
 )
 from ..evidence import Attempt, EvidenceError, ExperimentStatus
-from .acceptance import AcceptanceCriterion, assess, criteria_by_metric
+from .acceptance import NOT_RECALCULATED, AcceptanceCriterion, assess, criteria_by_metric
 from .usage import EvaluatorUse, PreparationUsage, code_scoring_use, managed_scoring_uses, sweep_token_usage
 
 SCHEMA_VERSION = 1
@@ -211,9 +212,50 @@ class MissingResult:
             raise ValueError("a missing result is reported with its execution error")
 
 
+NOT_RECALCULATED_MEANING = (
+    "This entry was not recalculated. The metric was scored by Foundry-managed scoring. A recalculation never "
+    "scores such a metric in the customer's own process instead, and no Foundry project was supplied to score it "
+    "again. So the entry holds what the earlier scorecard held, and that rests on task outcomes that were "
+    "supplied or corrected since: those of the Attempts named here. It is not the result for the corrected "
+    "outcomes, and an acceptance criterion is not assessed on it. Supply `managed_scoring` to the recalculation "
+    "to have Foundry score the metric from the corrected outcomes."
+)
+
+
+@dataclass(frozen=True, kw_only=True)
+class CarriedMetric:
+    """The entry of a metric that a recalculation carries over from the earlier scorecard, as it was recorded.
+
+    A recalculation does not repeat the scoring of a Foundry-managed metric in the customer's
+    own process. Unless Foundry scores it again, its entry is carried: unchanged when the
+    corrections do not touch the evidence it was scored from, and otherwise marked as not
+    recalculated, with the Attempts whose task outcomes were corrected since.
+    """
+
+    # The entry as the earlier scorecard records it.
+    entry: Mapping[str, Any]
+    # What the earlier scorecard reports as the token usage of the Evaluator: its scoring, and the rest
+    # of what it records beside what follows from the Attempts, such as a customer-process rescore.
+    usage: Mapping[str, Any]
+    # The Attempts the result rests on whose task outcomes were supplied or corrected since. Empty: none.
+    corrected_attempt_ids: tuple[str, ...] = ()
+
+    @property
+    def metric_id(self) -> str:
+        return self.entry["metric_id"]
+
+    @property
+    def attempts_used(self) -> tuple[str, ...]:
+        return tuple(self.entry["attempts_used"]["attempt_ids"])
+
+
+def _metric_id(scored: ScoredMetric | MissingResult | CarriedMetric) -> str:
+    return scored.metric_id if isinstance(scored, CarriedMetric) else scored.definition.metric.metric_id
+
+
 def build_scorecard(
     *,
-    metrics: Sequence[ScoredMetric | MissingResult],
+    metrics: Sequence[ScoredMetric | MissingResult | CarriedMetric],
     attempts: Sequence[Attempt],
     executions: Sequence[ExecutionRecord],
     max_concurrent_attempts: int,
@@ -248,7 +290,7 @@ def build_scorecard(
     metadata, apart from the metrics: no metric entry and no acceptance assessment holds or
     reads any of it.
     """
-    scored_by_id = {scored.definition.metric.metric_id: scored for scored in metrics}
+    scored_by_id = {_metric_id(scored): scored for scored in metrics}
     criteria = criteria_by_metric(acceptance_criteria)
     attempts_by_id = {attempt.attempt_id: attempt for attempt in attempts}
     failures = {metric_id: _execution_failure(scored) for metric_id, scored in scored_by_id.items()}
@@ -283,25 +325,50 @@ def build_scorecard(
         "tasks_without_experiment": [
             execution.to_dict() for execution in executions if execution.experiment_id is None
         ],
-        TOKEN_USAGE: sweep_token_usage(
-            attempts,
-            [
-                EvaluatorUse(
-                    metric_id=metric.metric_id,
-                    attempt_ids=tuple(scored_by_id[metric.metric_id].attempts_used),
-                    scoring=_scoring_uses(scored_by_id[metric.metric_id]),
-                )
-                for metric in RELIABILITY_METRICS
-                if metric.metric_id in scored_by_id
-            ],
-            preparation_usage,
-        ),
+        TOKEN_USAGE: _token_usage(attempts, scored_by_id, preparation_usage),
         "attempts": [attempt.to_dict() for attempt in attempts],
     }
 
 
-def _scoring_uses(scored: ScoredMetric | MissingResult) -> list[dict[str, Any]]:
+# What the token usage of an Evaluator holds that follows from its Attempts and its scoring.
+_CALCULATED_USAGE = (
+    "metric_id", "total", "overlapping", "additive", "overlaps_with", "attempt_ids", "preparation_ids", "scoring"
+)
+
+
+def _token_usage(
+    attempts: Sequence[Attempt],
+    scored_by_id: Mapping[str, ScoredMetric | MissingResult | CarriedMetric],
+    preparation_usage: Sequence[PreparationUsage],
+) -> dict[str, Any]:
+    usage = sweep_token_usage(
+        attempts,
+        [
+            EvaluatorUse(
+                metric_id=metric.metric_id,
+                attempt_ids=tuple(scored_by_id[metric.metric_id].attempts_used),
+                scoring=_scoring_uses(scored_by_id[metric.metric_id]),
+            )
+            for metric in RELIABILITY_METRICS
+            if metric.metric_id in scored_by_id
+        ],
+        preparation_usage,
+    )
+    for of_evaluator in usage["evaluators"]:
+        scored = scored_by_id[of_evaluator["metric_id"]]
+        if isinstance(scored, CarriedMetric):
+            # What the earlier scorecard records beside it, such as the use of a customer-process rescore.
+            of_evaluator.update(
+                {key: deepcopy(value) for key, value in scored.usage.items() if key not in _CALCULATED_USAGE}
+            )
+    return usage
+
+
+def _scoring_uses(scored: ScoredMetric | MissingResult | CarriedMetric) -> list[dict[str, Any]]:
     """The uses that scoring a metric was, on the scoring path the metric is attributed to."""
+    if isinstance(scored, CarriedMetric):
+        # The scoring was not repeated, so what it used is what the earlier scorecard reports.
+        return [dict(use) for use in scored.usage["scoring"]]
     if scored.scoring_path is ScoringPath.CUSTOMER_PROCESS:
         return [code_scoring_use()]
     reported = []
@@ -320,7 +387,7 @@ MANAGED_SCORING_GAVE_NO_RESULT = (
 )
 
 
-def _execution_failure(scored: ScoredMetric | MissingResult) -> dict[str, Any] | None:
+def _execution_failure(scored: ScoredMetric | MissingResult | CarriedMetric) -> dict[str, Any] | None:
     """Why a metric has no result: the Attempts planned for it were cut short, or scoring it failed.
 
     An Evaluator that finds too little in evidence that was cut short has not measured
@@ -329,6 +396,8 @@ def _execution_failure(scored: ScoredMetric | MissingResult) -> dict[str, Any] |
 
     A scoring that failed names no experiment and no Task: it is not the Attempts that failed.
     """
+    if isinstance(scored, CarriedMetric):
+        return deepcopy(scored.entry.get("execution_failure"))
     if isinstance(scored, MissingResult):
         return {
             "reason": f"{MANAGED_SCORING_GAVE_NO_RESULT}: {scored.execution_error}",
@@ -367,7 +436,9 @@ def _missing_attempt_evidence(execution: ExecutionRecord, attempts_by_id: dict[s
 
 
 def _metric_entry(
-    metric: ReliabilityMetric, scored: ScoredMetric | MissingResult | None, execution_failure: dict[str, Any] | None
+    metric: ReliabilityMetric,
+    scored: ScoredMetric | MissingResult | CarriedMetric | None,
+    execution_failure: dict[str, Any] | None,
 ) -> dict[str, Any]:
     if scored is None:
         return {
@@ -376,6 +447,19 @@ def _metric_entry(
             "dimension": metric.dimension,
             "state": MetricState.NOT_CONFIGURED.value,
         }
+    if isinstance(scored, CarriedMetric):
+        # As it was recorded. Which Attempts it used and its acceptance are added to every entry alike.
+        entry = {
+            key: deepcopy(value)
+            for key, value in scored.entry.items()
+            if key not in ("attempts_used", "acceptance", NOT_RECALCULATED)
+        }
+        if scored.corrected_attempt_ids:
+            entry[NOT_RECALCULATED] = {
+                "meaning": NOT_RECALCULATED_MEANING,
+                "corrected_attempt_ids": list(scored.corrected_attempt_ids),
+            }
+        return entry
     if isinstance(scored, MissingResult):
         # The fields of a result, with nothing in them: no value, no state, no counts and no fidelity.
         result = {
@@ -412,7 +496,7 @@ def _metric_entry(
 
 
 def _with_attempts_used(
-    entry: dict[str, Any], scored_by_id: Mapping[str, ScoredMetric | MissingResult]
+    entry: dict[str, Any], scored_by_id: Mapping[str, ScoredMetric | MissingResult | CarriedMetric]
 ) -> dict[str, Any]:
     """Add which Attempts the metric's Evaluator used, and which other metrics used any of them."""
     scored = scored_by_id.get(entry["metric_id"])

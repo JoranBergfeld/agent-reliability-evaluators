@@ -12,6 +12,7 @@ from typing import Any, Callable, Mapping, Sequence
 from ..agent_target import AgentResponse, AgentTarget, AttemptRequest, InvocationFailed
 from ..evaluators import EVALUATORS, Evaluator, Fidelity, MetricResult, ScoringPath
 from ..evidence import (
+    ACTION_TYPE_DECLARATION,
     ActionEvidence,
     Attempt,
     ConditionRole,
@@ -38,7 +39,15 @@ from ..scorecard import (
 )
 from .confidence import ATTEMPT_NOT_COMPLETED, SWEEP_CANCELLED, elicit_confidence
 from .declaration import ActionEvidenceDeclaration, ConfiguredEvaluator, Experiment, NoTaskOutcomeYet, Task
-from .execution import RETRYABLE, Budget, Cancellation, Execution, execution_of
+from .execution import (
+    AttemptGate,
+    Cancellation,
+    Execution,
+    execution_identity,
+    execution_of,
+    group_under,
+    has_a_retry_left,
+)
 from .lifecycle import ConfidenceFollowUp, planned_attempt_ids, run_experiments
 from .reuse import SharedAttempts, share_attempts
 
@@ -217,7 +226,7 @@ def _sweep(
     """Make the Attempts and score them. Each Attempt is added to `attempts` as it is made,
     so that `run_sweep` still has the evidence if this stops.
     """
-    selected = [_select(metric, action_evidence) for metric in metrics]
+    selected = [select_evaluator(metric, action_evidence) for metric in metrics]
     _require_one_evaluator_per_metric(selected)
     for evaluator in selected:
         _require_compared_variation(evaluator.evaluator, experiments)
@@ -252,10 +261,10 @@ def _sweep(
             clock=clock,
         )
         # Each set makes the planned Attempts of a Task anew, under the Task's limits anew.
-        budgets = {task.task_id: Budget(task, cancelled, clock) for task in tasks}
+        gates = {task.task_id: AttemptGate(task, cancelled, clock) for task in tasks}
         at_tasks = _run_planned_attempts(
             [
-                partial(_run_planned_attempt, task, attempt_id, make_attempt, budgets[task.task_id], attempts)
+                partial(_run_planned_attempt, task, attempt_id, make_attempt, gates[task.task_id], attempts)
                 for task, attempt_id in plan.attempts_at_tasks
             ],
             max_concurrent_attempts,
@@ -267,14 +276,14 @@ def _sweep(
             of_task, at_tasks = at_tasks[: task.attempts], at_tasks[task.attempts :]
             executions.append(
                 execution_of(
-                    task, [made_for for made_for in of_task if made_for], budgets[task.task_id], attempt_set=set_number
+                    task, [made_for for made_for in of_task if made_for], gates[task.task_id], attempt_set=set_number
                 )
             )
         executions += run_experiments(
             plan.experiments,
             make_attempt,
             ask_confidence,
-            lambda task: Budget(task, cancelled, clock),
+            lambda task: AttemptGate(task, cancelled, clock),
             attempts,
             unrestored,
             set_number,
@@ -294,7 +303,7 @@ def _sweep(
         for shared, (attempts_of_set, executions) in zip(sharing, made)
         for evaluator in shared.members
     ]
-    returned = _score_managed(
+    returned = score_in_foundry(
         managed_scoring,
         {evaluator.metric_id: evidence for evaluator, evidence, _ in to_score if evaluator.metric_id in managed},
         {evaluator.metric_id: evaluator.evaluated_with() for evaluator, _, _ in to_score},
@@ -307,39 +316,9 @@ def _sweep(
         }
         # By the path that was declared, never by what came back: nothing falls back to this process.
         if evaluator.scoring_path is ScoringPath.FOUNDRY_MANAGED:
-            managed_result = returned[evaluator.metric_id]
-            if isinstance(managed_result, ManagedFailure):
-                scored.append(
-                    MissingResult(
-                        definition=evaluator.evaluator.definition,
-                        execution_error=managed_result.error,
-                        managed_scoring={**managed_result.provenance, "error": managed_result.error},
-                        reported_usage=managed_result.reported_usage,
-                        **attributed,
-                    )
-                )
-                continue
-            scored.append(
-                ScoredMetric(
-                    result=managed_result.result,
-                    scoring_path=ScoringPath.FOUNDRY_MANAGED,
-                    # Decided by the fidelity check the result was recovered with, never by this process.
-                    fidelity=managed_result.fidelity,
-                    limitation=managed_result.limitation,
-                    managed_scoring=managed_result.provenance,
-                    reported_usage=managed_result.reported_usage,
-                    **attributed,
-                )
-            )
+            scored.append(as_foundry_returned(evaluator, returned[evaluator.metric_id], **attributed))
         else:
-            scored.append(
-                ScoredMetric(
-                    result=evaluator.evaluate(evidence),
-                    scoring_path=ScoringPath.CUSTOMER_PROCESS,
-                    fidelity=Fidelity.AUTHORITATIVE,
-                    **attributed,
-                )
-            )
+            scored.append(scored_in_this_process(evaluator, evidence, **attributed))
     return build_scorecard(
         metrics=scored,
         attempts=attempts,
@@ -347,6 +326,42 @@ def _sweep(
         max_concurrent_attempts=max_concurrent_attempts,
         acceptance_criteria=acceptance_criteria,
         preparation_usage=[_in_every_set(preparation, len(planned)) for preparation in preparation_usage],
+    )
+
+
+def scored_in_this_process(
+    evaluator: SelectedEvaluator, evidence: Sequence[TaskEvidence], **attributed: Any
+) -> ScoredMetric:
+    """The result of an Evaluator that is calculated in this process, attributed to it."""
+    return ScoredMetric(
+        result=evaluator.evaluate(evidence),
+        scoring_path=ScoringPath.CUSTOMER_PROCESS,
+        fidelity=Fidelity.AUTHORITATIVE,
+        **attributed,
+    )
+
+
+def as_foundry_returned(
+    evaluator: SelectedEvaluator, managed_result: Any, **attributed: Any
+) -> ScoredMetric | MissingResult:
+    """What Foundry-managed scoring gave for an Evaluator, attributed to it: its result, or that it gave none."""
+    if isinstance(managed_result, ManagedFailure):
+        return MissingResult(
+            definition=evaluator.evaluator.definition,
+            execution_error=managed_result.error,
+            managed_scoring={**managed_result.provenance, "error": managed_result.error},
+            reported_usage=managed_result.reported_usage,
+            **attributed,
+        )
+    return ScoredMetric(
+        result=managed_result.result,
+        scoring_path=ScoringPath.FOUNDRY_MANAGED,
+        # Decided by the fidelity check the result was recovered with, never by this process.
+        fidelity=managed_result.fidelity,
+        limitation=managed_result.limitation,
+        managed_scoring=managed_result.provenance,
+        reported_usage=managed_result.reported_usage,
+        **attributed,
     )
 
 
@@ -390,7 +405,7 @@ def _in_every_set(preparation: PreparationUsage, sets: int) -> PreparationUsage:
     )
 
 
-def _score_managed(
+def score_in_foundry(
     managed_scoring: FoundryManagedScoring | None,
     evidence: dict[str, Sequence[TaskEvidence]],
     declared: dict[str, tuple[Any, ...]],
@@ -431,11 +446,11 @@ def _run_planned_attempts(
 
 
 # What an Evaluator is called with for a declaration it names, given what the customer declared for it.
-_EVALUATED_WITH = {"action_types": lambda action_evidence: action_evidence.mapping}
+_EVALUATED_WITH = {ACTION_TYPE_DECLARATION: lambda action_evidence: action_evidence.mapping}
 
 
 @dataclass(frozen=True)
-class _SelectedEvaluator:
+class SelectedEvaluator:
     """An Evaluator selected for the sweep, with what the customer declared for it."""
 
     evaluator: Evaluator
@@ -455,9 +470,9 @@ class _SelectedEvaluator:
         the evidence an Attempt gets. Evaluators share Attempts when their requirements match.
         """
         requirements: dict[str, Any] = {}
-        if "action_types" in self.declared:
+        if ACTION_TYPE_DECLARATION in self.declared:
             # The action types are applied when scoring. They do not change what is recorded.
-            action_evidence = self.declared["action_types"]
+            action_evidence = self.declared[ACTION_TYPE_DECLARATION]
             requirements["action_evidence"] = (action_evidence.evidence_source, action_evidence.record)
         if self.evaluator.needs_confidence:
             requirements["confidence"] = True
@@ -472,24 +487,20 @@ class _SelectedEvaluator:
         none of them was made.
         """
         kind = self.evaluator.compares_variation
-        evidence = []
-        for execution in executions:
-            roles = execution.conditions_for(kind)
-            if roles:
-                # An Attempt made outside an experiment had no variation applied to it, so it is
-                # used as a baseline Attempt.
-                evidence.append(
-                    TaskEvidence(
-                        execution.task.task_id,
-                        tuple(
-                            attempt
-                            for attempt in attempts
-                            if attempt.task_id == execution.task.task_id
-                            and (attempt.condition_role or ConditionRole.BASELINE) in roles
-                        ),
-                    )
-                )
-        return tuple(evidence)
+        # The conditions the Evaluator is calculated from, of each Task it is calculated from.
+        used = {
+            execution.task.task_id: roles for execution in executions if (roles := execution.conditions_for(kind))
+        }
+        # An Attempt made outside an experiment had no variation applied to it, so it is used as
+        # a baseline Attempt.
+        return group_under(
+            used,
+            (
+                attempt
+                for attempt in attempts
+                if (attempt.condition_role or ConditionRole.BASELINE) in used.get(attempt.task_id, ())
+            ),
+        )
 
     def evaluated_with(self) -> tuple[Any, ...]:
         """What the Evaluator is called with after its evidence: the customer's declarations, in its order."""
@@ -528,16 +539,16 @@ def _plan(tasks: Sequence[Task], experiments: Sequence[Experiment], set_number: 
     )
 
 
-def _select(
+def select_evaluator(
     metric: str | ConfiguredEvaluator, action_evidence: ActionEvidenceDeclaration | None
-) -> _SelectedEvaluator:
+) -> SelectedEvaluator:
     configured = metric if isinstance(metric, ConfiguredEvaluator) else ConfiguredEvaluator(metric_id=metric)
     evaluator = _evaluator(configured.metric_id)
-    if configured.action_evidence is not None and "action_types" not in evaluator.declarations:
+    if configured.action_evidence is not None and ACTION_TYPE_DECLARATION not in evaluator.declarations:
         raise ValueError(f"{configured.metric_id!r} does not use action evidence, and it is configured with one")
-    declared = {"action_types": configured.action_evidence or action_evidence}
+    declared = {ACTION_TYPE_DECLARATION: configured.action_evidence or action_evidence}
     _require_declarations(evaluator, declared)
-    return _SelectedEvaluator(
+    return SelectedEvaluator(
         evaluator, {name: declared[name] for name in evaluator.declarations}, configured.scoring_path
     )
 
@@ -551,7 +562,9 @@ def _evaluator(metric_id: str) -> Evaluator:
 
 def _require_declarations(evaluator: Evaluator, declared: dict[str, Any]) -> None:
     undeclared = {
-        "action_types": "action evidence to be declared: the evidence source and the action types have no default",
+        ACTION_TYPE_DECLARATION: (
+            "action evidence to be declared: the evidence source and the action types have no default"
+        ),
     }
     for name in evaluator.declarations:
         if declared[name] is None:
@@ -583,7 +596,7 @@ def _require_compared_variation(evaluator: Evaluator, experiments: Sequence[Expe
         )
 
 
-def _require_one_evaluator_per_metric(selected: Sequence[_SelectedEvaluator]) -> None:
+def _require_one_evaluator_per_metric(selected: Sequence[SelectedEvaluator]) -> None:
     seen: set[str] = set()
     for evaluator in selected:
         metric_id = evaluator.evaluator.definition.metric.metric_id
@@ -632,7 +645,11 @@ def _recorded_with(
     from is recorded with what the sweep declares.
     """
     return next(
-        (evaluator.declared["action_types"] for evaluator in shared.members if "action_types" in evaluator.declared),
+        (
+            evaluator.declared[ACTION_TYPE_DECLARATION]
+            for evaluator in shared.members
+            if ACTION_TYPE_DECLARATION in evaluator.declared
+        ),
         action_evidence,
     )
 
@@ -641,7 +658,7 @@ def _run_planned_attempt(
     task: Task,
     first: str,
     make_attempt: Callable[..., tuple[Attempt, ConfidenceFollowUp]],
-    budget: Budget,
+    gate: AttemptGate,
     attempts: list[Attempt],
 ) -> list[Attempt]:
     """Make one planned Attempt of a Task given without an experiment, and its retries.
@@ -651,16 +668,14 @@ def _run_planned_attempt(
     may no longer start.
     """
     executions: list[Attempt] = []
-    retries = budget.may_start()
+    retries = gate.may_start()
     while retries:
         retry = len(executions)
         attempt, follow_up = make_attempt(
-            task, first if retry == 0 else f"{first}/retry-{retry}", executions[-1].attempt_id if executions else None
+            task, execution_identity(first, retry), executions[-1].attempt_id if executions else None
         )
         attempt = follow_up(attempt)
-        retries = (
-            attempt.execution_status in RETRYABLE and retry < task.limits.max_retries and budget.may_start()
-        )
+        retries = has_a_retry_left(attempt, task, retry) and gate.may_start()
         if retries:
             # The Attempt stays in the evidence with why it did not complete. The retry is another Attempt.
             attempt = replace(attempt, execution_status=ExecutionStatus.RETRIED)

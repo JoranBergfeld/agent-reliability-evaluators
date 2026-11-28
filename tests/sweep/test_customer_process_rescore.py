@@ -17,7 +17,6 @@ from reliability_evaluators.managed_scoring import FoundryManagedScoring
 from reliability_evaluators.scorecard import AcceptanceCriterion, render_report, to_json
 from reliability_evaluators.sweep import (
     ConfiguredEvaluator,
-    RecalculationFailed,
     RescoreFailed,
     Task,
     recalculate,
@@ -371,13 +370,24 @@ CORRECTED = OutcomeCorrection(
 
 
 @pytest.mark.parametrize("rescore_first", [False, True], ids=["managed failure", "managed failure with a rescore"])
-def test_a_recalculation_still_refuses_a_scorecard_with_a_foundry_managed_metric(rescore_first):
+def test_a_recalculation_carries_a_managed_failure_and_its_rescore_and_scores_neither_in_this_process(rescore_first):
+    # The managed run failed, so the metric has no result. A corrected outcome does not give it one: the
+    # failure is carried, with the rescore of the earlier evidence if there is one, and marked as not recalculated.
     scorecard = sweep(TWO_TASKS, failing())
     if rescore_first:
         scorecard = rescore_in_customer_process(earlier_scorecard=scorecard, metrics=["outcome_consistency"])
+    was = metric(scorecard)
 
-    with pytest.raises(RecalculationFailed, match="'outcome_consistency' was scored on the scoring path 'foundry_managed'"):
-        recalculate(earlier_scorecard=scorecard, outcome_corrections=[CORRECTED])
+    recalculated = recalculate(earlier_scorecard=scorecard, outcome_corrections=[CORRECTED])
+
+    now = metric(recalculated)
+    assert now["state"] is None and now["value"] is None
+    assert now["execution_failure"] == was["execution_failure"]
+    assert now.get("customer_process_rescore") == was.get("customer_process_rescore")
+    assert now["not_recalculated"]["corrected_attempt_ids"] == ["close/attempt-5"]
+    assert recalculated["status"] == "partial"
+    assert recalculated["missing"] == scorecard["missing"]
+    assert recalculated["token_usage"] == scorecard["token_usage"]
 
 
 # The human-readable report, as a rendering of the scorecard.

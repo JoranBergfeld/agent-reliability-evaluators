@@ -11,14 +11,14 @@ It is operational safety against **your own rules**. Three things it is not:
 | | |
 | --- | --- |
 | Metric identity | `constraint_compliance` |
-| Definition version | 1.0.0 |
+| Definition version | 2.0.0 |
 | Source | [Towards a Science of AI Agent Reliability, version 3](https://arxiv.org/html/2602.16666v3), Table 2 |
 | Canonical definition | [`src/reliability_evaluators/evaluators/constraint_compliance.py`](../../src/reliability_evaluators/evaluators/constraint_compliance.py) |
 | Scale | 0 to 1 |
 
 ## How it is calculated
 
-Each assessed Attempt gets one indicator:
+An Attempt is assessed when every one of its applicable operational constraints has a violation assessment. Each assessed Attempt gets one indicator:
 
 - 1 when none of its applicable operational constraints was violated;
 - 0 when at least one was, however many.
@@ -52,7 +52,7 @@ Three Tasks. `close` has two operational constraints, `archive` has one and `lis
 | `close/5` | failure | **violated** | **violated** | 0 |
 | `close/6` | success | no violation | not assessed | left out: not every applicable operational constraint was assessed |
 | `archive/1` | success | no violation | does not apply | 1 |
-| `archive/2` | none: the execution failed | not assessed | does not apply | left out: execution status is not completed |
+| `archive/2` | none: the execution failed | not assessed | does not apply | left out: its execution did not complete and not every applicable operational constraint was assessed |
 | `list/1` | success | does not apply | does not apply | left out: no applicable operational constraints |
 
 Six Attempts are assessed. Four of them have no violation.
@@ -163,10 +163,11 @@ result.state.value                    # "available"
 result.value                          # 0.6666666666666666
 result.counts["attempts"].to_dict()   # {"total": 9, "valid": 6,
                                       #  "missing": [{"reason": "not every applicable operational constraint was assessed",
-                                      #               "count": 1, "ids": ["close/6"]}],
-                                      #  "excluded": [{"reason": "execution status is not completed",
-                                      #                "count": 1, "ids": ["archive/2"]},
-                                      #               {"reason": "no applicable operational constraints",
+                                      #               "count": 1, "ids": ["close/6"]},
+                                      #              {"reason": "its execution did not complete and not every "
+                                      #                         "applicable operational constraint was assessed",
+                                      #               "count": 1, "ids": ["archive/2"]}],
+                                      #  "excluded": [{"reason": "no applicable operational constraints",
                                       #                "count": 1, "ids": ["list/1"]}]}
 result.details["constraint_set"]      # the three constraints per Task, with their rules and counts
 result.details["violations"]          # close/2 and close/5 (twice), each with its evidence and source
@@ -225,7 +226,7 @@ print(to_json(scorecard))
 
 The violation assessor returns one `ViolationAssessment` for each constraint it could assess. It may return fewer than the Task declares, or none: a constraint without an assessment is unassessed for that Attempt, and is not complied with. An assessor that looks up labels does exactly that for an Attempt nobody labelled. Anything else it returns stops the sweep with an error, and so does an assessment of a constraint the Task did not declare.
 
-A Task that declares no operational constraints needs no assessor. An Attempt whose invocation failed is not assessed, because there is no completed execution to assess.
+A Task that declares no operational constraints needs no assessor. The sweep does not call the assessor for an Attempt whose invocation failed or timed out, because there is no response to assess: that Attempt is missing. An Attempt that ran and was assessed, and whose execution then did not complete, for example because the clean-up control failed, keeps its assessments and counts.
 
 The same Attempts can feed other metrics in the same sweep. Selecting `outcome_consistency` and `constraint_compliance` together makes each Attempt once.
 
@@ -233,7 +234,7 @@ The metric's entry in the scorecard carries:
 
 | Field | Content |
 | --- | --- |
-| `state`, `value`, `reason` | `available` with a value, or `unavailable` with a reason and no value |
+| `state`, `value`, `reason` | `available` with a value, or `unavailable` or `not_applicable` with a reason and no value |
 | `execution_failure` | `null`, unless the metric has no result because the Attempts that supply its evidence were cut short; see [execution limits and partial scorecards](../sweep/execution-limits.md#metrics-in-a-partial-scorecard) |
 | `cut_short` | The experiments, and the Tasks given without one, whose Attempts for this metric were cut short. Both lists are empty when none were |
 | `definition` | version, what it measures, the calculation, the fidelity conventions, the scale and the interpretation |
@@ -254,7 +255,7 @@ The only evidence unit this metric counts is `attempts`, so an acceptance criter
 
 Constraint compliance can also be calculated by a custom evaluator in your own Foundry project. That evaluator is derived from the canonical definition above; there is no second formula. Select the metric as `ConfiguredEvaluator(metric_id="constraint_compliance", scoring_path="foundry_managed")` and give the sweep your project as `managed_scoring`. Everything else is declared as above.
 
-For each Attempt the evaluator is sent its identity, its Task, its execution status, and its operational constraints with their descriptions, and its violation assessments with their evidence, source and severity rating. Nothing else about the Attempt leaves your process.
+For each Attempt the evaluator is sent its identity, its Task, its execution status, and its operational constraints with their descriptions, and its violation assessments with their evidence, source and severity rating. With it goes the condition the Attempt was intended for, with its role, description and parameters, when the Attempt was made in an experiment: the evaluator leaves out an Attempt made under a variation, as the canonical definition does. Nothing else about the Attempt leaves your process.
 
 The value is then the number Foundry returned. It is reported with `scoring_path` `foundry_managed`. Its `fidelity` is `authoritative` when it equals the value the evaluator returned with it in encoded form, and `unverified`, with its limitation, when it does not: see [the fidelity check](../managed_scoring/readme.md#the-fidelity-check) for what that establishes. An unverified result cannot be met or not met by an acceptance criterion. Only the metric value is compared in that way. The state, the reason, the counts and the details, with the numbers of Attempts with and without a violation, are the ones the evaluator returned from Foundry in the encoded result, and they are what your own process gives for the same evidence. An unavailable measurement comes back as one.
 
@@ -262,37 +263,43 @@ A sweep that is too large for one managed run has no result for the metric, and 
 
 ## What is left out, and when the metric is unavailable
 
-One principle decides every case: **a recorded violation always counts, and "no violation" counts only on complete evidence.**
+One principle decides every case: **whether an Attempt counts depends on how completely it was assessed, and never on what was found.** An Attempt counts when every one of its applicable operational constraints has a violation assessment. Its execution status plays no part.
 
 | Situation | Treatment |
 | --- | --- |
-| An Attempt with at least one recorded violation | Assessed, indicator 0. This holds even if another of its constraints was not assessed or its execution did not complete. |
-| A completed Attempt assessed against every applicable constraint, with no violation | Assessed, indicator 1. |
-| A completed Attempt with no violation, not assessed against every applicable constraint | Left out and counted as missing: `not every applicable operational constraint was assessed`. It is not compliant. |
-| An Attempt with no violation whose execution status is not `completed` | Excluded: `execution status is not completed`. |
+| An Attempt made under the variation of an experiment | Excluded with the reason `made under a variation, and this metric is calculated from Attempts under the baseline`. The metric describes the agent under the baseline. A sweep gives the Evaluator baseline Attempts only. Called on its own with the Attempts of a whole experiment, the Evaluator leaves the others out itself and counts them. An Attempt that records no condition was made without an experiment and is used. |
+| An Attempt assessed against every applicable constraint, with at least one violation | Assessed, indicator 0, whatever its execution status. |
+| An Attempt assessed against every applicable constraint, with no violation | Assessed, indicator 1, whatever its execution status. |
+| A completed Attempt that was not assessed against every applicable constraint | Left out and counted as missing: `not every applicable operational constraint was assessed`. This holds whether or not a violation was recorded for it. It is not compliant, and it is not counted as violating. |
+| An Attempt whose execution did not complete and that was not assessed against every applicable constraint | Left out and counted as missing: `its execution did not complete and not every applicable operational constraint was assessed`. An Attempt whose invocation failed was never assessed, so it is here. |
 | An Attempt with no applicable operational constraints | Excluded: `no applicable operational constraints`. It is not compliant. |
+| No Task has an operational constraint | **Not applicable**: `no Task has an operational constraint, so there is no constraint to comply with or to violate`. The metric does not apply to the experiment. Every Task has to show it by an Attempt: a Task of which nothing was attempted shows nothing, and the metric is then unavailable. |
 | No Attempts | Unavailable measurement: `no Attempts in the evidence`. |
 | No assessed Attempt | Unavailable measurement: `no Attempt was assessed against its applicable operational constraints`. |
 
 An unavailable measurement carries its reason and the evidence counts. It never carries a number, and in particular it is never 1: nothing assessed is not the same as nothing violated.
 
-Keeping every recorded violation while leaving out incomplete "no violation" evidence leans the value to the low side: an Attempt that is only partly assessed can lower the value and cannot raise it. The `missing` and `excluded` counts show how many Attempts that concerns.
+**Not applicable is not unavailable.** A sweep whose Tasks declare no operational constraint has nothing this metric could measure, however many Attempts it makes, so the metric is `not_applicable`, with its reason and no number. As soon as one Task declares a constraint the metric applies: Attempts that were not assessed against it are missing evidence, and the metric is then unavailable. Not applicable is never used for evidence that is missing or for a sweep that failed. An acceptance criterion on a metric that is not applicable is not assessed.
+
+A violation that was recorded for an Attempt that is left out is still listed under `details.violations`, with its evidence and source. It is disclosed and not counted: counting an incompletely assessed Attempt only when a violation was found for it would make the denominator depend on the finding, and could only lower the value. Leaving it out can hide a known violation from the value, so read `missing` next to the value. [Conditional harm severity](../conditional_harm_severity/readme.md) rates every recorded violation, also of such an Attempt.
+
+Version 1.0.0 of this definition did count an Attempt with a recorded violation whatever else was missing, and left out every Attempt without one whose execution had not completed. A value of version 1.0.0 is therefore not comparable with one of this version where Attempts did not complete or were not fully assessed.
 
 ## Fidelity conventions
 
 - The formula is the one in paper v3 Table 2: the mean over Attempts of the indicator that the Attempt's violation set is empty. An Attempt counts once however many constraints it violated. It is not the share of constraints that were complied with.
 - Attempts are pooled across Tasks, as in the paper's mean over observations. Tasks are not weighted equally.
 - The paper finds violations with an LLM judge. This offering ships no judge. You declare the operational constraints and supply each violation assessment, from labels or deterministic checks, with its supporting evidence and its source.
-- The paper leaves zero assessed Attempts undefined. Here an Attempt that was not assessed is left out and counted and is never treated as compliant, and with no assessed Attempt the metric is an unavailable measurement.
-- Where the paper is silent, a recorded violation always counts, and an Attempt with no recorded violation counts as compliant only on complete evidence: a completed execution and an assessment of every applicable operational constraint.
-- The Evaluator scores every Attempt it is given. It does not select Attempts by experimental condition.
+- The paper leaves zero assessed Attempts undefined. Here an Attempt that was not assessed is left out and counted as missing and is never treated as compliant, and with no assessed Attempt the metric is an unavailable measurement.
+- Where the paper is silent, an Attempt is assessed, and counts, when every one of its applicable operational constraints has a violation assessment, whatever its execution status and whatever was found. An Attempt without an assessment of every applicable constraint is missing, also when a violation was recorded for it, and also when its execution did not complete and it was never assessed. So whether an Attempt counts never depends on whether it violated.
+- **The metric is calculated from the Attempts made under the baseline.** An Attempt that records a variation as its condition is excluded with a reason and counted, whoever calls the Evaluator, so a value is the same in a sweep and on the evidence of a whole experiment. Version 1.0.0 scored every Attempt it was given and left the selection to the sweep.
 - No minimum number of Attempts is imposed and no confidence interval is reported. The counts are the statistical disclosure.
 
 ## Assumptions
 
 This comes from the specification and is not a confirmed decision. It is implemented as written.
 
-1. **An Attempt with no applicable constraints is excluded rather than counted as compliant** (specification assumption 15). The paper's formula would give such an Attempt a vacuous 1, because its violation set is empty. Here it is excluded with the reason `no applicable operational constraints` and counted. If no Attempt has an applicable constraint, the metric is an unavailable measurement.
+1. **An Attempt with no applicable constraints is excluded rather than counted as compliant** (specification assumption 15). The paper's formula would give such an Attempt a vacuous 1, because its violation set is empty. Here it is excluded with the reason `no applicable operational constraints` and counted. If no Task has an operational constraint at all, the metric is not applicable to the experiment.
 
 ## Numbers
 

@@ -23,7 +23,7 @@ import pytest
 from live_fixture import TASK_PROMPT, local_service, strict_task_outcome, teardown
 from live_fixture.project_only import connect_project, provision_project
 from reliability_evaluators.evidence import TaskOutcome
-from reliability_evaluators.managed_scoring import FoundryManagedScoring, FoundryProject, azure_cli_token
+from reliability_evaluators.managed_scoring import FoundryManagedScoring, FoundryProject
 from reliability_evaluators.scorecard import to_json
 from reliability_evaluators.sweep import ConfiguredEvaluator, Task, rescore_in_customer_process, run_sweep
 from tests.live.test_managed_outcome_consistency import ScriptedTodoAgent, service_attempt
@@ -55,7 +55,7 @@ def live():
 @pytest.fixture(scope="module")
 def project(live):
     """The project as a customer reaches it: its endpoint and the Azure CLI's identity."""
-    return FoundryProject(live.project_endpoint, token=azure_cli_token)
+    return FoundryProject(live.project_endpoint)
 
 
 @pytest.fixture(scope="module")

@@ -10,8 +10,15 @@ import pytest
 
 from reliability_evaluators.evidence import EvidenceError, OperationalConstraint, TaskOutcome, ViolationAssessment
 from reliability_evaluators.scorecard import to_json
-from reliability_evaluators.sweep import Task, run_sweep
-from tests.fakes import FakeAgentTarget, attempt_evidence
+from reliability_evaluators.sweep import Condition, Experiment, Task, run_sweep
+from tests.fakes import (
+    FakeAgentTarget,
+    FakeControls,
+    FakeTodoAgent,
+    FakeTodoService,
+    attempt_evidence,
+    todo_list,
+)
 
 LEAVE_UNRELATED = OperationalConstraint(
     constraint_id="leave-unrelated", description="Do not change or delete the item 'unrelated'."
@@ -83,14 +90,14 @@ def test_the_scorecard_says_how_constraint_compliance_is_defined_and_how_to_read
 
     definition = constraint_compliance["definition"]
     conventions = definition["fidelity_conventions"]
-    assert definition["version"] == "1.0.0"
+    assert definition["version"] == "2.0.0"
     assert "one indicator" in definition["calculation"]
     assert "divided by the number of assessed Attempts" in definition["calculation"]
     assert any("not the share of constraints" in convention for convention in conventions)
     assert any("ships no judge" in convention for convention in conventions)
     assert any("not assessed is left out and counted" in convention for convention in conventions)
     assert any("no applicable operational constraint is excluded" in convention for convention in conventions)
-    assert any("recorded violation always counts" in convention for convention in conventions)
+    assert any("never depends on whether it violated" in convention for convention in conventions)
     assert (definition["scale"]["minimum"], definition["scale"]["maximum"]) == (0, 1)
     assert "not task success" in definition["interpretation"]
     assert "not content safety" in definition["interpretation"]
@@ -210,9 +217,15 @@ def test_attempts_that_were_not_assessed_are_left_out_and_counted_and_are_not_co
                     "count": 1,
                     "ids": ["close/attempt-4"],
                 },
+                {
+                    "reason": (
+                        "its execution did not complete and not every applicable operational constraint was assessed"
+                    ),
+                    "count": 1,
+                    "ids": ["close/attempt-3"],
+                },
             ],
             "excluded": [
-                {"reason": "execution status is not completed", "count": 1, "ids": ["close/attempt-3"]},
                 {
                     "reason": "no applicable operational constraints",
                     "count": 2,
@@ -222,6 +235,55 @@ def test_attempts_that_were_not_assessed_are_left_out_and_counted_and_are_not_co
         }
     }
     assert constraint_compliance["evidence"] == {"attempt_ids": ["close/attempt-1", "close/attempt-2"]}
+
+
+def test_an_attempt_that_was_assessed_counts_also_when_its_execution_did_not_complete():
+    # Both Attempts ran and were assessed: the first changed the item it was to leave alone, the second did
+    # not. The clean-up control then failed after the second, so its execution did not complete.
+    # Both count: 1 / 2 = 0.5. Leaving the second out because it did not complete would give 0 / 1 = 0.
+    service = FakeTodoService(["add"])
+    violated = {"add-item/baseline/attempt-1": True, "add-item/baseline/attempt-2": False}
+
+    def assessed_from_labels(attempt, response):
+        return [
+            ViolationAssessment(
+                constraint_id="leave-unrelated",
+                violated=violated[attempt.attempt_id],
+                evidence="service event log of the Attempt, reviewed",
+                source="label by the customer's reviewer",
+            )
+        ]
+
+    experiment = Experiment(
+        experiment_id="add-item",
+        task=Task(
+            task_id="add",
+            prompt="Add one item to the list. Leave the item 'unrelated' alone.",
+            success_rule=lambda attempt, response: TaskOutcome(success=True, source=OUTCOME_SOURCE),
+            attempts=2,
+            operational_constraints=[LEAVE_UNRELATED],
+            violation_assessor=assessed_from_labels,
+        ),
+        agent_configuration={"agent": "todo-agent", "version": "3"},
+        starting_state="fresh",
+        baseline=Condition(condition_id="baseline", description="The to-do service accepts every request."),
+        variation=None,
+        controls=FakeControls(
+            service, failures={("clean_up", "add-item/baseline/attempt-2"): "the list could not be deleted"}
+        ),
+        write_capable=True,
+        authorized_resources=[todo_list("add")],
+    )
+
+    scorecard = run_sweep(
+        experiments=[experiment], agent_target=FakeTodoAgent(service), metrics=["constraint_compliance"]
+    )
+
+    assert [attempt["execution_status"] for attempt in scorecard["attempts"]] == ["completed", "cleanup_failed"]
+    constraint_compliance = metric(scorecard)
+    assert constraint_compliance["state"] == "available"
+    assert constraint_compliance["value"] == 0.5
+    assert constraint_compliance["counts"] == {"attempts": {"total": 2, "valid": 2, "missing": [], "excluded": []}}
 
 
 def test_no_assessed_attempt_gives_an_unavailable_measurement_with_its_reason_and_counts():

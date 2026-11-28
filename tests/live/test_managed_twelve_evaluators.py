@@ -24,7 +24,6 @@ from reliability_evaluators.managed_scoring import (
     FoundryProject,
     FoundryRequestError,
     ManagedFailure,
-    azure_cli_token,
     derive_artifact,
 )
 from reliability_evaluators.managed_scoring.scoring import OBSERVED_REFUSED_RUN_BYTES, SUBMITTED_RUN_LIMIT_BYTES
@@ -61,7 +60,7 @@ def live():
 @pytest.fixture(scope="module")
 def scoring(live):
     """Managed scoring as a customer sets it up. A run of some hundred rows takes longer than the default wait."""
-    project = FoundryProject(live.project_endpoint, token=azure_cli_token)
+    project = FoundryProject(live.project_endpoint)
     return FoundryManagedScoring(project=project, run_timeout_seconds=1800)
 
 
@@ -217,7 +216,7 @@ def test_the_project_accepts_a_run_of_the_size_this_version_submits_and_refuses_
             "evaluator_version": version, "initialization_parameters": {},
         }],
     })["id"]
-    project = FoundryProject(live.project_endpoint, token=azure_cli_token)
+    project = FoundryProject(live.project_endpoint)
 
     def made(bytes_of_request):
         """Whether the project makes a run of that size. The run holds no evidence and is cancelled at once."""

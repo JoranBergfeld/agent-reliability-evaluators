@@ -21,7 +21,7 @@ from reliability_evaluators.managed_scoring import (
     ManagedScoringFailure,
     derive_artifact,
 )
-from reliability_evaluators.scorecard import AcceptanceCriterion, render_report, to_json
+from reliability_evaluators.scorecard import AcceptanceCriterion, render_report, render_summary, to_json
 from reliability_evaluators.sweep import ConfiguredEvaluator, RecalculationFailed, Task, recalculate, run_sweep
 from tests.fake_foundry import FakeFoundryProject
 from tests.fakes import FakeAgentTarget, cancelling
@@ -480,12 +480,139 @@ CORRECTED = OutcomeCorrection(
 )
 
 
-def test_a_recalculation_does_not_score_a_foundry_managed_result_in_this_process():
-    # A recalculation scores in this process. The customer chose Foundry for this metric, so it is refused.
-    scorecard = json.loads(to_json(sweep(TWO_TASKS, FakeFoundryProject())))
+NOT_RECALCULATED_BECAUSE = (
+    "the result was not recalculated: it rests on task outcomes that were supplied or corrected since, and "
+    "Foundry-managed scoring was not asked to score it again"
+)
+AT_LEAST_0_9 = AcceptanceCriterion(metric_id="outcome_consistency", condition={"value": {"at_least": 0.9}})
 
-    with pytest.raises(RecalculationFailed, match="'outcome_consistency' was scored on the scoring path 'foundry_managed'"):
-        recalculate(earlier_scorecard=scorecard, outcome_corrections=[CORRECTED])
+
+def test_a_recalculation_without_a_foundry_project_carries_the_managed_result_and_marks_it_as_not_recalculated():
+    # As run: close p = 4/5 gives 0.36 and archive p = 0/3 gives 1, so 0.68, scored by Foundry.
+    # close/attempt-5 is corrected to a success: scored again, close would be p = 5/5 and the metric 1.
+    # Foundry is not asked, and the customer's own process never scores a Foundry-managed metric instead:
+    # the entry keeps 0.68, says that it was not recalculated, and cannot be met or not met.
+    earlier = json.loads(to_json(sweep(TWO_TASKS, FakeFoundryProject(), acceptance_criteria=[AT_LEAST_0_9])))
+
+    recalculated = recalculate(
+        earlier_scorecard=earlier, outcome_corrections=[CORRECTED], acceptance_criteria=[AT_LEAST_0_9]
+    )
+
+    was, now = metric(earlier), metric(recalculated)
+    assert was["acceptance"]["status"] == "not_met"
+    assert (now["state"], now["value"], now["scoring_path"]) == ("available", was["value"], "foundry_managed")
+    assert now["managed_scoring"] == was["managed_scoring"]
+    assert now["not_recalculated"]["corrected_attempt_ids"] == ["close/attempt-5"]
+    assert "was not recalculated" in now["not_recalculated"]["meaning"]
+    assert now["acceptance"]["status"] == "not_assessed"
+    assert now["acceptance"]["reason"] == NOT_RECALCULATED_BECAUSE
+    # The correction itself is applied, and the earlier results are kept as superseded.
+    corrected = [attempt for attempt in recalculated["attempts"] if attempt["attempt_id"] == "close/attempt-5"]
+    assert corrected[0]["task_outcome"] == {"success": True, "source": "label added after the run"}
+    assert recalculated["superseded_results"][0]["metrics"] == earlier["metrics"]
+    # What the managed runs used stays as it was reported.
+    assert recalculated["token_usage"] == earlier["token_usage"]
+    # The report and the summary say it next to the value, so that 0.68 is not read as the corrected result.
+    report = render_report(recalculated)
+    assert_faithful_rendering(report, recalculated)
+    assert "Not recalculated. This is the earlier Foundry-managed result" in report
+    assert "| Outcome consistency | available, not recalculated |" in render_summary(recalculated)
+
+
+def test_a_recalculation_with_a_foundry_project_has_foundry_score_the_managed_metric_from_the_corrected_outcomes():
+    # close/attempt-5 corrected to a success: close p = 5/5 gives 1, archive p = 0/3 gives 1: (1 + 1) / 2 = 1.
+    foundry = FakeFoundryProject()
+    earlier = json.loads(to_json(sweep(TWO_TASKS, foundry, acceptance_criteria=[AT_LEAST_0_9])))
+    runs_of_the_sweep = len(foundry.runs)
+
+    recalculated = recalculate(
+        earlier_scorecard=earlier,
+        outcome_corrections=[CORRECTED],
+        acceptance_criteria=[AT_LEAST_0_9],
+        managed_scoring=FoundryManagedScoring(project=foundry, poll_interval_seconds=0),
+    )
+
+    was, now = metric(earlier), metric(recalculated)
+    assert (now["state"], now["value"]) == ("available", 1)
+    assert (now["scoring_path"], now["fidelity"]) == ("foundry_managed", "authoritative")
+    assert "not_recalculated" not in now
+    assert now["acceptance"]["status"] == "met"
+    # Foundry scored it: there are new runs, and the evidence they were sent is not the earlier evidence.
+    assert len(foundry.runs) > runs_of_the_sweep
+    assert now["managed_scoring"]["run_id"] != was["managed_scoring"]["run_id"]
+    assert now["managed_scoring"]["evidence_sha256"] != was["managed_scoring"]["evidence_sha256"]
+    assert recalculated["superseded_results"][0]["metrics"] == earlier["metrics"]
+
+
+def test_a_managed_result_that_the_corrections_do_not_touch_is_carried_as_it_is_and_stays_assessed():
+    # Resource consistency is not calculated from task outcomes, so a corrected outcome changes nothing that
+    # Foundry was sent for it. Outcome consistency is scored in this process: 0.68 as run, 1 once corrected.
+    managed_resources = ConfiguredEvaluator(metric_id="resource_consistency", scoring_path="foundry_managed")
+    criterion = AcceptanceCriterion(metric_id="resource_consistency", condition={"minimum_counts": {"tasks": 2}})
+    earlier = json.loads(
+        to_json(
+            sweep(
+                TWO_TASKS, FakeFoundryProject(), metrics=["outcome_consistency", managed_resources],
+                acceptance_criteria=[criterion],
+            )
+        )
+    )
+
+    recalculated = recalculate(earlier_scorecard=earlier, outcome_corrections=[CORRECTED], acceptance_criteria=[criterion])
+
+    assert (metric(earlier)["value"], metric(recalculated)["value"]) == (pytest.approx(0.68, abs=1e-12), 1)
+    assert metric(recalculated)["scoring_path"] == "customer_process"
+    assert metric(recalculated, "resource_consistency") == metric(earlier, "resource_consistency")
+    assert metric(recalculated, "resource_consistency")["acceptance"]["status"] == "met"
+
+
+def test_a_managed_result_that_was_not_recalculated_stays_marked_until_foundry_scores_it_again():
+    earlier = json.loads(to_json(sweep(TWO_TASKS, FakeFoundryProject())))
+    once = json.loads(to_json(recalculate(earlier_scorecard=earlier, outcome_corrections=[CORRECTED])))
+    another = OutcomeCorrection(
+        attempt_id="archive/attempt-1",
+        task_outcome=TaskOutcome(success=True, source="label added after the run"),
+        provenance="synthetic correction",
+    )
+
+    twice = json.loads(to_json(recalculate(earlier_scorecard=once, outcome_corrections=[another])))
+    scored_again = recalculate(
+        earlier_scorecard=twice,
+        outcome_corrections=[
+            OutcomeCorrection(
+                attempt_id="archive/attempt-2",
+                task_outcome=TaskOutcome(success=True, source="label added after the run"),
+                provenance="synthetic correction",
+            )
+        ],
+        managed_scoring=FoundryManagedScoring(project=FakeFoundryProject(), poll_interval_seconds=0),
+    )
+
+    assert metric(twice)["value"] == pytest.approx(0.68, abs=1e-12)
+    assert metric(twice)["not_recalculated"]["corrected_attempt_ids"] == ["close/attempt-5", "archive/attempt-1"]
+    # All three corrections: close p = 5/5 gives 1, archive p = 2/3 gives (4/3 - 1)^2 = 1/9: (1 + 1/9) / 2 = 5/9.
+    assert metric(scored_again)["value"] == pytest.approx(5 / 9, abs=1e-12)
+    assert "not_recalculated" not in metric(scored_again)
+
+
+def test_a_recalculation_fails_when_foundry_gives_no_result_for_the_managed_metric():
+    earlier = json.loads(to_json(sweep(TWO_TASKS, FakeFoundryProject())))
+    refusing = FakeFoundryProject(refuses_evals=FoundryRequestError("POST", "/openai/v1/evals", 429, "too many requests"))
+
+    with pytest.raises(RecalculationFailed, match="Foundry-managed scoring gave no result for 'outcome_consistency'"):
+        recalculate(
+            earlier_scorecard=earlier,
+            outcome_corrections=[CORRECTED],
+            managed_scoring=FoundryManagedScoring(project=refusing, poll_interval_seconds=0),
+        )
+
+
+def test_a_recalculation_refuses_evidence_that_is_not_what_foundry_was_sent_for_the_managed_metric():
+    earlier = json.loads(to_json(sweep(TWO_TASKS, FakeFoundryProject())))
+    earlier["attempts"][0]["task_outcome"]["success"] = False
+
+    with pytest.raises(RecalculationFailed, match="not the evidence that was submitted to Foundry for 'outcome_consistency'"):
+        recalculate(earlier_scorecard=earlier, outcome_corrections=[CORRECTED])
 
 
 def test_a_recalculation_that_is_asked_for_foundry_managed_scoring_is_refused_and_not_scored_in_this_process():

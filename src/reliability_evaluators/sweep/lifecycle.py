@@ -19,7 +19,7 @@ from ..evidence import (
 )
 from .confidence import ATTEMPT_NOT_COMPLETED
 from .declaration import ControlContext, CustomerControls, Experiment, Task
-from .execution import RETRYABLE, Budget, Execution, execution_of
+from .execution import AttemptGate, Execution, execution_identity, execution_of, has_a_retry_left
 
 # Completes an Attempt with its confidence evidence. It asks the agent only when a selected
 # metric uses confidence and the Attempt it is given completed.
@@ -44,7 +44,7 @@ def run_experiments(
     experiments: Sequence[Experiment],
     make_attempt: MakeAttempt,
     ask_confidence: bool,
-    budget_for: Callable[[Task], Budget],
+    gate_for: Callable[[Task], AttemptGate],
     attempts: list[Attempt],
     unrestored: dict[str, str] | None = None,
     attempt_set: int = 1,
@@ -62,20 +62,20 @@ def run_experiments(
     `ask_confidence` says whether a selected metric uses confidence. An Attempt for which
     the agent was not invoked then records why it has no confidence rating.
 
-    `budget_for` gives the budget of a Task: whether a further Attempt or retry of it may
+    `gate_for` gives the gate of a Task: whether a further Attempt or retry of it may
     start under its execution limits and the cancellation of the sweep. `attempt_set` is
     which set of the sweep's Attempts these experiments are run for.
     """
     records = []
     unrestored = {} if unrestored is None else unrestored
     for experiment in experiments:
-        budget = budget_for(experiment.task)
+        gate = gate_for(experiment.task)
         made: list[list[Attempt]] = []
         stop_reason = next(
             (unrestored[resource] for resource in experiment.authorized_resources if resource in unrestored), None
         )
         if stop_reason is None:
-            made, stop = _run_experiment(experiment, make_attempt, ask_confidence, budget, attempts)
+            made, stop = _run_experiment(experiment, make_attempt, ask_confidence, gate, attempts)
             if stop is not None:
                 stop_reason = stop.reason
                 if stop.unrestored:
@@ -88,7 +88,7 @@ def run_experiments(
         # An experiment whose every Attempt was made completed, even if its last clean-up failed.
         records.append(
             execution_of(
-                experiment.task, made, budget, experiment=experiment, stop_reason=stop_reason, attempt_set=attempt_set
+                experiment.task, made, gate, experiment=experiment, stop_reason=stop_reason, attempt_set=attempt_set
             )
         )
     return records
@@ -98,7 +98,7 @@ def _run_experiment(
     experiment: Experiment,
     make_attempt: MakeAttempt,
     ask_confidence: bool,
-    budget: Budget,
+    gate: AttemptGate,
     attempts: list[Attempt],
 ) -> tuple[list[list[Attempt]], _Stop | None]:
     """Make the Attempts of an experiment until they are all made or something stops the experiment.
@@ -115,7 +115,7 @@ def _run_experiment(
     plan = _planned_attempts(experiment)
     made: list[list[Attempt]] = []
     stop = None
-    proceeds = bool(plan) and budget.may_start()
+    proceeds = bool(plan) and gate.may_start()
     while proceeds:
         context, number = plan[len(made)]
         executions: list[Attempt] = []
@@ -125,7 +125,7 @@ def _run_experiment(
             retry = len(executions)
             controlled = _ControlledAttempt(
                 experiment,
-                context if retry == 0 else replace(context, attempt_id=f"{context.attempt_id}/retry-{retry}"),
+                replace(context, attempt_id=execution_identity(context.attempt_id, retry)),
             )
             controlled.make(
                 make_attempt,
@@ -135,11 +135,9 @@ def _run_experiment(
             )
             if fresh:
                 controlled.clean_up()
-            retryable = (
-                controlled.attempt.execution_status in RETRYABLE and retry < experiment.task.limits.max_retries
-            )
+            retryable = has_a_retry_left(controlled.attempt, experiment.task, retry)
             # What follows this Attempt, if anything does: its retry, or the next planned Attempt.
-            proceeds = controlled.stop is None and (retryable or len(made) < len(plan)) and budget.may_start()
+            proceeds = controlled.stop is None and (retryable or len(made) < len(plan)) and gate.may_start()
             retries = retryable and proceeds
             if not fresh and (not proceeds or (number == experiment.task.attempts and not retries)):
                 # The last Attempt under this condition, or the last one that is made at all.

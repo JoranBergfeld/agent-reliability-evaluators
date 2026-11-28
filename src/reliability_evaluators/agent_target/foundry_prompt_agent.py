@@ -1,23 +1,31 @@
 """Agent target for a Foundry prompt agent, invoked from customer code through the project's Responses interface.
 
-Standard library only: plain REST with a bearer token. See docs/foundry_prompt_agent/readme.md.
+Standard library only: plain REST with a bearer token, sent through the `FoundryProject` that
+everything that reaches a Foundry project uses. See docs/foundry_prompt_agent/readme.md.
 
-The credential and the reading of a response's output are those of the hosted agent target,
-imported from `foundry_hosted`, so that the two targets cannot come to read a response differently.
+The reading of a response's output and of an answer that carries none is that of the hosted
+agent target, imported from `foundry_hosted`, so that the two targets cannot come to read them differently.
 """
 
 from __future__ import annotations
 
 import json
-import urllib.error
-import urllib.request
-from dataclasses import dataclass
 from math import isfinite
 from time import perf_counter
 from typing import Any, Callable
 
-from ..evidence import ActionEvent, ResourceMeasurement, ResourceType
-from .foundry_hosted import AzureCliCredential, _decoded, _output_items, _output_text
+from ..evidence import ActionEvent, InvocationEvidence
+from ..foundry import Answer, FoundryProject, NotAnswered
+from .foundry_hosted import REQUEST_ID_HEADERS as REQUEST_ID_HEADERS
+from .foundry_hosted import (
+    SHOWN_BODY,
+    decoded_arguments,
+    error_of_an_answer,
+    measured_of_an_attempt,
+    output_items,
+    output_text,
+    request_ids,
+)
 from .interface import (
     CUSTOMER_CODE,
     AgentResponse,
@@ -41,10 +49,7 @@ NO_USAGE = "the response of the prompt agent carried no usage"
 NO_RESPONSE = "the Foundry project returned no response, so no usage was reported"
 # Where a count comes from. Foundry runs a prompt agent and reports the usage of its response itself.
 USAGE_SOURCE = "the usage of the response the Foundry project returned for the prompt agent"
-REQUEST_ID_HEADERS = ("x-request-id", "apim-request-id")
 SERVED_MODEL_HEADER = "x-ms-served-model"
-# How much of an answer's body is quoted in an error.
-_SHOWN_BODY = 2000
 ELAPSED_TIME_BOUNDARY = (
     "wall clock from just before the Responses request is sent to the Foundry project until its response has "
     "been read, measured by the agent target. Getting the token is not included"
@@ -102,11 +107,10 @@ class FoundryPromptAgentTarget:
             raise ValueError(f"the version of an agent is text, such as '3', or left out. Got {agent_version!r}")
         if type(timeout_seconds) not in (int, float) or not isfinite(timeout_seconds) or timeout_seconds <= 0:
             raise ValueError(f"timeout_seconds is a positive, finite number of seconds, got {timeout_seconds!r}")
-        self._responses_url = project_endpoint.rstrip("/") + RESPONSES_ROUTE
+        self._project = FoundryProject(project_endpoint, credential=credential, timeout_seconds=timeout_seconds)
         self._agent = {"type": "agent_reference", "name": agent_name}
         if agent_version is not None:
             self._agent["version"] = agent_version
-        self._credential = credential or AzureCliCredential()
         self._compose_input = compose_input
         self._timeout_seconds = timeout_seconds
         self._clock = clock
@@ -120,16 +124,19 @@ class FoundryPromptAgentTarget:
             # Identifies the Attempt on the platform. The response returns it.
             "metadata": {"attempt_id": request.attempt_id, "task_id": request.task_id},
         }
-        token = self._credential()
         # The time limit the customer declared for the Attempt comes before the target's own.
         limit = self._timeout_seconds if request.timeout_seconds is None else request.timeout_seconds
+        # Before the clock starts: getting the token is no part of the Attempt's elapsed time.
+        self._project.sign_in()
         started = self._clock()
-        answer = _send(self._responses_url, token, limit, body)
+        answer = self._send(limit, body)
         elapsed = self._clock() - started
         response, invocation = _completed(answer, lambda response: _invocation(answer, response, composed))
         return AgentResponse(
-            output=_output_text(response),
-            resource_measurements=_resource_measurements(elapsed, invocation["tool_calls"]),
+            output=output_text(response),
+            resource_measurements=measured_of_an_attempt(
+                elapsed, invocation["tool_calls"], ELAPSED_TIME_BOUNDARY, TOOL_CALL_BOUNDARY
+            ),
             invocation=invocation,
         )
 
@@ -156,98 +163,61 @@ class FoundryPromptAgentTarget:
                 "request": "confidence",
             },
         }
-        answer = _send(self._responses_url, self._credential(), self._timeout_seconds, body)
+        answer = self._send(self._timeout_seconds, body)
         response, follow_up = _completed(answer, lambda response: _follow_up(answer, response, request.prompt))
-        not_isolated = _not_isolated(follow_up, previous)
-        if not_isolated is not None:
-            raise InvocationFailed(not_isolated, invocation=follow_up)
+        why_not_used = not_isolated(follow_up, previous)
+        if why_not_used is not None:
+            raise InvocationFailed(why_not_used, invocation=follow_up)
         return ConfidenceResponse(
-            attempt_id=request.attempt.attempt_id, output=_output_text(response), invocation=follow_up
+            attempt_id=request.attempt.attempt_id, output=output_text(response), invocation=follow_up
         )
 
-
-@dataclass(frozen=True)
-class _Answer:
-    """An HTTP answer from the project, whatever its status."""
-
-    status: int
-    text: str
-    # The headers that identify the request on the platform, where the answer carried them.
-    request_ids: dict[str, str]
-    # The model that served the request, as a header of the answer names it, or None.
-    served_model: str | None
-
-    @property
-    def json(self) -> Any:
-        """The body as JSON, or None when it is not JSON."""
+    def _send(self, timeout_seconds: float, body: dict[str, Any]) -> Answer:
+        """Send one request to the project. It is sent once: a request that may have reached the agent is not repeated."""
         try:
-            return json.loads(self.text)
-        except ValueError:
-            return None
+            return self._project.send_once("POST", RESPONSES_ROUTE, body, timeout_seconds=timeout_seconds)
+        except NotAnswered as unanswered:
+            # No answer came back, so nothing is known about what the agent did.
+            if unanswered.timed_out:
+                # The sweep records a TimeoutError as an Attempt that timed out.
+                raise TimeoutError(f"the Foundry project did not answer within {timeout_seconds:g} seconds") from None
+            raise InvocationFailed(f"the Foundry project could not be reached: {unanswered.reason}") from None
 
 
-def _send(url: str, token: str, timeout_seconds: float, body: dict[str, Any]) -> _Answer:
-    """Send one request to the project. It is sent once: a request that may have reached the agent is not repeated."""
-    request = urllib.request.Request(
-        url,
-        data=json.dumps(body).encode(),
-        method="POST",
-        headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-    )
-    try:
-        with urllib.request.urlopen(request, timeout=timeout_seconds) as answered:
-            return _answer(answered.status, answered)
-    except urllib.error.HTTPError as error:
-        return _answer(error.code, error)
-    except OSError as error:
-        # URLError is an OSError. No answer came back, so nothing is known about what the agent did.
-        reason = getattr(error, "reason", error)
-        if isinstance(reason, TimeoutError):
-            # The sweep records a TimeoutError as an Attempt that timed out.
-            raise TimeoutError(f"the Foundry project did not answer within {timeout_seconds:g} seconds") from error
-        raise InvocationFailed(f"the Foundry project could not be reached: {reason}") from error
-
-
-def _answer(status: int, answered: Any) -> _Answer:
-    request_ids = {name: answered.headers[name] for name in REQUEST_ID_HEADERS if answered.headers.get(name)}
-    return _Answer(
-        status, answered.read().decode(errors="replace"), request_ids, answered.headers.get(SERVED_MODEL_HEADER)
-    )
-
-
-def _invocation(answer: _Answer, response: dict[str, Any], composed_input: str | None) -> dict[str, Any]:
+def _invocation(answer: Answer, response: dict[str, Any], composed_input: str | None) -> dict[str, Any]:
     """What the platform returned about one invocation, as it returned it.
 
     `response` is the response object of the answer, or empty when the answer has none.
     `composed_input` is what the agent was sent when that was not the Attempt's prompt as it is.
     """
-    usage = response.get("usage")
-    return {
-        "agent_target": AGENT_TARGET,
-        "entry_point": CUSTOMER_CODE,
-        "protocol": RESPONSES_PROTOCOL,
-        "api_version": API_VERSION,
-        "composed_input": composed_input,
-        "http_status": answer.status,
-        "request_ids": answer.request_ids,
-        "agent": response.get("agent_reference"),
-        "response_id": response.get("id"),
-        "status": response.get("status"),
-        # The model deployment the response names, and the model the answer says served the request.
-        "model": response.get("model"),
-        "served_model": answer.served_model,
-        "metadata": response.get("metadata"),
-        "error": response.get("error") if response else _error_of(answer),
+    return InvocationEvidence.with_usage(
         # As the platform reported it. Usage that was not reported is missing, never zero.
-        "token_usage": usage,
-        "token_usage_missing": None if usage is not None else NO_USAGE if response else NO_RESPONSE,
-        "token_usage_source": None if usage is None else USAGE_SOURCE,
-        "tool_calls": _tool_calls(response),
-    }
+        response.get("usage"),
+        source=USAGE_SOURCE,
+        missing=NO_USAGE if response else NO_RESPONSE,
+        agent_target=AGENT_TARGET,
+        entry_point=CUSTOMER_CODE,
+        response_id=response.get("id"),
+        tool_calls=tool_calls_of_a_response(response),
+        identifiers={
+            "protocol": RESPONSES_PROTOCOL,
+            "api_version": API_VERSION,
+            "composed_input": composed_input,
+            "http_status": answer.status,
+            "request_ids": request_ids(answer),
+            "agent": response.get("agent_reference"),
+            "status": response.get("status"),
+            # The model deployment the response names, and the model a header of the answer says served the request.
+            "model": response.get("model"),
+            "served_model": answer.header(SERVED_MODEL_HEADER),
+            "metadata": response.get("metadata"),
+            "error": response.get("error") if response else error_of_an_answer(answer),
+        },
+    ).to_dict()
 
 
 def _completed(
-    answer: _Answer, recorded: Callable[[dict[str, Any]], dict[str, Any]]
+    answer: Answer, recorded: Callable[[dict[str, Any]], dict[str, Any]]
 ) -> tuple[dict[str, Any], dict[str, Any]]:
     """The completed response an answer carries, and what is recorded of it.
 
@@ -257,22 +227,22 @@ def _completed(
     response = answer.json
     if answer.status != 200:
         raise InvocationFailed(
-            f"the Foundry project answered HTTP {answer.status}: {_described(_error_of(answer))}",
+            f"the Foundry project answered HTTP {answer.status}: {_described(error_of_an_answer(answer))}",
             invocation=recorded({}),
         )
-    if not isinstance(response, dict) or _output_items(response) is None:
+    if not isinstance(response, dict) or output_items(response) is None:
         raise InvocationFailed(
-            f"the Foundry project answered HTTP 200 with a body that is not a response: {answer.text[:_SHOWN_BODY]}",
+            f"the Foundry project answered HTTP 200 with a body that is not a response: {answer.text[:SHOWN_BODY]}",
             invocation=recorded({}),
         )
     record = recorded(response)
-    failure = _failure_of(response)
+    failure = failure_of_a_response(response)
     if failure is not None:
         raise InvocationFailed(failure, invocation=record)
     return response, record
 
 
-def _not_isolated(follow_up: dict[str, Any], previous: str | None) -> str | None:
+def not_isolated(follow_up: dict[str, Any], previous: str | None) -> str | None:
     """Why the answer to a follow-up is not used, from what the project reports of it, or None when it is.
 
     `previous` is the response of the Attempt, which the follow-up was to continue.
@@ -296,7 +266,7 @@ def _not_isolated(follow_up: dict[str, Any], previous: str | None) -> str | None
     return None
 
 
-def _follow_up(answer: _Answer, response: dict[str, Any], question: str) -> dict[str, Any]:
+def _follow_up(answer: Answer, response: dict[str, Any], question: str) -> dict[str, Any]:
     """What the platform returned about one follow-up, in the form of an invocation.
 
     `question` is what the agent was sent. With it are the response the project says the
@@ -312,7 +282,7 @@ def _follow_up(answer: _Answer, response: dict[str, Any], question: str) -> dict
     }
 
 
-def _failure_of(response: dict[str, Any]) -> str | None:
+def failure_of_a_response(response: dict[str, Any]) -> str | None:
     """Why a response is not a completed execution of the agent, or None when it is one.
 
     A status of completed does not prove it: a response that carries an error failed.
@@ -327,33 +297,11 @@ def _failure_of(response: dict[str, Any]) -> str | None:
     return None
 
 
-def _error_of(answer: _Answer) -> Any:
-    """The error an answer without a response object carries: its `error`, or its body as it is."""
-    body = answer.json
-    return body["error"] if isinstance(body, dict) and "error" in body else answer.text[:_SHOWN_BODY]
-
-
 def _described(error: Any) -> str:
     """An error as it is quoted in the reason of a failure: its code and message, or the error as it is."""
     if isinstance(error, dict) and ("code" in error or "message" in error):
         return f"{error.get('code')}: {error.get('message')}"
     return error if isinstance(error, str) else json.dumps(error)
-
-
-def _resource_measurements(elapsed: float, tool_calls: list[dict[str, Any]] | None) -> tuple[ResourceMeasurement, ...]:
-    """What the target measured of one Attempt. A count it could not make is left out."""
-    measured = [
-        ResourceMeasurement(
-            resource_type=ResourceType.ELAPSED_TIME, value=elapsed, unit="seconds", boundary=ELAPSED_TIME_BOUNDARY
-        )
-    ]
-    if tool_calls is not None:
-        measured.append(
-            ResourceMeasurement(
-                resource_type=ResourceType.TOOL_CALLS, value=len(tool_calls), unit="calls", boundary=TOOL_CALL_BOUNDARY
-            )
-        )
-    return tuple(measured)
 
 
 def native_tool_calls(request: AttemptRequest, response: AgentResponse) -> list[ActionEvent] | None:
@@ -377,7 +325,7 @@ def native_tool_calls(request: AttemptRequest, response: AgentResponse) -> list[
     ]
 
 
-def _tool_calls(response: dict[str, Any]) -> list[dict[str, Any]] | None:
+def tool_calls_of_a_response(response: dict[str, Any]) -> list[dict[str, Any]] | None:
     """The tool calls the response exposes, in its order, each with what the tool returned.
 
     A tool call is an output item whose type ends in `_call`, such as `openapi_call`. What it
@@ -386,7 +334,7 @@ def _tool_calls(response: dict[str, Any]) -> list[dict[str, Any]] | None:
     None when the response has no list of output items: the calls were then not exposed,
     which is not the same as no call.
     """
-    items = _output_items(response)
+    items = output_items(response)
     if items is None:
         return None
     returned = {
@@ -400,7 +348,7 @@ def _tool_calls(response: dict[str, Any]) -> list[dict[str, Any]] | None:
             "type": item["type"],
             # A tool type that gives its calls no name is named after its type.
             "name": item.get("name") or item["type"],
-            "arguments": _decoded(item.get("arguments")),
+            "arguments": decoded_arguments(item.get("arguments")),
             "output": returned.get(item.get("call_id")),
             "status": item.get("status"),
         }

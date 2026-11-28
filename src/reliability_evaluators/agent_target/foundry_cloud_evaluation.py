@@ -12,15 +12,13 @@ import threading
 import time
 from dataclasses import dataclass
 from math import isfinite
-from typing import Any, Callable, Iterator, Protocol
+from typing import Any, Callable, Iterator
 
-from ..evidence import ActionEvent, ResourceMeasurement, ResourceType
-from ..managed_scoring.foundry import FoundryRequestError
-from .foundry_hosted import FoundryHostedAgentTarget, _output_items, _output_text
-from .foundry_prompt_agent import TOOL_CHOICE_NONE, _not_isolated
+from ..evidence import ActionEvent, InvocationEvidence, ResourceMeasurement, ResourceType
+from ..foundry import ENDED, AgentDetails, FoundryRequestError, Project, output_items_of, read_agent_details
+from .foundry_hosted import FoundryHostedAgentTarget, output_items, output_text
+from .foundry_prompt_agent import TOOL_CHOICE_NONE, failure_of_a_response, not_isolated, tool_calls_of_a_response
 from .foundry_prompt_agent import USAGE_SOURCE as USAGE_SOURCE_OF_A_RESPONSE
-from .foundry_prompt_agent import _failure_of as _failure_of_response
-from .foundry_prompt_agent import _tool_calls as _tool_calls_of_response
 from .interface import (
     CUSTOMER_CODE,
     FOUNDRY_CLOUD_EVALUATION,
@@ -54,8 +52,6 @@ CRITERION = {
     "reference": "{{item.attempt_id}}",
     "operation": "eq",
 }
-OUTPUT_ITEM_PAGE = 100
-ENDED = ("completed", "failed", "canceled")
 # How much of an answer that is not what was asked for is quoted in an error.
 _SHOWN_ANSWER = 2000
 NO_RUN = "no cloud evaluation run is known to have been made, so no usage was reported"
@@ -88,16 +84,6 @@ TOOL_CALL_BOUNDARY = (
     "tool calls in the output item that Foundry cloud evaluation returned for the Attempt, counted by the agent "
     "target. A tool call the platform does not report there is not counted"
 )
-
-
-class Project(Protocol):
-    """What the target needs of a Foundry project. `managed_scoring.FoundryProject` is the real one.
-
-    `request` returns the JSON the project answers with, and raises `FoundryRequestError` when
-    it is not answered or answered with an error status.
-    """
-
-    def request(self, method: str, path: str, body: Any = None, headers: dict[str, str] | None = None) -> Any: ...
 
 
 class UnsupportedCombination(InvocationFailed):
@@ -178,8 +164,8 @@ class FoundryCloudEvaluationTarget:
         self._poll_interval_seconds = poll_interval_seconds
         self._clock = clock
         self._sleep = sleep
-        # What the project said about the agent, and the eval the runs are made in, once known.
-        self._agent: dict[str, Any] | None = None
+        # What the project said about the agent, without its settings, and the eval the runs are made in, once known.
+        self._agent: AgentDetails | None = None
         self._eval_id: str | None = None
         # The Attempts of Tasks given without an experiment may be invoked from several threads.
         self._lock = threading.Lock()
@@ -209,7 +195,7 @@ class FoundryCloudEvaluationTarget:
         run_path = f"{runs}/{made['id']}"
         self._wait(recorded, run_path, deadline, limit)
         with _asking(recorded, f"the output items of the cloud evaluation run {made['id']} could not be read"):
-            items = self._output_items(run_path)
+            items = output_items_of(self._project, run_path)
         recorded.result_read = True
         # Paired by the identity of the Attempt, never by the order of the rows.
         own = [item for item in items if (item.get("datasource_item") or {}).get("attempt_id") == request.attempt_id]
@@ -232,7 +218,7 @@ class FoundryCloudEvaluationTarget:
         The type of the agent is what the project said when the target looked the agent up, on
         its first Attempt or for `agent_configuration`. Until then nothing is declared supported.
         """
-        kind = None if self._agent is None else (self._latest().get("definition") or {}).get("kind")
+        kind = None if self._agent is None else self._agent.kind
         if kind == "prompt":
             return IsolatedFollowUp(supported=True)
         if kind == "hosted":
@@ -280,18 +266,18 @@ class FoundryCloudEvaluationTarget:
                 f"the follow-up could not be made in the Foundry project: {error}",
                 invocation=_follow_up({}, request.prompt, error=str(error)),
             ) from error
-        if not isinstance(response, dict) or _output_items(response) is None:
+        if not isinstance(response, dict) or output_items(response) is None:
             raise InvocationFailed(
                 "the Foundry project answered the follow-up with something that is no response: "
                 f"{json.dumps(response)[:_SHOWN_ANSWER]}",
                 invocation=_follow_up({}, request.prompt),
             )
         follow_up = _follow_up(response, request.prompt)
-        failure = _failure_of_response(response) or _not_isolated(follow_up, previous)
+        failure = failure_of_a_response(response) or not_isolated(follow_up, previous)
         if failure is not None:
             raise InvocationFailed(failure, invocation=follow_up)
         return ConfidenceResponse(
-            attempt_id=request.attempt.attempt_id, output=_output_text(response), invocation=follow_up
+            attempt_id=request.attempt.attempt_id, output=output_text(response), invocation=follow_up
         )
 
     def agent_configuration(self) -> dict[str, Any]:
@@ -302,34 +288,33 @@ class FoundryCloudEvaluationTarget:
         are not copied: they can hold secrets.
         """
         kind = self._supported_kind(_Recorded(composed_input=None))
-        endpoint = self._agent.get("agent_endpoint") or {}
         return {
             "agent_target": AGENT_TARGET,
             "entry_point": FOUNDRY_CLOUD_EVALUATION,
             "project_endpoint": getattr(self._project, "endpoint", None),
             "agent": self._agent_name,
             "kind": kind,
-            "protocols": endpoint.get("protocols"),
+            "protocols": self._agent.protocols,
             "pinned_version": self._agent_version,
-            "latest_version": self._latest().get("version"),
+            "latest_version": self._agent.latest_version,
         }
-
-    def _latest(self) -> dict[str, Any]:
-        return ((self._agent or {}).get("versions") or {}).get("latest") or {}
 
     def _supported_kind(self, recorded: _Recorded) -> str:
         """The type of the agent, when it is one that has been invoked through cloud evaluation.
 
         Raises otherwise. The agent is looked up once. An agent that is not supported is never invoked.
+        The project answers with a hosted agent's settings as well, in plain text. They are dropped
+        where the answer is read, so no error and no record of the target holds them.
         """
         with self._lock:
             if self._agent is None:
                 with _asking(recorded, f"agent {self._agent_name!r} could not be looked up in the Foundry project"):
-                    found = self._project.request("GET", f"/agents/{self._agent_name}?api-version={API_VERSION}")
-                self._agent = found if isinstance(found, dict) else {}
-        kind = (self._latest().get("definition") or {}).get("kind")
+                    self._agent = read_agent_details(
+                        self._project.request("GET", f"/agents/{self._agent_name}?api-version={API_VERSION}")
+                    )
+        kind = self._agent.kind
         recorded.agent_kind = kind
-        protocols = (self._agent.get("agent_endpoint") or {}).get("protocols") or []
+        protocols = self._agent.protocols or []
         if kind == "hosted" and RESPONSES_PROTOCOL not in protocols:
             raise UnsupportedCombination(
                 f"hosted agent {self._agent_name!r} serves the protocols {protocols} and not the Responses protocol. "
@@ -429,17 +414,6 @@ class FoundryCloudEvaluationTarget:
             if isinstance(answered, dict):
                 recorded.run = answered
 
-    def _output_items(self, run_path: str) -> list[dict[str, Any]]:
-        items: list[dict[str, Any]] = []
-        after = ""
-        while True:
-            page = self._project.request("GET", f"{run_path}/output_items?limit={OUTPUT_ITEM_PAGE}{after}")
-            page = page if isinstance(page, dict) else {}
-            items.extend(item for item in page.get("data") or [] if isinstance(item, dict))
-            if not page.get("has_more") or not page.get("last_id"):
-                return items
-            after = f"&after={page['last_id']}"
-
 
 @dataclass
 class _Recorded:
@@ -458,55 +432,54 @@ class _Recorded:
         run, item = self.run or {}, self.item
         returned = (item or {}).get("datasource_item") or {}
         sample = (item or {}).get("sample") or {}
-        usage = sample.get("usage")
-        return {
-            "agent_target": AGENT_TARGET,
-            "entry_point": FOUNDRY_CLOUD_EVALUATION,
-            "api_version": API_VERSION,
-            "agent_kind": self.agent_kind,
-            "composed_input": self.composed_input,
-            "eval_id": self.eval_id,
-            "run_id": run.get("id"),
-            "run_status": run.get("status"),
-            "output_item_id": None if item is None else item.get("id"),
-            "status": None if item is None else item.get("status"),
-            "criterion": CRITERION,
-            "agent": None
-            if item is None
-            else {
-                "id": returned.get("agent_id"),
-                "name": returned.get("agent_name"),
-                "version": returned.get("agent_version"),
-            },
-            "response_id": returned.get("response_id"),
-            "conversation_id": returned.get("conversation_id"),
-            "model": sample.get("model"),
-            "metadata": None
-            if item is None
-            else {"attempt_id": returned.get("attempt_id"), "task_id": returned.get("task_id")},
-            # The error of the item's sample. Without an item, the error of the run.
-            "error": sample.get("error") if item is not None else _error_of(run),
+        return InvocationEvidence.with_usage(
             # As the platform reported it for the item. Usage that was not reported is missing, never zero.
-            "token_usage": usage,
-            "token_usage_missing": self._usage_missing(usage),
-            "token_usage_source": None if usage is None else USAGE_SOURCE.get(self.agent_kind, _OF_THE_ITEM),
-            # The run's own rows. They can count the same tokens more than once, so they are not a total.
-            "run_per_model_usage": run.get("per_model_usage"),
-            "latency_ms": sample.get("latency_ms"),
-            "tool_calls": None if item is None else _tool_calls(returned),
-            # The run's link to the Foundry portal is left out: it embeds the customer's subscription identifier.
-            "platform_diagnostics": {
-                "meaning": PLATFORM_DIAGNOSTICS_MEANING,
-                "result_counts": run.get("result_counts"),
-                "per_testing_criteria_results": run.get("per_testing_criteria_results"),
-                "results": None if item is None else item.get("results"),
+            sample.get("usage"),
+            source=USAGE_SOURCE.get(self.agent_kind, _OF_THE_ITEM),
+            missing=self._usage_missing(),
+            agent_target=AGENT_TARGET,
+            entry_point=FOUNDRY_CLOUD_EVALUATION,
+            response_id=returned.get("response_id"),
+            tool_calls=None if item is None else _tool_calls(returned),
+            identifiers={
+                "api_version": API_VERSION,
+                "agent_kind": self.agent_kind,
+                "composed_input": self.composed_input,
+                "eval_id": self.eval_id,
+                "run_id": run.get("id"),
+                "run_status": run.get("status"),
+                "output_item_id": None if item is None else item.get("id"),
+                "status": None if item is None else item.get("status"),
+                "criterion": CRITERION,
+                "agent": None
+                if item is None
+                else {
+                    "id": returned.get("agent_id"),
+                    "name": returned.get("agent_name"),
+                    "version": returned.get("agent_version"),
+                },
+                "conversation_id": returned.get("conversation_id"),
+                "model": sample.get("model"),
+                "metadata": None
+                if item is None
+                else {"attempt_id": returned.get("attempt_id"), "task_id": returned.get("task_id")},
+                # The error of the item's sample. Without an item, the error of the run.
+                "error": sample.get("error") if item is not None else _error_of(run),
+                # The run's own rows. They can count the same tokens more than once, so they are not a total.
+                "run_per_model_usage": run.get("per_model_usage"),
+                "latency_ms": sample.get("latency_ms"),
+                # The run's link to the Foundry portal is left out: it embeds the customer's subscription identifier.
+                "platform_diagnostics": {
+                    "meaning": PLATFORM_DIAGNOSTICS_MEANING,
+                    "result_counts": run.get("result_counts"),
+                    "per_testing_criteria_results": run.get("per_testing_criteria_results"),
+                    "results": None if item is None else item.get("results"),
+                },
             },
-        }
+        ).to_dict()
 
-    def _usage_missing(self, usage: Any) -> str | None:
+    def _usage_missing(self) -> str:
         """Why there is no usage for the Attempt, when there is none."""
-        if usage is not None:
-            return None
         if self.item is not None:
             return NO_USAGE
         if self.run is None:
@@ -530,28 +503,29 @@ def _follow_up(response: dict[str, Any], question: str, error: str | None = None
     none. `question` is what the agent was sent. With it are the response the project says the
     follow-up continued and the tool choice it says it applied.
     """
-    usage = response.get("usage")
-    return {
-        "agent_target": AGENT_TARGET,
-        # The follow-up is sent by this process. Only the Attempt it follows was invoked by cloud evaluation.
-        "entry_point": CUSTOMER_CODE,
-        "protocol": RESPONSES_PROTOCOL,
-        "api_version": API_VERSION,
-        "agent": response.get("agent_reference"),
-        "response_id": response.get("id"),
-        "status": response.get("status"),
-        "model": response.get("model"),
-        "metadata": response.get("metadata"),
-        "error": response.get("error") if response else error,
+    return InvocationEvidence.with_usage(
         # As the platform reported it. Usage that was not reported is missing, never zero.
-        "token_usage": usage,
-        "token_usage_missing": None if usage is not None else NO_FOLLOW_UP_USAGE if response else NO_FOLLOW_UP_RESPONSE,
-        "token_usage_source": None if usage is None else USAGE_SOURCE_OF_A_RESPONSE,
-        "tool_calls": _tool_calls_of_response(response),
-        "input": question,
-        "previous_response_id": response.get("previous_response_id"),
-        "tool_choice": response.get("tool_choice"),
-    }
+        response.get("usage"),
+        source=USAGE_SOURCE_OF_A_RESPONSE,
+        missing=NO_FOLLOW_UP_USAGE if response else NO_FOLLOW_UP_RESPONSE,
+        agent_target=AGENT_TARGET,
+        # The follow-up is sent by this process. Only the Attempt it follows was invoked by cloud evaluation.
+        entry_point=CUSTOMER_CODE,
+        response_id=response.get("id"),
+        tool_calls=tool_calls_of_a_response(response),
+        identifiers={
+            "protocol": RESPONSES_PROTOCOL,
+            "api_version": API_VERSION,
+            "agent": response.get("agent_reference"),
+            "status": response.get("status"),
+            "model": response.get("model"),
+            "metadata": response.get("metadata"),
+            "error": response.get("error") if response else error,
+            "input": question,
+            "previous_response_id": response.get("previous_response_id"),
+            "tool_choice": response.get("tool_choice"),
+        },
+    ).to_dict()
 
 
 def _failure_of(

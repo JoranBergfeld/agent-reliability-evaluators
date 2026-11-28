@@ -114,7 +114,7 @@ class EvidenceCount:
 class MetricResult:
     """One metric, as calculated by its Evaluator from grouped Attempt evidence.
 
-    Build it with `available` or `unavailable`. The scoring path and
+    Build it with `available`, `unavailable` or `not_applicable`. The scoring path and
     fidelity are not known to an Evaluator; whoever ran it attributes them in the scorecard.
     """
 
@@ -152,6 +152,11 @@ class MetricResult:
     @classmethod
     def unavailable(cls, definition: MetricDefinition, reason: str, **evidence: Any) -> MetricResult:
         return cls(definition=definition, state=MetricState.UNAVAILABLE, reason=reason, **evidence)
+
+    @classmethod
+    def not_applicable(cls, definition: MetricDefinition, reason: str, **evidence: Any) -> MetricResult:
+        """The protocol of the metric does not apply to the declared experiment. Never for missing evidence."""
+        return cls(definition=definition, state=MetricState.NOT_APPLICABLE, reason=reason, **evidence)
 
     def to_dict(self) -> dict[str, Any]:
         metric = self.definition.metric

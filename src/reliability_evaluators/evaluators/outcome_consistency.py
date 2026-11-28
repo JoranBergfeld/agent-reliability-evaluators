@@ -9,7 +9,7 @@ from __future__ import annotations
 from math import fsum
 from typing import Iterable
 
-from ..evidence import ExecutionStatus, TaskEvidence, require_unambiguous
+from ..evidence import NOT_UNDER_THE_BASELINE, ExecutionStatus, TaskEvidence, require_unambiguous, under_the_baseline
 from .catalogue import OUTCOME_CONSISTENCY
 from .result import EvidenceCount, MetricDefinition, MetricResult, Scale, counted
 
@@ -18,7 +18,7 @@ TOO_FEW_ATTEMPTS = "fewer than two Attempts with a task outcome"
 
 DEFINITION = MetricDefinition(
     metric=OUTCOME_CONSISTENCY,
-    version="1.0.0",
+    version="2.0.0",
     measures="Whether repeated Attempts at the same Task give the same task outcome.",
     calculation=(
         "Per Task, p is the share of its Attempts that succeeded and the Task value is (2p - 1)^2. "
@@ -33,6 +33,9 @@ DEFINITION = MetricDefinition(
         "repeatability evidence.",
         "Assumption (spec assumption 10): the metric is calculated over the eligible Tasks and "
         "excluded Tasks are counted with reasons. It is unavailable only when no Task is eligible.",
+        "Nominal behaviour: the metric is calculated from the Attempts made under the baseline. An Attempt "
+        "that records a variation as its condition is excluded with a reason and counted, whoever calls "
+        "the Evaluator. An Attempt that records no condition was made without an experiment and is used.",
     ),
     scale=Scale(
         minimum=0.0,
@@ -51,8 +54,9 @@ DEFINITION = MetricDefinition(
 
 def evaluate(tasks: Iterable[TaskEvidence]) -> MetricResult:
     """Calculate outcome consistency from Attempts grouped by Task."""
-    tasks = tuple(tasks)
-    require_unambiguous(tasks)
+    given = tuple(tasks)
+    require_unambiguous(given)
+    tasks, under_a_variation = under_the_baseline(given)
     per_task = []
     used_attempts: list[str] = []
     excluded_tasks: list[str] = []
@@ -93,10 +97,11 @@ def evaluate(tasks: Iterable[TaskEvidence]) -> MetricResult:
                 excluded=counted(TOO_FEW_ATTEMPTS, excluded_tasks),
             ),
             "attempts": EvidenceCount(
-                total=sum(len(task.attempts) for task in tasks),
+                total=sum(len(task.attempts) for task in given),
                 valid=len(used_attempts),
                 missing=counted("no task outcome recorded", without_outcome),
-                excluded=counted("execution status is not completed", not_completed)
+                excluded=counted(NOT_UNDER_THE_BASELINE, under_a_variation)
+                + counted("execution status is not completed", not_completed)
                 + counted(f"its Task has {TOO_FEW_ATTEMPTS}", attempts_of_excluded_tasks),
             ),
         },

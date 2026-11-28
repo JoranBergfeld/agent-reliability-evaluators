@@ -18,7 +18,7 @@ BINS = 10
 
 DEFINITION = MetricDefinition(
     metric=CALIBRATION,
-    version="1.0.0",
+    version="2.0.0",
     measures=(
         "Whether the agent's stated confidence matches how often it succeeds: among the Attempts "
         "the agent rated near 70, about 70 in 100 should have succeeded."
@@ -49,6 +49,9 @@ DEFINITION = MetricDefinition(
         "Only complete pairs are used: a completed Attempt that has both a task outcome and a confidence "
         "rating. Every other Attempt is counted with its reason, and is never scored as a confidence of 0 "
         "or as a task failure. The metric is unavailable only when there is no valid pair.",
+        "Nominal behaviour: the metric is calculated from the Attempts made under the baseline. An Attempt "
+        "that records a variation as its condition is excluded with a reason and counted, whoever calls "
+        "the Evaluator. An Attempt that records no condition was made without an experiment and is used.",
     ),
     scale=Scale(
         minimum=0.0,

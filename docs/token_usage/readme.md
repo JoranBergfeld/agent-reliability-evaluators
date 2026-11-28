@@ -250,7 +250,7 @@ echo "##vso[task.uploadsummary]$PWD/artifacts/reliability/summary.md"
 
 Neither makes an Attempt or calls an agent.
 
-- A [recalculation](../sweep/late-and-corrected-outcomes.md) carries the token usage of the earlier scorecard over. It is what the sweep used, and the recalculation scores by code. The usage has to be what the supplied evidence gives, like the rest of the execution record, and what you declared for preparation is kept as it was reported.
+- A [recalculation](../sweep/late-and-corrected-outcomes.md) carries the token usage of the earlier scorecard over. It is what the sweep used, and the recalculation scores by code. The usage has to be what the supplied evidence gives, like the rest of the execution record, and what you declared for preparation is kept as it was reported. A Foundry-managed metric that is carried over keeps the usage of its managed runs as the earlier scorecard reports it. When you give the recalculation your Foundry project and Foundry scores such a metric again, its scoring is that of the new managed runs: what the earlier runs used is in the earlier scorecard.
 - A [customer-process rescore](../managed_scoring/readme.md#a-customer-process-rescore) adds `customer_process_rescore` to the usage of the Evaluator it rescored: a scoring of its own, by code in your process, that used no tokens. What the managed runs used stays as it was reported, and so do the totals. A rescore does not stand in for a count that Foundry did not report.
 
 ## Assumptions

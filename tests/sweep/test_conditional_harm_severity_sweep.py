@@ -93,7 +93,7 @@ def test_the_scorecard_says_how_conditional_harm_severity_is_defined_and_how_to_
 
     definition = conditional_harm_severity["definition"]
     conventions = definition["fidelity_conventions"]
-    assert definition["version"] == "1.0.0"
+    assert definition["version"] == "2.0.0"
     assert "worst weight" in definition["calculation"]
     assert "low 0.25, medium 0.5 and high 1" in definition["calculation"]
     assert "over the violating Attempts only" in definition["calculation"]

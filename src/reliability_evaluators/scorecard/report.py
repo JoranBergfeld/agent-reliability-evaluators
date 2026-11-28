@@ -18,6 +18,7 @@ from collections import Counter
 from html import escape
 from typing import Any
 
+from .acceptance import NOT_RECALCULATED
 from .assemble import RESCORE, TOKEN_USAGE, to_json
 
 _STATES = {
@@ -169,6 +170,9 @@ class _Report:
         if rescore:
             css += " rescore"
             state += _RESCORE_MARK
+        if _is_filled(entry.get(NOT_RECALCULATED), dict):
+            css += " not-recalculated"
+            state += _NOT_RECALCULATED_MARK
         if "state" in promoted:
             recorded = entry["state"]
             described = isinstance(recorded, str) and recorded in _STATES
@@ -318,6 +322,10 @@ _RESCORE_NOTICE = (
     "was, and a result that is missing is still missing.</p>"
 )
 
+_NOT_RECALCULATED_MARK = (
+    '<p class="not-recalculated-mark">Not recalculated. This is the earlier Foundry-managed result, and it rests '
+    "on task outcomes that were supplied or corrected since. It is not the result for the corrected outcomes.</p>"
+)
 _RESCORE_MARK = (
     '<p class="rescore-mark">Customer-process rescore. The customer asked for the evidence that Foundry-managed '
     "scoring was given for this metric to be scored in their own process. This is a result of its own. It is "
@@ -389,6 +397,8 @@ border-radius:1rem;color:var(--alert);font-weight:600}
 .metric.superseded{border-style:dashed}
 .metric.rescore{margin-left:2rem;border-style:double;border-width:3px;border-left-width:.5rem}
 .rescore-mark{font-weight:600}
+.metric.not-recalculated{border-style:dashed}
+.not-recalculated-mark{font-weight:600}
 .superseded-mark{color:var(--warn);font-weight:600}
 .superseded .of-metric>tbody>tr>th[data-key=value]+td>.v{text-decoration:line-through}
 """

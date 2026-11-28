@@ -15,21 +15,21 @@ from __future__ import annotations
 from copy import deepcopy
 from typing import Any, Iterable, Mapping, Sequence
 
-from ..evaluators import Fidelity, MetricState, ScoringPath
+from ..evaluators import MetricState, ScoringPath
 from ..evidence import EvidenceError
-from ..managed_scoring import DerivationError, submitted_evidence_sha256
-from ..scorecard import (
-    RESCORE,
-    TOKEN_USAGE,
-    AcceptanceCriterion,
-    ScoredMetric,
-    code_scoring_use,
-    criteria_by_metric,
-    rescore_entry,
-)
+from ..scorecard import RESCORE, AcceptanceCriterion, code_scoring_use, criteria_by_metric, rescore_entry
 from .declaration import ActionEvidenceDeclaration, ConfiguredEvaluator
-from .recalculation import _cut_short, _EarlierScorecard, _evidence, _read, _Rescoring, _validating_the_supplied_evidence
-from .runner import _select
+from .recalculation import (
+    cut_short_of,
+    EarlierScorecard,
+    evidence_given,
+    read_earlier_scorecard,
+    EarlierEvaluation,
+    submitted_evidence,
+    usage_of_the_evaluator,
+    validating_the_supplied_evidence,
+)
+from .runner import scored_in_this_process, select_evaluator
 
 
 class RescoreFailed(Exception):
@@ -102,8 +102,8 @@ def _rescore(
 ) -> dict[str, Any]:
     requested = _requested(metrics)
     criteria = criteria_by_metric(acceptance_criteria)
-    with _validating_the_supplied_evidence():
-        earlier = _read(earlier_scorecard)
+    with validating_the_supplied_evidence():
+        earlier = read_earlier_scorecard(earlier_scorecard)
     rescored = deepcopy(dict(earlier_scorecard))
     entries = {entry.get("metric_id"): entry for entry in rescored["metrics"] if isinstance(entry, Mapping)}
     for metric_id, metric in requested.items():
@@ -113,43 +113,25 @@ def _rescore(
                 f"the earlier scorecard assessed an acceptance criterion for {metric_id!r}, and none is declared "
                 "for the rescore. Declare the acceptance criteria again, as for the sweep"
             )
-        with _validating_the_supplied_evidence():
-            rescoring = _Rescoring(
-                _select(metric, action_evidence),
+        with validating_the_supplied_evidence():
+            rescoring = EarlierEvaluation(
+                select_evaluator(metric, action_evidence),
                 _attempts_used(entry, earlier),
-                _cut_short(entry, earlier.executions),
+                cut_short_of(entry, earlier.executions),
                 had_execution_failure=False,
             )
             by_identity = {attempt.attempt_id: attempt for attempt in earlier.attempts}
-            evidence = _evidence(rescoring, [by_identity[attempt_id] for attempt_id in rescoring.attempt_ids], earlier)
-        scored = ScoredMetric(
-            result=rescoring.evaluator.evaluate(evidence),
-            scoring_path=ScoringPath.CUSTOMER_PROCESS,
-            fidelity=Fidelity.AUTHORITATIVE,
-            attempts_used=rescoring.attempt_ids,
-            cut_short=rescoring.cut_short,
+            evidence = evidence_given(rescoring, [by_identity[attempt_id] for attempt_id in rescoring.attempt_ids], earlier)
+        scored = scored_in_this_process(
+            rescoring.evaluator, evidence, attempts_used=rescoring.attempt_ids, cut_short=rescoring.cut_short
         )
-        same_evidence = _same_evidence(entry, evidence, rescoring.evaluator.evaluated_with())
+        same_evidence = submitted_evidence(entry, evidence, rescoring.evaluator.evaluated_with())
         entry[RESCORE] = rescore_entry(scored, same_evidence, criteria.get(metric_id))
-        with _validating_the_supplied_evidence():
+        with validating_the_supplied_evidence():
             # The rescore is a scoring of its own. It is code in this process, so it used no tokens,
             # and what the managed runs used stays as it was reported.
-            _usage_of_the_evaluator(rescored, metric_id)[RESCORE] = code_scoring_use()
+            usage_of_the_evaluator(rescored, metric_id)[RESCORE] = code_scoring_use()
     return rescored
-
-
-def _usage_of_the_evaluator(scorecard: Mapping[str, Any], metric_id: str) -> dict[str, Any]:
-    """Where a scorecard reports the token usage of the Evaluator of one metric."""
-    usage = scorecard.get(TOKEN_USAGE)
-    evaluators = usage.get("evaluators") if isinstance(usage, Mapping) else None
-    reported = [
-        entry
-        for entry in (evaluators if isinstance(evaluators, list) else [])
-        if isinstance(entry, dict) and entry.get("metric_id") == metric_id
-    ]
-    if len(reported) != 1:
-        raise EvidenceError(f"it does not report the token usage of the Evaluator of {metric_id!r} once")
-    return reported[0]
 
 
 def _requested(metrics: Any) -> dict[str, str | ConfiguredEvaluator]:
@@ -189,7 +171,7 @@ def _managed_entry(entries: Mapping[Any, Any], metric_id: Any) -> dict[str, Any]
     return entry
 
 
-def _attempts_used(entry: Mapping[str, Any], earlier: _EarlierScorecard) -> tuple[str, ...]:
+def _attempts_used(entry: Mapping[str, Any], earlier: EarlierScorecard) -> tuple[str, ...]:
     """The identities of the Attempts the managed evaluator was given, which are the ones that are rescored."""
     metric_id = entry["metric_id"]
     used = entry.get("attempts_used")
@@ -204,35 +186,3 @@ def _attempts_used(entry: Mapping[str, Any], earlier: _EarlierScorecard) -> tupl
                 "which is not in the attempt-level evidence"
             )
     return tuple(attempt_ids)
-
-
-def _same_evidence(entry: Mapping[str, Any], evidence: Sequence[Any], declared: Sequence[Any]) -> str | None:
-    """The digest of the evidence that is rescored, which has to be the digest of what was submitted.
-
-    The digest is the one the evidence travels to Foundry with, so the two are the same
-    exactly when the rescore is calculated from the evidence the managed evaluator was sent.
-    `declared` is what the customer declares for the Evaluator, such as the action types. It
-    is submitted with the evidence, so a rescore under another declaration is refused too.
-    None when this version derives no Foundry evaluator for the metric and nothing was
-    recorded as submitted: there is then nothing to compare.
-    """
-    metric_id = entry["metric_id"]
-    managed = entry.get("managed_scoring")
-    submitted = managed.get("evidence_sha256") if isinstance(managed, Mapping) else None
-    try:
-        digest = submitted_evidence_sha256(metric_id, evidence, *declared)
-    except DerivationError as error:
-        if submitted is None:
-            return None
-        raise ValueError(
-            f"the supplied evidence cannot be compared with the evidence that was submitted to Foundry "
-            f"for {metric_id!r}: {error}"
-        ) from error
-    if submitted is not None and submitted != digest:
-        raise EvidenceError(
-            f"the supplied evidence is not the evidence that was submitted to Foundry for {metric_id!r}: it has "
-            f"the digest {digest}, and {submitted} was submitted. A customer-process rescore is of the same "
-            "evidence, with what the customer declared for the Evaluator as it was declared for the sweep. "
-            "Rescore with the scorecard as the sweep wrote it, and with the commit or tag that made it"
-        )
-    return digest

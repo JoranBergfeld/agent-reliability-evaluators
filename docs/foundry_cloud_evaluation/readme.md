@@ -45,7 +45,7 @@ To invoke the same agents from your own code instead, use the [Foundry prompt ag
 ## What it needs
 
 - Python 3.10 or later and the standard library. The requests are sent by `FoundryProject`, the same class [Foundry-managed scoring](../managed_scoring/readme.md) uses: plain REST with `urllib` and a bearer token. No Azure SDK: see [ADR 0005](../adr/0005-foundry-targets-use-the-standard-library.md).
-- A bearer token for the resource `https://ai.azure.com`. By default `FoundryProject` asks the Azure CLI, so the sweep runs as whoever the Azure CLI is signed in as. Pass `FoundryProject(endpoint, token=...)` to use your own function. What the [hosted agent target's documentation](../foundry_hosted_agent/readme.md#authentication) says about signing in from CI holds here.
+- A bearer token for the resource `https://ai.azure.com`. By default `FoundryProject` asks the Azure CLI, so the sweep runs as whoever the Azure CLI is signed in as. Pass `FoundryProject(endpoint, credential=...)` to use your own function. What the [hosted agent target's documentation](../foundry_hosted_agent/readme.md#authentication) says about signing in from CI holds here.
 - A role in the Foundry project that allows the identity to read the agent and to create evals and evaluation runs. In the live check it held Foundry User on the Foundry account and Foundry Project Manager on the project. Which of the two is needed was not isolated.
 - Network access from where the sweep runs to the project endpoint. Your process does not call the agent for an Attempt. Foundry does. The one request your process sends to the agent itself is [the confidence follow-up](#the-confidence-rating) to a prompt agent, when a metric that uses confidence is selected.
 
@@ -270,7 +270,7 @@ An unsupported combination is reported. Nothing is tried in its place.
   experiment = Experiment(..., agent_configuration=target.agent_configuration(), ...)
   ```
 
-  `agent_configuration()` returns the entry point, the project endpoint, the agent's name, its kind, the protocols its endpoint serves, the version you pinned and its latest version. The project returns a hosted agent's environment variables with its details, in plain text. The target does not copy them anywhere.
+  `agent_configuration()` returns the entry point, the project endpoint, the agent's name, its kind, the protocols its endpoint serves, the version you pinned and its latest version. The project returns a hosted agent's environment variables with its details, in plain text, to every identity that can read the agent, so they are no place for a secret. The target reads that answer once and keeps the agent's kind, protocols and version: nothing of its settings is kept, recorded or shown in an error.
 
 - **The confidence follow-up of a hosted agent.** For a hosted agent the target declares that it does not support an isolated follow-up, as the hosted agent target does. Every Attempt of a hosted agent has no confidence rating, with that reason, and [calibration](../calibration/readme.md), [strict confidence discrimination](../strict_confidence_discrimination/readme.md) and the [Brier-based score](../brier_based_score/readme.md) are unavailable. The agent is not asked, and a rating in its task response is not used. A prompt agent is asked: see [the confidence rating](#the-confidence-rating).
 

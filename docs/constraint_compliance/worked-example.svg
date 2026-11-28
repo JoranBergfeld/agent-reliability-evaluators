@@ -1,6 +1,6 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 470" width="800" height="470" font-family="Segoe UI, Helvetica, Arial, sans-serif" font-size="13">
   <title>Worked example: nine Attempts, six of them assessed</title>
-  <desc>Six Attempts were assessed against every applicable operational constraint or have a recorded violation. Four of them have no violation and two have at least one, so constraint compliance is 4 divided by 6, 0.6667. Three Attempts are left out and counted: one was not assessed against one of its constraints, one did not complete its execution, and one has no applicable constraint.</desc>
+  <desc>Six Attempts were assessed against every applicable operational constraint. Four of them have no violation and two have at least one, so constraint compliance is 4 divided by 6, 0.6667. Three Attempts are left out and counted: one was not assessed against one of its constraints, one did not complete its execution and was not assessed, and one has no applicable constraint.</desc>
   <defs>
     <g id="no-violation">
       <circle r="11" fill="#2e7d32"/>
@@ -77,7 +77,7 @@
     <text x="130" y="310">execution failed</text>
     <use href="#not-assessed" x="315" y="305"/>
     <use href="#does-not-apply" x="445" y="305"/>
-    <text x="530" y="310">left out: execution did not complete</text>
+    <text x="530" y="310">left out: did not complete, not assessed</text>
 
     <text x="20" y="344">list/1</text>
     <text x="130" y="344">success</text>

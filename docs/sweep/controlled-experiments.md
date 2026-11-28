@@ -282,7 +282,7 @@ When an Evaluator needs Attempts that are made differently from another's, the e
 
 ## Limits in this version
 
-- Attempts under a variation are used only by the metric that compares that kind of variation with the baseline. Every other metric scores Attempts under the baseline only. Each metric's `attempts_used` in the scorecard lists the Attempts its Evaluator was given.
+- Attempts under a variation are used only by the metric that compares that kind of variation with the baseline. Every other metric scores Attempts under the baseline only. Each metric's `attempts_used` in the scorecard lists the Attempts its Evaluator was given. An Evaluator of such a metric that is called on its own, with the Attempts of a whole experiment, leaves the Attempts under the variation out itself and counts them, so it gives the value the sweep gives.
 - A Task can be declared in one experiment only, so that Attempts made under different declarations are never mixed in one Task's evidence. To attempt the same work under a second variation, declare a second Task for it. Measuring fault, environment and prompt robustness for the same work therefore takes three experiments, each with a Task of its own that has the same prompt and task-success rule and its own task identity. A metric that is scored on baseline Attempts then counts them as three Tasks.
 - Every prompt variant is attempted as often as the baseline. The number of Attempts cannot be set per variant.
 - A prompt variant is the text that starts an Attempt. Later turns of a conversation are not varied.

@@ -36,10 +36,10 @@ from __future__ import annotations
 
 import ast
 import copy
-import re
 from typing import Any, Callable
 
 from reliability_evaluators.managed_scoring import FoundryRequestError
+from tests.fake_eval_runs import FakeEvalRuns
 from tests.managed_artifact import load_grader
 
 # The sandbox checks and loads the code for every row. Doing it once gives the same grades sooner.
@@ -50,7 +50,7 @@ VERSIONS_PAGE = 10
 ALL_FAILED = "All examples failed due to invalid user input; please check the individual sample outputs for details."
 
 
-class FakeFoundryProject:
+class FakeFoundryProject(FakeEvalRuns):
     def __init__(
         self,
         *,
@@ -106,17 +106,9 @@ class FakeFoundryProject:
         routes = (
             ("GET", r"/evaluators/([^/]+)/versions\?api-version=v1(?:&continuationToken=(\d+))?", self._list_versions),
             ("POST", r"/evaluators/([^/]+)/versions\?api-version=v1", self._register_with_preview),
-            ("POST", r"/openai/v1/evals", self._create_eval),
-            ("POST", r"/openai/v1/evals/([^/]+)/runs", self._create_run),
-            ("GET", r"/openai/v1/evals/([^/]+)/runs/([^/]+)", self._poll_run),
-            ("POST", r"/openai/v1/evals/([^/]+)/runs/([^/]+)/cancel", self._cancel_run),
-            ("GET", r"/openai/v1/evals/([^/]+)/runs/([^/]+)/output_items\?limit=(\d+)(?:&after=(\w+))?", self._items),
+            *self._eval_run_routes(),
         )
-        for route_method, pattern, handler in routes:
-            matched = re.fullmatch(pattern, path)
-            if method == route_method and matched:
-                return copy.deepcopy(handler(*matched.groups(), body=body, headers=headers or {}))
-        raise FoundryRequestError(method, path, 404, "")
+        return self._answer(routes, method, path, body=body, headers=headers or {})
 
     def _list_versions(self, name, continuation, **_):
         newest_first = list(reversed(self.evaluators.get(name, [])))
@@ -187,29 +179,9 @@ class FakeFoundryProject:
         usage = self._per_model_usage(number) if callable(self._per_model_usage) else self._per_model_usage
         return list(usage) if isinstance(usage, tuple) else usage
 
-    def _poll_run(self, eval_id, run_id, **_):
-        self._polls[run_id] += 1
-        run = self.runs[run_id]
-        if run["status"] == "canceled":
-            return run
-        if self._never_finishes or self._polls[run_id] <= self._polls_until_finished:
-            return {**run, "status": "in_progress", "error": None}
-        return run
-
     def _cancel_run(self, eval_id, run_id, **_):
         self.runs[run_id] = {**self.runs[run_id], "status": "canceled", "error": None}
         return self.runs[run_id]
-
-    def _items(self, eval_id, run_id, limit, after, **_):
-        items = self._output_items[run_id] if self.runs[run_id]["status"] == "completed" else []
-        start = 0 if after is None else next(n for n, item in enumerate(items, start=1) if item["id"] == after)
-        page = items[start : start + int(limit)]
-        return {
-            "data": page,
-            "first_id": page[0]["id"] if page else None,
-            "last_id": page[-1]["id"] if page else None,
-            "has_more": start + len(page) < len(items),
-        }
 
     def _execute(self, eval_id: str, run_id: str, rows: list[dict]) -> tuple[dict | None, list[dict]]:
         """Run every criterion on every row. One failure fails the run and leaves no items."""

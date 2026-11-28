@@ -6,6 +6,10 @@ from dataclasses import dataclass
 from typing import Iterable, Sequence
 
 from .attempt import Attempt, EvidenceError
+from .experiment import ConditionRole
+
+# Why an Attempt under a variation is left out of a metric of nominal behaviour.
+NOT_UNDER_THE_BASELINE = "made under a variation, and this metric is calculated from Attempts under the baseline"
 
 
 @dataclass(frozen=True)
@@ -22,6 +26,30 @@ def group_by_task(attempts: Iterable[Attempt]) -> tuple[TaskEvidence, ...]:
     for attempt in attempts:
         grouped.setdefault(attempt.task_id, []).append(attempt)
     return tuple(TaskEvidence(task_id, tuple(members)) for task_id, members in grouped.items())
+
+
+def under_the_baseline(tasks: Sequence[TaskEvidence]) -> tuple[tuple[TaskEvidence, ...], tuple[str, ...]]:
+    """The evidence with its Attempts under the baseline only, and the identities of the Attempts left out.
+
+    A metric of nominal behaviour is calculated from these. An Attempt that records a
+    variation as its condition is left out, in whatever evidence the Evaluator is given. An
+    Attempt that records no condition was made without an experiment, so no variation was
+    applied to it and it is used. A Task keeps its place when none of its Attempts is used.
+    """
+    nominal = tuple(
+        TaskEvidence(
+            task.task_id,
+            tuple(attempt for attempt in task.attempts if attempt.condition_role is not ConditionRole.VARIATION),
+        )
+        for task in tasks
+    )
+    left_out = tuple(
+        attempt.attempt_id
+        for task in tasks
+        for attempt in task.attempts
+        if attempt.condition_role is ConditionRole.VARIATION
+    )
+    return nominal, left_out
 
 
 def require_unambiguous(tasks: Sequence[TaskEvidence]) -> None:

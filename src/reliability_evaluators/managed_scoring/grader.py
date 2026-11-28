@@ -29,6 +29,7 @@ from typing import Any, Callable, Iterable, Mapping, Sequence
 
 from ..evaluators.result import CountedReason, EvidenceCount, MetricDefinition, MetricResult, MetricState
 from ..evidence import (
+    ACTION_TYPE_DECLARATION,
     ActionEvent,
     ActionEvidence,
     ActionTypeMapping,
@@ -327,7 +328,7 @@ def _read_action_types(transported: Any) -> ActionTypeMapping | None:
 
 
 # How a customer declaration is written for transport and read back, by the name an Evaluator takes it under.
-_DECLARATIONS = {"action_types": (_write_action_types, _read_action_types)}
+_DECLARATIONS = {ACTION_TYPE_DECLARATION: (_write_action_types, _read_action_types)}
 
 
 def _record(transported: Any, *fields: str) -> dict[str, Any]:

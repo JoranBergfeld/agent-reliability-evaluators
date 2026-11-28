@@ -106,7 +106,7 @@ def test_the_scorecard_says_how_resource_consistency_is_defined_and_how_to_read_
     resource_consistency = metric(sweep(SCRIPT, RESOURCES))
 
     definition = resource_consistency["definition"]
-    assert definition["version"] == "1.0.0"
+    assert definition["version"] == "2.0.0"
     assert "population standard deviation" in definition["calculation"]
     assert "exp(-mean of the CVs)" in definition["calculation"]
     assert "weighted equally" in definition["calculation"]

@@ -7,7 +7,7 @@ It does not measure whether the agent succeeds. **Consistent is not successful**
 | | |
 | --- | --- |
 | Metric identity | `outcome_consistency` |
-| Definition version | 1.0.0 |
+| Definition version | 2.0.0 |
 | Source | [Towards a Science of AI Agent Reliability, version 3](https://arxiv.org/html/2602.16666v3), Table 2 |
 | Canonical definition | [`src/reliability_evaluators/evaluators/outcome_consistency.py`](../../src/reliability_evaluators/evaluators/outcome_consistency.py) |
 | Scale | 0 to 1 |
@@ -128,7 +128,7 @@ Outcome consistency can also be calculated by a custom evaluator in your own Fou
 
 The value is then the number Foundry returned. It is reported with `scoring_path` `foundry_managed`. Its `fidelity` is `authoritative` when it equals the value the evaluator returned with it in encoded form, and `unverified`, with its limitation, when it does not: see [the fidelity check](../managed_scoring/readme.md#the-fidelity-check) for what that establishes. The counts and the per-Task details are the ones the evaluator returned from Foundry with it. An unverified result cannot be met or not met by an acceptance criterion. When the metric is an unavailable measurement for the evidence, it comes back from Foundry as one, with the reason and the evidence counts described [below](#what-is-left-out-and-when-the-metric-is-unavailable). When Foundry returns no result at all, the metric has none, the scorecard is partial and names the failure, and the sweep does not score in your own process instead. You can ask for a customer-process rescore of the same evidence, which is reported beside the managed result.
 
-For each Attempt the evaluator is sent its identity, its Task, its execution status and its task outcome with its source. A sweep that is too large for one managed run has no result for the metric, and the scorecard says so. With Tasks of five Attempts, the largest synthetic sweep that fitted had 610 Attempts. See [Foundry-managed scoring](../managed_scoring/readme.md) and its [limits](../managed_scoring/readme.md#limits).
+For each Attempt the evaluator is sent its identity, its Task, its execution status and its task outcome with its source. With it goes the condition the Attempt was intended for, with its role, description and parameters, when the Attempt was made in an experiment: the evaluator leaves out an Attempt made under a variation, as the canonical definition does. A sweep that is too large for one managed run has no result for the metric, and the scorecard says so. With Tasks of five Attempts, the largest synthetic sweep that fitted had 610 Attempts. See [Foundry-managed scoring](../managed_scoring/readme.md) and its [limits](../managed_scoring/readme.md#limits).
 
 ## Evidence it needs
 
@@ -143,6 +143,7 @@ A fractional or otherwise non-binary task outcome is rejected with an error. So 
 
 | Situation | Treatment |
 | --- | --- |
+| An Attempt made under the variation of an experiment | Excluded with the reason `made under a variation, and this metric is calculated from Attempts under the baseline`. The metric describes the agent under the baseline. A sweep gives the Evaluator baseline Attempts only. Called on its own with the Attempts of a whole experiment, the Evaluator leaves the others out itself and counts them. An Attempt that records no condition was made without an experiment and is used. |
 | An Attempt whose execution status is not `completed` | Excluded with the reason `execution status is not completed`. It is not a task failure. |
 | A completed Attempt with no task outcome | Counted as missing with the reason `no task outcome recorded`. |
 | A Task with fewer than two Attempts that have a task outcome | The Task is excluded with a reason and its Attempts are counted as excluded. |
@@ -157,6 +158,7 @@ An unavailable measurement carries its reason and the evidence counts. It never 
 - The companion code's normalization, which divides the sample variance by each Task's own `p(1 - p)`, is not used. For the task outcomes 1, 1, 1, 1, 0 this definition gives 0.36 where that normalization gives 0.
 - Tasks are weighted equally. Attempts are not pooled across Tasks.
 - No minimum number of Attempts beyond two is imposed and no confidence interval is reported. The counts are the statistical disclosure.
+- **The metric is calculated from the Attempts made under the baseline.** An Attempt that records a variation as its condition is excluded with a reason and counted, whoever calls the Evaluator, so a value is the same in a sweep and on the evidence of a whole experiment. Version 1.0.0 scored every Attempt it was given and left the selection to the sweep.
 
 ## Assumptions
 
