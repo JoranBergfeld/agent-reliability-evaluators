@@ -307,39 +307,9 @@ def _sweep(
         }
         # By the path that was declared, never by what came back: nothing falls back to this process.
         if evaluator.scoring_path is ScoringPath.FOUNDRY_MANAGED:
-            managed_result = returned[evaluator.metric_id]
-            if isinstance(managed_result, ManagedFailure):
-                scored.append(
-                    MissingResult(
-                        definition=evaluator.evaluator.definition,
-                        execution_error=managed_result.error,
-                        managed_scoring={**managed_result.provenance, "error": managed_result.error},
-                        reported_usage=managed_result.reported_usage,
-                        **attributed,
-                    )
-                )
-                continue
-            scored.append(
-                ScoredMetric(
-                    result=managed_result.result,
-                    scoring_path=ScoringPath.FOUNDRY_MANAGED,
-                    # Decided by the fidelity check the result was recovered with, never by this process.
-                    fidelity=managed_result.fidelity,
-                    limitation=managed_result.limitation,
-                    managed_scoring=managed_result.provenance,
-                    reported_usage=managed_result.reported_usage,
-                    **attributed,
-                )
-            )
+            scored.append(_as_foundry_returned(evaluator, returned[evaluator.metric_id], **attributed))
         else:
-            scored.append(
-                ScoredMetric(
-                    result=evaluator.evaluate(evidence),
-                    scoring_path=ScoringPath.CUSTOMER_PROCESS,
-                    fidelity=Fidelity.AUTHORITATIVE,
-                    **attributed,
-                )
-            )
+            scored.append(_scored_in_this_process(evaluator, evidence, **attributed))
     return build_scorecard(
         metrics=scored,
         attempts=attempts,
@@ -347,6 +317,42 @@ def _sweep(
         max_concurrent_attempts=max_concurrent_attempts,
         acceptance_criteria=acceptance_criteria,
         preparation_usage=[_in_every_set(preparation, len(planned)) for preparation in preparation_usage],
+    )
+
+
+def _scored_in_this_process(
+    evaluator: _SelectedEvaluator, evidence: Sequence[TaskEvidence], **attributed: Any
+) -> ScoredMetric:
+    """The result of an Evaluator that is calculated in this process, attributed to it."""
+    return ScoredMetric(
+        result=evaluator.evaluate(evidence),
+        scoring_path=ScoringPath.CUSTOMER_PROCESS,
+        fidelity=Fidelity.AUTHORITATIVE,
+        **attributed,
+    )
+
+
+def _as_foundry_returned(
+    evaluator: _SelectedEvaluator, managed_result: Any, **attributed: Any
+) -> ScoredMetric | MissingResult:
+    """What Foundry-managed scoring gave for an Evaluator, attributed to it: its result, or that it gave none."""
+    if isinstance(managed_result, ManagedFailure):
+        return MissingResult(
+            definition=evaluator.evaluator.definition,
+            execution_error=managed_result.error,
+            managed_scoring={**managed_result.provenance, "error": managed_result.error},
+            reported_usage=managed_result.reported_usage,
+            **attributed,
+        )
+    return ScoredMetric(
+        result=managed_result.result,
+        scoring_path=ScoringPath.FOUNDRY_MANAGED,
+        # Decided by the fidelity check the result was recovered with, never by this process.
+        fidelity=managed_result.fidelity,
+        limitation=managed_result.limitation,
+        managed_scoring=managed_result.provenance,
+        reported_usage=managed_result.reported_usage,
+        **attributed,
     )
 
 

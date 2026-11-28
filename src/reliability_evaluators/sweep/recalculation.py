@@ -2,7 +2,9 @@
 
 The offering keeps no evidence store. The customer supplies the earlier scorecard, which
 holds the attempt-level evidence, from the platform that kept it. Nothing here makes an
-Attempt, invokes an agent, reads a file or calls a platform: an earlier run is not modified.
+Attempt, invokes an agent or reads a file, and an earlier run is not modified. A platform
+is called for one thing only: a metric that Foundry-managed scoring scored is scored again
+in the customer's Foundry project, when the customer supplies that project.
 """
 
 from __future__ import annotations
@@ -13,7 +15,7 @@ from dataclasses import dataclass
 from math import isclose
 from typing import Any, Iterable, Iterator, Mapping, Sequence
 
-from ..evaluators import RELIABILITY_METRICS, Fidelity, MetricState, ScoringPath
+from ..evaluators import RELIABILITY_METRICS, MetricState, ScoringPath
 from ..evidence import (
     Attempt,
     EvidenceError,
@@ -22,12 +24,22 @@ from ..evidence import (
     apply_outcome_corrections,
     read_attempts,
 )
+from ..managed_scoring import (
+    DerivationError,
+    FoundryManagedScoring,
+    ManagedFailure,
+    has_managed_evaluator,
+    submitted_evidence_sha256,
+)
 from ..scorecard import (
+    NOT_RECALCULATED,
     SCHEMA_VERSION,
     TOKEN_USAGE,
     AcceptanceCriterion,
+    CarriedMetric,
     CutShort,
     ExecutionRecord,
+    MissingResult,
     PreparationUsage,
     ScorecardStatus,
     ScoredMetric,
@@ -37,7 +49,7 @@ from ..scorecard import (
     read_preparation_usage,
 )
 from .declaration import ActionEvidenceDeclaration, ConfiguredEvaluator, ExecutionLimits
-from .runner import _select, _SelectedEvaluator
+from .runner import _as_foundry_returned, _score_managed, _scored_in_this_process, _select, _SelectedEvaluator
 
 SUPERSEDED = "superseded"
 
@@ -67,6 +79,7 @@ def recalculate(
     metrics: Sequence[str | ConfiguredEvaluator] = (),
     action_evidence: ActionEvidenceDeclaration | None = None,
     acceptance_criteria: Sequence[AcceptanceCriterion] = (),
+    managed_scoring: FoundryManagedScoring | None = None,
 ) -> dict[str, Any]:
     """Score the evidence of an earlier scorecard again, with task outcomes supplied or corrected since.
 
@@ -78,9 +91,9 @@ def recalculate(
     `outcome_corrections` gives, by Attempt identity, the task outcome of each Attempt that
     is supplied late or corrected, with its source and its provenance.
 
-    The result is a new scorecard. Every metric the earlier scorecard scored is scored
-    again by the same Evaluator, in this process, from the Attempts its Evaluator was given
-    before. A correction changes the task outcome of the Attempt it names and nothing else:
+    The result is a new scorecard. Every metric the earlier scorecard scored in the
+    customer's own process is scored again by the same Evaluator, in this process, from the
+    Attempts its Evaluator was given before. A correction changes the task outcome of the Attempt it names and nothing else:
     the confidence rating, the action evidence, the resource measurements, the violation
     assessments and what the Attempt records about its experiment stay as they were. So a
     metric that is not calculated from task outcomes keeps its result. Each corrected
@@ -97,6 +110,23 @@ def recalculate(
     its Attempts were cut short still has none: its entry is carried over as it was and is
     not scored from the corrected outcomes. Running the sweep again is what gives it one.
 
+    A metric that Foundry-managed scoring scored is never scored in this process instead.
+    Each metric stays on the scoring path the earlier scorecard attributes it to:
+
+    - With `managed_scoring`, the customer's Foundry project, Foundry scores it again from
+      the corrected evidence, in managed runs of its own as in a sweep, and the new result is
+      reported as Foundry returned it. When Foundry gives no result for it the recalculation
+      fails, and nothing is superseded.
+    - Without `managed_scoring`, its entry is carried into the new scorecard as it was, and
+      marked under `not_recalculated` with the Attempts whose corrected task outcomes it does
+      not rest on. It is then not the result for the corrected outcomes, and an acceptance
+      criterion is not assessed on it. It stays marked in later recalculations until Foundry
+      scores it again.
+    - Either way, an entry that the corrections do not touch is carried as it is, and is
+      current: the evidence Foundry was sent for it is the same with and without them. That
+      is so for a metric that is not calculated from task outcomes, and for one that was not
+      given a corrected Attempt.
+
     `metrics`, `action_evidence` and `acceptance_criteria` are declared again as for the
     sweep, because the earlier scorecard cannot hold the customer's code. `action_evidence`
     is needed when a trajectory metric was scored, and `metrics` only for an Evaluator
@@ -109,11 +139,15 @@ def recalculate(
     in the evidence, that matches more than one Attempt, or whose execution did not
     complete, which includes one that timed out, answered after its time limit, was
     cancelled or was retried; two corrections for one Attempt; no correction at all; a
-    missing declaration;
+    missing declaration; a metric that is declared for another scoring path than the one
+    the earlier scorecard attributes it to; evidence that is not the evidence Foundry was
+    sent for a Foundry-managed metric; a Foundry project that gives no result;
     and an acceptance criterion of the earlier scorecard that is not declared again.
     """
     try:
-        return _recalculate(earlier_scorecard, outcome_corrections, metrics, action_evidence, acceptance_criteria)
+        return _recalculate(
+            earlier_scorecard, outcome_corrections, metrics, action_evidence, acceptance_criteria, managed_scoring
+        )
     except Exception as error:
         # A ValueError is one of this package's own refusals and reads as a sentence.
         reason = str(error) if isinstance(error, ValueError) else f"{type(error).__name__}: {error}"
@@ -126,6 +160,7 @@ def _recalculate(
     metrics: Sequence[str | ConfiguredEvaluator],
     action_evidence: ActionEvidenceDeclaration | None,
     acceptance_criteria: Sequence[AcceptanceCriterion],
+    managed_scoring: FoundryManagedScoring | None,
 ) -> dict[str, Any]:
     corrections = _given(outcome_corrections)
     with _validating_the_supplied_evidence():
@@ -141,13 +176,15 @@ def _recalculate(
         "outcome_corrections": _correction_records(corrections, earlier.attempts),
         "metrics": deepcopy(earlier.metrics),
     }
-    scorecard = _scorecard(earlier, _score(evaluators, earlier, attempts), attempts, acceptance_criteria)
+    corrected = tuple(correction.attempt_id for correction in corrections)
+    scored = _score(evaluators, earlier, attempts, corrected, managed_scoring)
+    scorecard = _scorecard(earlier, scored, attempts, acceptance_criteria)
     return {**scorecard, _SUPERSEDED_RESULTS: [*deepcopy(earlier.superseded_results), superseded]}
 
 
 def _scorecard(
     earlier: _EarlierScorecard,
-    scored: Sequence[ScoredMetric],
+    scored: Sequence[ScoredMetric | MissingResult | CarriedMetric],
     attempts: Sequence[Attempt] | None = None,
     acceptance_criteria: Sequence[AcceptanceCriterion] = (),
 ) -> dict[str, Any]:
@@ -300,6 +337,9 @@ class _ScoredEarlier:
     cut_short: CutShort
     # Whether that left the metric without a result.
     had_execution_failure: bool
+    # The scoring path the earlier scorecard attributes the metric to, and its entry as recorded.
+    scoring_path: ScoringPath
+    entry: Mapping[str, Any]
 
 
 def _scored_earlier(earlier: _EarlierScorecard) -> list[_ScoredEarlier]:
@@ -325,13 +365,12 @@ def _scored_earlier(earlier: _EarlierScorecard) -> list[_ScoredEarlier]:
             raise EvidenceError(f"the result of {metric_id!r} is recorded without its state")
         if entry["state"] == MetricState.NOT_CONFIGURED.value:
             continue
-        if entry.get("scoring_path") not in (None, ScoringPath.CUSTOMER_PROCESS.value):
-            # Not an EvidenceError: the evidence may be sound. It is the scoring path that is not this one.
-            raise ValueError(
-                f"{metric_id!r} was scored on the scoring path {entry['scoring_path']!r}, and a "
-                "recalculation scores in this process. A result is not scored again on another scoring "
-                "path than the one that was chosen for it"
-            )
+        try:
+            scoring_path = ScoringPath(entry.get("scoring_path") or ScoringPath.CUSTOMER_PROCESS.value)
+        except ValueError:
+            raise EvidenceError(
+                f"the result of {metric_id!r} is attributed to {entry.get('scoring_path')!r}, which is no scoring path"
+            ) from None
         used = entry.get("attempts_used")
         attempt_ids = used.get("attempt_ids") if isinstance(used, Mapping) else None
         if not isinstance(attempt_ids, list):
@@ -349,6 +388,8 @@ def _scored_earlier(earlier: _EarlierScorecard) -> list[_ScoredEarlier]:
                 tuple(by_identity[attempt_id] for attempt_id in attempt_ids),
                 _cut_short(entry, earlier.executions),
                 entry.get("execution_failure") is not None,
+                scoring_path,
+                entry,
             )
         )
     return scored
@@ -387,6 +428,9 @@ class _Rescoring:
     cut_short: CutShort
     # The metric had no result because its Attempts were cut short. A recalculation gives it none.
     had_execution_failure: bool
+    # The entry of a metric that Foundry-managed scoring scored, as the earlier scorecard records it.
+    # None: the metric was scored in the customer's own process.
+    managed_entry: Mapping[str, Any] | None = None
 
 
 def _selected(
@@ -400,11 +444,6 @@ def _selected(
         metric_id = metric.metric_id if isinstance(metric, ConfiguredEvaluator) else metric
         if metric_id in configured:
             raise ValueError(f"{metric_id!r} is selected more than once, and a scorecard reports each metric once")
-        if isinstance(metric, ConfiguredEvaluator) and metric.scoring_path is not ScoringPath.CUSTOMER_PROCESS:
-            raise ValueError(
-                f"{metric_id!r} is configured for the scoring path {metric.scoring_path.value!r}, "
-                "and a recalculation scores in this process"
-            )
         configured[metric_id] = metric
     scored_ids = [scored.metric_id for scored in scored_earlier]
     for metric_id in configured:
@@ -413,42 +452,186 @@ def _selected(
                 f"{metric_id!r} was not scored in the earlier scorecard. A recalculation scores the metrics "
                 "the earlier scorecard scored, and no other"
             )
+    for scored in scored_earlier:
+        declared = configured.get(scored.metric_id)
+        # Declared by its identity alone, a metric stays on the scoring path the earlier scorecard records.
+        if isinstance(declared, ConfiguredEvaluator) and declared.scoring_path is not scored.scoring_path:
+            raise ValueError(
+                f"{scored.metric_id!r} is configured for the scoring path {declared.scoring_path.value!r}, and "
+                f"the earlier scorecard attributes it to {scored.scoring_path.value!r}. A result is not scored "
+                "again on another scoring path than the one that was chosen for it"
+            )
     return [
         _Rescoring(
             _select(configured.get(scored.metric_id, scored.metric_id), action_evidence),
             tuple(attempt.attempt_id for attempt in scored.attempts_used),
             scored.cut_short,
             scored.had_execution_failure,
+            scored.entry if scored.scoring_path is ScoringPath.FOUNDRY_MANAGED else None,
         )
         for scored in scored_earlier
     ]
 
 
 def _score(
-    evaluators: Sequence[_Rescoring], earlier: _EarlierScorecard, attempts: Sequence[Attempt]
-) -> list[ScoredMetric]:
+    evaluators: Sequence[_Rescoring],
+    earlier: _EarlierScorecard,
+    attempts: Sequence[Attempt],
+    corrected: Sequence[str] = (),
+    managed_scoring: FoundryManagedScoring | None = None,
+) -> list[ScoredMetric | MissingResult | CarriedMetric]:
     """Score each Evaluator from the Attempts it is given, taken from `attempts` by identity.
 
     A metric that the earlier sweep left without a result, because its Attempts were cut
     short, is scored from the earlier evidence as it was: an execution failure is not made
     into a result by a task outcome that is supplied or corrected afterwards.
+
+    A metric that Foundry-managed scoring scored is never scored here. Its entry is carried,
+    or Foundry scores it again: see `_carried`. `corrected` names the Attempts whose task
+    outcomes `attempts` holds corrected.
     """
     by_identity = {attempt.attempt_id: attempt for attempt in attempts}
     as_it_was = {attempt.attempt_id: attempt for attempt in earlier.attempts}
-    scored = []
+    scored: list[ScoredMetric | MissingResult | CarriedMetric] = []
+    for_foundry: dict[str, tuple[_Rescoring, tuple[TaskEvidence, ...]]] = {}
     for rescoring in evaluators:
+        if rescoring.managed_entry is not None:
+            evidence = _evidence(rescoring, [by_identity[one] for one in rescoring.attempt_ids], earlier)
+            carried = _carried(rescoring, earlier, evidence, corrected, asked_again=managed_scoring is not None)
+            if carried is None:
+                for_foundry[rescoring.evaluator.metric_id] = (rescoring, evidence)
+            else:
+                scored.append(carried)
+            continue
         given = as_it_was if rescoring.had_execution_failure else by_identity
         evidence = _evidence(rescoring, [given[attempt_id] for attempt_id in rescoring.attempt_ids], earlier)
         scored.append(
-            ScoredMetric(
-                result=rescoring.evaluator.evaluate(evidence),
-                scoring_path=ScoringPath.CUSTOMER_PROCESS,
-                fidelity=Fidelity.AUTHORITATIVE,
+            _scored_in_this_process(
+                rescoring.evaluator, evidence, attempts_used=rescoring.attempt_ids, cut_short=rescoring.cut_short
+            )
+        )
+    return [*scored, *_scored_again_in_foundry(managed_scoring, for_foundry)]
+
+
+def _carried(
+    rescoring: _Rescoring,
+    earlier: _EarlierScorecard,
+    evidence: Sequence[TaskEvidence],
+    corrected: Sequence[str],
+    *,
+    asked_again: bool,
+) -> CarriedMetric | None:
+    """The entry of a Foundry-managed metric as the new scorecard carries it, or None when Foundry scores it again.
+
+    `evidence` is what its Evaluator would be given now. The entry is out of date when that
+    is not what Foundry was sent for it, or when an earlier recalculation already marked it
+    so. Foundry is asked again, when the customer supplied their project, for an entry that
+    is out of date and for one that Foundry gave no result for. A metric whose Attempts were
+    cut short is never scored again, in Foundry either.
+    """
+    entry, metric_id = rescoring.managed_entry, rescoring.evaluator.metric_id
+    usage = _usage_of_the_evaluator(earlier.supplied, metric_id)
+    marked = entry.get(NOT_RECALCULATED)
+    already = tuple(marked.get("corrected_attempt_ids") or ()) if isinstance(marked, Mapping) else ()
+    declared = rescoring.evaluator.evaluated_with()
+    as_it_was = {attempt.attempt_id: attempt for attempt in earlier.attempts}
+    before = _evidence(rescoring, [as_it_was[one] for one in rescoring.attempt_ids], earlier)
+    # An entry that is already out of date records the digest of evidence that was corrected since.
+    submitted = _submitted_evidence(dict(entry, managed_scoring=None) if already else entry, before, declared)
+    touched = _submitted_evidence({"metric_id": metric_id}, evidence, declared) != submitted
+    out_of_date = (
+        *already,
+        *(one for one in rescoring.attempt_ids if touched and one in corrected and one not in already),
+    )
+    failure = entry.get("execution_failure")
+    cut_short = isinstance(failure, Mapping) and bool(failure.get("experiment_ids") or failure.get("task_ids"))
+    if asked_again and not cut_short and (out_of_date or failure is not None):
+        return None
+    return CarriedMetric(entry=entry, usage=usage, corrected_attempt_ids=out_of_date)
+
+
+def _scored_again_in_foundry(
+    managed_scoring: FoundryManagedScoring | None,
+    for_foundry: Mapping[str, tuple[_Rescoring, tuple[TaskEvidence, ...]]],
+) -> list[ScoredMetric | MissingResult]:
+    """What Foundry returns for each metric it is asked to score again, attributed to Foundry-managed scoring.
+
+    A metric that Foundry gives no result for fails the recalculation: nothing is scored in
+    this process in its place, and the earlier scorecard stands.
+    """
+    if not for_foundry:
+        return []
+    for metric_id in for_foundry:
+        if not has_managed_evaluator(metric_id):
+            raise ValueError(f"{metric_id!r} has no Foundry-managed evaluator in this version")
+    managed_scoring.register(list(for_foundry))
+    returned = _score_managed(
+        managed_scoring,
+        {metric_id: evidence for metric_id, (_, evidence) in for_foundry.items()},
+        {metric_id: rescoring.evaluator.evaluated_with() for metric_id, (rescoring, _) in for_foundry.items()},
+    )
+    scored = []
+    for metric_id, (rescoring, _) in for_foundry.items():
+        if isinstance(returned[metric_id], ManagedFailure):
+            raise ValueError(
+                f"Foundry-managed scoring gave no result for {metric_id!r}, and a recalculation does not score "
+                f"it in the customer's own process instead: {returned[metric_id].error}"
+            )
+        scored.append(
+            _as_foundry_returned(
+                rescoring.evaluator,
+                returned[metric_id],
                 attempts_used=rescoring.attempt_ids,
                 cut_short=rescoring.cut_short,
             )
         )
     return scored
+
+
+def _usage_of_the_evaluator(scorecard: Mapping[str, Any], metric_id: str) -> dict[str, Any]:
+    """Where a scorecard reports the token usage of the Evaluator of one metric."""
+    usage = scorecard.get(TOKEN_USAGE)
+    evaluators = usage.get("evaluators") if isinstance(usage, Mapping) else None
+    reported = [
+        entry
+        for entry in (evaluators if isinstance(evaluators, list) else [])
+        if isinstance(entry, dict) and entry.get("metric_id") == metric_id
+    ]
+    if len(reported) != 1 or not isinstance(reported[0].get("scoring"), list):
+        raise EvidenceError(f"it does not report the token usage of the Evaluator of {metric_id!r} once")
+    return reported[0]
+
+
+def _submitted_evidence(entry: Mapping[str, Any], evidence: Sequence[Any], declared: Sequence[Any]) -> str | None:
+    """The digest of the evidence a metric is scored from, which has to be the digest of what was submitted.
+
+    The digest is the one the evidence travels to Foundry with, so the two are the same
+    exactly when the evidence is what the managed evaluator was sent. `declared` is what the
+    customer declares for the Evaluator, such as the action types. It is submitted with the
+    evidence, so evidence under another declaration is refused too. An entry that records
+    no digest has nothing to be compared with. None when this version derives no Foundry
+    evaluator for the metric and nothing was recorded as submitted.
+    """
+    metric_id = entry["metric_id"]
+    managed = entry.get("managed_scoring")
+    submitted = managed.get("evidence_sha256") if isinstance(managed, Mapping) else None
+    try:
+        digest = submitted_evidence_sha256(metric_id, evidence, *declared)
+    except DerivationError as error:
+        if submitted is None:
+            return None
+        raise ValueError(
+            f"the supplied evidence cannot be compared with the evidence that was submitted to Foundry "
+            f"for {metric_id!r}: {error}"
+        ) from error
+    if submitted is not None and submitted != digest:
+        raise EvidenceError(
+            f"the supplied evidence is not the evidence that was submitted to Foundry for {metric_id!r}: it has "
+            f"the digest {digest}, and {submitted} was submitted. Foundry-managed scoring is given the same "
+            "evidence, with what the customer declared for the Evaluator as it was declared for the sweep. "
+            "Use the scorecard as the sweep wrote it, and the commit or tag that made it"
+        )
+    return digest
 
 
 def _evidence(

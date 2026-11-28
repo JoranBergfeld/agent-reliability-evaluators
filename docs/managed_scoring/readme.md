@@ -527,7 +527,9 @@ Rescore with the commit or tag of the offering that made the scorecard. Another 
 
 ### A recalculation is not a rescore
 
-[`recalculate`](../sweep/late-and-corrected-outcomes.md) applies task outcomes that were supplied or corrected after the run, and scores in your own process. It still refuses an earlier scorecard that holds a Foundry-managed metric, with or without a rescore. A corrected outcome would make the managed result out of date, and scoring it again in your own process would replace the result of the path you chose. Correcting a task outcome behind a Foundry-managed result is not supported in this version: run the sweep again.
+[`recalculate`](../sweep/late-and-corrected-outcomes.md) applies task outcomes that were supplied or corrected after the run. It scores in your own process the metrics that were scored there, and it never scores a Foundry-managed metric there instead: that would replace the result of the path you chose.
+
+A scorecard that holds a Foundry-managed metric can still be corrected. Give the recalculation your project as `managed_scoring`, and Foundry scores the metric again from the corrected evidence. Without it, the entry of the metric is carried into the new scorecard as it was and marked `not_recalculated`, with the Attempts whose corrected outcomes it does not rest on, and an acceptance criterion is not assessed on it. A Foundry-managed result that the corrections do not touch is carried as it is and stays current. A customer-process rescore is carried with the entry it belongs to: it is a result for the evidence that was submitted, and is not made again for corrected evidence. See [a metric that Foundry-managed scoring scored](../sweep/late-and-corrected-outcomes.md#a-metric-that-foundry-managed-scoring-scored).
 
 ## What stays in your project
 

@@ -14,6 +14,13 @@ from typing import Any, Callable, Iterable, Mapping
 
 from ..evaluators import RELIABILITY_METRICS, Fidelity, MetricState
 
+# Where the entry of a metric says that a recalculation did not recalculate it: see `assemble.CarriedMetric`.
+NOT_RECALCULATED = "not_recalculated"
+NOT_RECALCULATED_SO_NOT_ASSESSED = (
+    "the result was not recalculated: it rests on task outcomes that were supplied or corrected since, and "
+    "Foundry-managed scoring was not asked to score it again"
+)
+
 COMPARISONS = {
     "at_least": operator.ge,
     "greater_than": operator.gt,
@@ -162,6 +169,9 @@ def _why_no_verdict_is_possible(entry: Mapping[str, Any]) -> str | None:
     Everything else, including a state or a fidelity this module does not know, is named
     as the reason for not assessing.
     """
+    if entry.get(NOT_RECALCULATED):
+        # Whatever the entry holds is out of date, so it cannot be met or not met.
+        return NOT_RECALCULATED_SO_NOT_ASSESSED
     execution_failure = entry.get("execution_failure")
     if execution_failure:
         return f"the metric has no result because of an execution failure: {execution_failure['reason']}"

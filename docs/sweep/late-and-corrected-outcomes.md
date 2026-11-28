@@ -149,7 +149,7 @@ The new scorecard reports 0.25 and 0.9375 under `metrics`, and keeps 0 and 0.812
 
 A correction changes the task outcome of the Attempt it names. Nothing else in the evidence changes: not its confidence rating, action evidence, resource measurements or violation assessments, not what it records about its experiment, and no other Attempt.
 
-Every metric the earlier scorecard scored is scored again, by the same Evaluator, from the same Attempts that Evaluator was given before. So:
+Every metric the earlier scorecard scored in your own process is scored again, by the same Evaluator, from the same Attempts that Evaluator was given before. So:
 
 - A metric that is calculated from task outcomes uses the corrected outcome. Today these are outcome consistency, fault robustness, environment robustness, prompt robustness, calibration, strict confidence discrimination and the Brier-based score.
 - A metric that is not calculated from task outcomes keeps its result. Today these are the two trajectory metrics, resource consistency, constraint compliance and conditional harm severity.
@@ -158,7 +158,36 @@ Every metric the earlier scorecard scored is scored again, by the same Evaluator
 
 **The corrected outcome does not depend on the confidence rating.** The outcome is the one you supply. The recalculation does not read the rating to decide it and does not change the rating. An Attempt the agent rated 100 can be corrected to a failure, and the pair then counts against the agent.
 
-The new results are scored in your own process and are attributed to that scoring path.
+These new results are scored in your own process and are attributed to that scoring path. A metric that Foundry-managed scoring scored is not among them: see the next section.
+
+## A metric that Foundry-managed scoring scored
+
+A scorecard that holds a [Foundry-managed](../managed_scoring/readme.md) metric can be corrected like any other. Its metrics that were scored in your own process are recalculated as above. **A Foundry-managed metric is never scored in your own process instead**: that would replace the result of the scoring path you chose with another calculation, without your asking for it. Each metric stays on the scoring path the earlier scorecard attributes it to. What happens to a Foundry-managed metric depends on whether you give the recalculation your Foundry project:
+
+```python
+recalculated = recalculate(
+    earlier_scorecard=earlier,
+    outcome_corrections=[...],
+    managed_scoring=FoundryManagedScoring(project=FoundryProject("https://<account>.services.ai.azure.com/api/projects/<project>")),
+)
+```
+
+| | What the new scorecard holds for the metric |
+| --- | --- |
+| With `managed_scoring` | Foundry scores it again, from the corrected evidence, in managed runs of its own as in a sweep. The entry is the new result as Foundry returned it, with its fidelity check, its provenance and the token usage of the new runs. The earlier result is in `superseded_results`. |
+| Without `managed_scoring` | The entry is the earlier one as it was, with `not_recalculated` added: its `meaning`, and under `corrected_attempt_ids` the Attempts it rests on whose task outcomes were supplied or corrected since. It is **not** the result for the corrected outcomes. An acceptance criterion on it is `not_assessed`, with that reason. The report marks it, and the CI job summary shows its state as `available, not recalculated`. |
+| Either way, when the corrections do not touch it | The entry is the earlier one as it was, and it is current. This is so when the evidence Foundry was sent for the metric is the same with and without the corrections: for a metric that is not calculated from task outcomes, and for one that was not given a corrected Attempt. Its acceptance criterion is assessed as before. Foundry is not asked again. |
+
+More about the rule:
+
+- **It stays marked until Foundry scores it.** An entry that is `not_recalculated` is carried and stays marked in every later recalculation, with the Attempts of the later corrections added, until a recalculation is given `managed_scoring`. Foundry then scores it from all the corrections.
+- **A Foundry-managed metric that had no result.** One whose managed run failed is carried as it was, still without a result and still listed in `missing`, with a [customer-process rescore](../managed_scoring/readme.md#a-customer-process-rescore) of the earlier evidence if it has one. With `managed_scoring`, Foundry is asked again. One whose Attempts were cut short is never scored again, as in your own process.
+- **Whether a correction touches a metric is decided by the evidence, not by a list of metrics.** The recalculation compares the digest of the evidence the metric's evaluator is sent with and without the corrections. That digest is the one in `managed_scoring.evidence_sha256`.
+- **The supplied evidence has to be the evidence Foundry was sent.** Where the earlier entry records that digest, the supplied evidence, as it is, has to give it. An entry that is already `not_recalculated` records the digest of evidence that was corrected since, so it is not compared.
+- **When Foundry gives no result, the recalculation fails.** Nothing is scored in your own process in its place, nothing is superseded, and the earlier scorecard stands. Recalculate without `managed_scoring` to get the other metrics recalculated and this one carried and marked.
+- **Declare a Foundry-managed metric as you did for the sweep**, or by its identity alone. A metric that is declared for another scoring path than the one the earlier scorecard attributes it to is refused.
+
+With `managed_scoring` the recalculation calls your Foundry project, registers the derived evaluators there if need be and creates new evaluations and runs. Without it, it calls nothing.
 
 ## A partial scorecard, an execution failure and retries
 
@@ -166,7 +195,7 @@ A recalculation makes no Attempt. So nothing about how the sweep was [executed](
 
 **The record of the execution is carried over unchanged.** These parts of the new scorecard are the earlier scorecard's: `status`, `concurrency`, `experiments` and `tasks_without_experiment` with their `attempt_set`, `limits` and `execution`, and the entries of `missing` for Attempts that were not made or did not complete. A partial scorecard stays partial, and still names what it is missing and why. Recalculating does not hide that the earlier run was cut short.
 
-**So is the token usage.** `token_usage` is what the sweep used. A recalculation calls no agent and scores by code, so it uses no tokens and the usage of the new scorecard is that of the earlier one, with what you declared for generated variations as you reported it. Like the rest of the execution record, it has to be what the supplied evidence gives. See [token usage](../token_usage/readme.md#recalculation-and-rescore).
+**So is the token usage.** `token_usage` is what the sweep used. A recalculation calls no agent and scores by code, so it uses no tokens and the usage of the new scorecard is that of the earlier one. The one exception is a metric that Foundry scores again: its scoring is then that of the new managed runs. Otherwise the usage is as it was, with what you declared for generated variations as you reported it. Like the rest of the execution record, it has to be what the supplied evidence gives. See [token usage](../token_usage/readme.md#recalculation-and-rescore).
 
 **A metric that had no result still has none.** A metric with an `execution_failure` in the earlier scorecard is not scored again. Its entry in the new scorecard is the earlier entry as it was, with the same `execution_failure`, and it stays listed in `missing`. This holds even when the outcomes you supply would now permit a calculation: for example when a sweep was cancelled early, its task outcomes were left open with `NO_TASK_OUTCOME_YET`, and they are supplied afterwards. The outcomes are recorded on their Attempts all the same, with the record that they replaced. To get a value for such a metric, run the sweep again.
 
@@ -197,7 +226,9 @@ A recalculation either gives a new scorecard or raises `RecalculationFailed`. Th
 | The `status`, `missing` or `concurrency` of the earlier scorecard is not what its evidence and its execution records give | `it does not reproduce the earlier 'status'`, or the part that differs |
 | A metric says its Attempts were cut short in an experiment or Task that the scorecard has no execution record of | `the result of '...' says its Attempts were cut short in '...'` |
 | A metric needs a declaration that was not given | `'...' needs action evidence to be declared` |
-| A metric of the earlier scorecard was attributed to [Foundry-managed scoring](../managed_scoring/readme.md), with a result or with a failure | `'...' was scored on the scoring path 'foundry_managed', and a recalculation scores in this process`. A result is not scored again on another scoring path than the one you chose for it. A [customer-process rescore](../managed_scoring/readme.md#a-customer-process-rescore) is a different request: it applies no correction, and it reports its result beside the managed one. |
+| A metric is declared for another scoring path than the one the earlier scorecard attributes it to | `'...' is configured for the scoring path '...', and the earlier scorecard attributes it to '...'`. A result is not scored again on another scoring path than the one you chose for it. |
+| The supplied evidence is not the evidence that Foundry was sent for a Foundry-managed metric | `the supplied evidence is not the evidence that was submitted to Foundry for '...'` |
+| `managed_scoring` was given and Foundry gives no result for a metric | `Foundry-managed scoring gave no result for '...'`, with the execution error. Nothing is scored in your own process in its place. |
 | The earlier scorecard assessed an acceptance criterion that is not declared again | `the earlier scorecard assessed an acceptance criterion for '...'` |
 
 A match is never resolved by order or by choosing one of several Attempts.
@@ -208,7 +239,7 @@ Before anything is corrected, the supplied evidence is scored as it is and compa
 
 ## The earlier run is not modified
 
-`recalculate` reads the data you pass and returns new data. It makes no Attempt, invokes no agent, reads and writes no file, and calls no platform. An earlier Foundry run, an earlier CI run and the earlier scorecard file stay as they were, and the scorecard you passed in is not changed.
+`recalculate` reads the data you pass and returns new data. It makes no Attempt, invokes no agent, and reads and writes no file. It calls a platform only when you give it `managed_scoring`: it then makes new evaluations and runs in your Foundry project and changes none that exist. An earlier Foundry run, an earlier CI run and the earlier scorecard file stay as they were, and the scorecard you passed in is not changed.
 
 Because of that, the earlier `scorecard.json` does not say that it was superseded. The new scorecard is the record of that. Keep it where the people who read the earlier one will find it.
 
