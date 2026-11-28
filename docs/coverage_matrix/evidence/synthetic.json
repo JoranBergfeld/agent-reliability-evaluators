@@ -1,0 +1,199 @@
+{
+ "synthetic": true,
+ "what_this_is": "SYNTHETIC evidence. A scripted agent, 14 scripted Attempts (tests/twelve_evaluators_sweep.py), scored on both paths. It is not the behaviour of any live agent and fills no agent cell of the matrix.",
+ "started": "2026-11-27T23:45:33+00:00",
+ "ended": "2026-11-27T23:59:27+00:00",
+ "seconds": 835,
+ "environment": {
+  "offering_commit": "05be627b9ac107755a1f620c495ca325f7840d5d",
+  "resource_group": "rg-are-55-278c868e",
+  "location": "swedencentral",
+  "project_endpoint": "https://are-55-278c868e.services.ai.azure.com/api/projects/todo-fixture",
+  "model": "gpt-4.1-mini 2025-04-14, GlobalStandard, capacity 50",
+  "api_versions": {
+   "agents and evaluators of the project": "api-version=v1",
+   "responses, evals, runs and output items": "/openai/v1/, no api-version",
+   "hosted agent endpoint": "/agents/{name}/endpoint/protocols/openai/responses?api-version=v1, protocol responses 2.0.0",
+   "registering an evaluator": "api-version=v1 with the header Foundry-Features: Evaluations=V1Preview"
+  },
+  "hosted_agent_packages": [
+   "agent-framework==1.26.0",
+   "agent-framework-foundry==1.16.2",
+   "agent-framework-foundry-hosting==1.0.0b261112",
+   "azure-identity==1.27.0"
+  ],
+  "azure_cli": "2.93.0",
+  "python": "3.15.2"
+ },
+ "scorecard_status": "complete",
+ "metrics": {
+  "outcome_consistency": {
+   "hand_calculated": 0.6666666666666666,
+   "foundry_managed": {
+    "state": "available",
+    "value": 0.6666666666666666,
+    "fidelity": "authoritative"
+   },
+   "customer_process": {
+    "state": "available",
+    "value": 0.6666666666666666,
+    "fidelity": "authoritative"
+   },
+   "paths_agree_in_full": true
+  },
+  "distributional_trajectory_consistency": {
+   "hand_calculated": 0.8333333333333334,
+   "foundry_managed": {
+    "state": "available",
+    "value": 0.8333333333333334,
+    "fidelity": "authoritative"
+   },
+   "customer_process": {
+    "state": "available",
+    "value": 0.8333333333333334,
+    "fidelity": "authoritative"
+   },
+   "paths_agree_in_full": true
+  },
+  "sequential_trajectory_consistency": {
+   "hand_calculated": 0.3333333333333333,
+   "foundry_managed": {
+    "state": "available",
+    "value": 0.3333333333333333,
+    "fidelity": "authoritative"
+   },
+   "customer_process": {
+    "state": "available",
+    "value": 0.3333333333333333,
+    "fidelity": "authoritative"
+   },
+   "paths_agree_in_full": true
+  },
+  "resource_consistency": {
+   "hand_calculated": 0.8688435532375445,
+   "foundry_managed": {
+    "state": "available",
+    "value": 0.8688435532375444,
+    "fidelity": "authoritative"
+   },
+   "customer_process": {
+    "state": "available",
+    "value": 0.8688435532375444,
+    "fidelity": "authoritative"
+   },
+   "paths_agree_in_full": true
+  },
+  "fault_robustness": {
+   "hand_calculated": 0.5,
+   "foundry_managed": {
+    "state": "available",
+    "value": 0.5,
+    "fidelity": "authoritative"
+   },
+   "customer_process": {
+    "state": "available",
+    "value": 0.5,
+    "fidelity": "authoritative"
+   },
+   "paths_agree_in_full": true
+  },
+  "environment_robustness": {
+   "hand_calculated": 1.0,
+   "foundry_managed": {
+    "state": "available",
+    "value": 1.0,
+    "fidelity": "authoritative"
+   },
+   "customer_process": {
+    "state": "available",
+    "value": 1.0,
+    "fidelity": "authoritative"
+   },
+   "paths_agree_in_full": true
+  },
+  "prompt_robustness": {
+   "hand_calculated": 0.75,
+   "foundry_managed": {
+    "state": "available",
+    "value": 0.75,
+    "fidelity": "authoritative"
+   },
+   "customer_process": {
+    "state": "available",
+    "value": 0.75,
+    "fidelity": "authoritative"
+   },
+   "paths_agree_in_full": true
+  },
+  "calibration": {
+   "hand_calculated": 0.8083333333333333,
+   "foundry_managed": {
+    "state": "available",
+    "value": 0.8083333333333333,
+    "fidelity": "authoritative"
+   },
+   "customer_process": {
+    "state": "available",
+    "value": 0.8083333333333333,
+    "fidelity": "authoritative"
+   },
+   "paths_agree_in_full": true
+  },
+  "strict_confidence_discrimination": {
+   "hand_calculated": 0.6,
+   "foundry_managed": {
+    "state": "available",
+    "value": 0.6,
+    "fidelity": "authoritative"
+   },
+   "customer_process": {
+    "state": "available",
+    "value": 0.6,
+    "fidelity": "authoritative"
+   },
+   "paths_agree_in_full": true
+  },
+  "brier_based_score": {
+   "hand_calculated": 0.8545833333333334,
+   "foundry_managed": {
+    "state": "available",
+    "value": 0.8545833333333334,
+    "fidelity": "authoritative"
+   },
+   "customer_process": {
+    "state": "available",
+    "value": 0.8545833333333334,
+    "fidelity": "authoritative"
+   },
+   "paths_agree_in_full": true
+  },
+  "constraint_compliance": {
+   "hand_calculated": 0.6666666666666666,
+   "foundry_managed": {
+    "state": "available",
+    "value": 0.6666666666666666,
+    "fidelity": "authoritative"
+   },
+   "customer_process": {
+    "state": "available",
+    "value": 0.6666666666666666,
+    "fidelity": "authoritative"
+   },
+   "paths_agree_in_full": true
+  },
+  "conditional_harm_severity": {
+   "hand_calculated": 0.625,
+   "foundry_managed": {
+    "state": "available",
+    "value": 0.625,
+    "fidelity": "authoritative"
+   },
+   "customer_process": {
+    "state": "available",
+    "value": 0.625,
+    "fidelity": "authoritative"
+   },
+   "paths_agree_in_full": true
+  }
+ }
+}

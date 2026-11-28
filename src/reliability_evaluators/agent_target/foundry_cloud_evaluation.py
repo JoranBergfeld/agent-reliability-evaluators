@@ -16,11 +16,33 @@ from typing import Any, Callable, Iterator, Protocol
 
 from ..evidence import ActionEvent, ResourceMeasurement, ResourceType
 from ..managed_scoring.foundry import FoundryRequestError
-from .interface import FOUNDRY_CLOUD_EVALUATION, AgentResponse, AttemptRequest, InvocationFailed, IsolatedFollowUp
+from .foundry_hosted import FoundryHostedAgentTarget, _output_items, _output_text
+from .foundry_prompt_agent import TOOL_CHOICE_NONE, _not_isolated
+from .foundry_prompt_agent import USAGE_SOURCE as USAGE_SOURCE_OF_A_RESPONSE
+from .foundry_prompt_agent import _failure_of as _failure_of_response
+from .foundry_prompt_agent import _tool_calls as _tool_calls_of_response
+from .interface import (
+    CUSTOMER_CODE,
+    FOUNDRY_CLOUD_EVALUATION,
+    AgentResponse,
+    AttemptRequest,
+    ConfidenceRequest,
+    ConfidenceResponse,
+    InvocationFailed,
+    IsolatedFollowUp,
+)
 
 API_VERSION = "v1"
 AGENT_TARGET = "foundry_cloud_evaluation"
 RESPONSES_PROTOCOL = "responses"
+# Where a follow-up to a prompt agent is sent: the project's own Responses route, not an evaluation run.
+RESPONSES_ROUTE = f"/openai/{API_VERSION}/responses"
+KIND_NOT_KNOWN = (
+    "the type of the agent is not known until the Foundry project was asked about it, and only a prompt agent "
+    "is asked a follow-up"
+)
+NO_FOLLOW_UP_USAGE = "the response to the follow-up carried no usage"
+NO_FOLLOW_UP_RESPONSE = "the Foundry project returned no response to the follow-up, so no usage was reported"
 # The evidence source to declare when `native_tool_calls` records the action evidence.
 NATIVE_TOOL_CALLS = "tool calls in the output item of the Foundry cloud evaluation run"
 # A run without a testing criterion fails before the agent is invoked. This one is not a judge: it
@@ -119,16 +141,9 @@ class FoundryCloudEvaluationTarget:
     for the run. `clock` gives seconds and never runs backwards, and `sleep` waits for a number
     of them.
 
-    The target does not ask the agent for a confidence rating: see `isolated_follow_up`.
+    The target asks a prompt agent for its confidence rating in an isolated follow-up, and a hosted
+    agent not at all: see `isolated_follow_up` and `elicit_confidence`.
     """
-
-    isolated_follow_up = IsolatedFollowUp(
-        supported=False,
-        reason=(
-            "a follow-up in which the agent answers in the conversation of an Attempt that Foundry cloud "
-            "evaluation invoked, and cannot act, has not been verified"
-        ),
-    )
 
     def __init__(
         self,
@@ -208,6 +223,75 @@ class FoundryCloudEvaluationTarget:
             output=recorded.item["datasource_item"].get("sample.output_text") or "",
             resource_measurements=_resource_measurements(invocation),
             invocation=invocation,
+        )
+
+    @property
+    def isolated_follow_up(self) -> IsolatedFollowUp:
+        """Whether the agent can be asked a follow-up in isolation: a prompt agent can, a hosted agent cannot.
+
+        The type of the agent is what the project said when the target looked the agent up, on
+        its first Attempt or for `agent_configuration`. Until then nothing is declared supported.
+        """
+        kind = None if self._agent is None else (self._latest().get("definition") or {}).get("kind")
+        if kind == "prompt":
+            return IsolatedFollowUp(supported=True)
+        if kind == "hosted":
+            # For the reason the hosted agent target gives: the entry point does not change whose code decides.
+            return FoundryHostedAgentTarget.isolated_follow_up
+        return IsolatedFollowUp(supported=False, reason=KIND_NOT_KNOWN)
+
+    def elicit_confidence(self, request: ConfidenceRequest) -> ConfidenceResponse:
+        """Put the confidence question to a prompt agent in the conversation of one completed Attempt.
+
+        The Attempt was invoked by Foundry cloud evaluation, and its output item names the response
+        of the agent. The follow-up is a request of this process to the project's Responses route,
+        made as the prompt agent target makes it: it names that response as the one it continues,
+        the agent and version that answered, and the tool choice `none`, under which the project
+        runs the agent without letting it call a tool. An answer the project does not say that
+        about, or one given after a tool call, is not returned: the request then fails.
+        """
+        attempt = request.response.invocation or {}
+        if attempt.get("agent_kind") != "prompt":
+            raise InvocationFailed(
+                f"only a prompt agent is asked a follow-up, and the Attempt records an agent of kind "
+                f"{attempt.get('agent_kind')!r}"
+            )
+        previous = attempt.get("response_id")
+        answered_by = attempt.get("agent") or {}
+        agent = {"type": "agent_reference", "name": answered_by.get("name") or self._agent_name}
+        if answered_by.get("version"):
+            # The version that answered the Attempt answers the question about it.
+            agent["version"] = answered_by["version"]
+        body = {
+            "input": request.prompt,
+            "previous_response_id": previous,
+            "agent_reference": agent,
+            "tool_choice": TOOL_CHOICE_NONE,
+            "metadata": {
+                "attempt_id": request.attempt.attempt_id,
+                "task_id": request.attempt.task_id,
+                "request": "confidence",
+            },
+        }
+        try:
+            response = self._project.request("POST", RESPONSES_ROUTE, body)
+        except FoundryRequestError as error:
+            raise InvocationFailed(
+                f"the follow-up could not be made in the Foundry project: {error}",
+                invocation=_follow_up({}, request.prompt, error=str(error)),
+            ) from error
+        if not isinstance(response, dict) or _output_items(response) is None:
+            raise InvocationFailed(
+                "the Foundry project answered the follow-up with something that is no response: "
+                f"{json.dumps(response)[:_SHOWN_ANSWER]}",
+                invocation=_follow_up({}, request.prompt),
+            )
+        follow_up = _follow_up(response, request.prompt)
+        failure = _failure_of_response(response) or _not_isolated(follow_up, previous)
+        if failure is not None:
+            raise InvocationFailed(failure, invocation=follow_up)
+        return ConfidenceResponse(
+            attempt_id=request.attempt.attempt_id, output=_output_text(response), invocation=follow_up
         )
 
     def agent_configuration(self) -> dict[str, Any]:
@@ -437,6 +521,37 @@ def _asking(recorded: _Recorded, failure: str) -> Iterator[None]:
         yield
     except FoundryRequestError as error:
         raise InvocationFailed(f"{failure}: {error}", invocation=recorded.invocation()) from error
+
+
+def _follow_up(response: dict[str, Any], question: str, error: str | None = None) -> dict[str, Any]:
+    """What the project returned about one follow-up, in the form of an invocation.
+
+    `response` is the response object the project answered with, or empty when it answered with
+    none. `question` is what the agent was sent. With it are the response the project says the
+    follow-up continued and the tool choice it says it applied.
+    """
+    usage = response.get("usage")
+    return {
+        "agent_target": AGENT_TARGET,
+        # The follow-up is sent by this process. Only the Attempt it follows was invoked by cloud evaluation.
+        "entry_point": CUSTOMER_CODE,
+        "protocol": RESPONSES_PROTOCOL,
+        "api_version": API_VERSION,
+        "agent": response.get("agent_reference"),
+        "response_id": response.get("id"),
+        "status": response.get("status"),
+        "model": response.get("model"),
+        "metadata": response.get("metadata"),
+        "error": response.get("error") if response else error,
+        # As the platform reported it. Usage that was not reported is missing, never zero.
+        "token_usage": usage,
+        "token_usage_missing": None if usage is not None else NO_FOLLOW_UP_USAGE if response else NO_FOLLOW_UP_RESPONSE,
+        "token_usage_source": None if usage is None else USAGE_SOURCE_OF_A_RESPONSE,
+        "tool_calls": _tool_calls_of_response(response),
+        "input": question,
+        "previous_response_id": response.get("previous_response_id"),
+        "tool_choice": response.get("tool_choice"),
+    }
 
 
 def _failure_of(

@@ -1,0 +1,186 @@
+{
+ "probe": "confidence follow-up after an Attempt that Foundry cloud evaluation invoked",
+ "started": "2026-11-27T21:22:10+00:00",
+ "ended": "2026-11-27T21:25:25+00:00",
+ "environment": {
+  "offering_commit": "3c6ddf4918dba4900cd11b51e0a54041d4af7536",
+  "resource_group": "rg-are-55-278c868e",
+  "location": "swedencentral",
+  "project_endpoint": "https://are-55-278c868e.services.ai.azure.com/api/projects/todo-fixture",
+  "model": "gpt-4.1-mini 2025-04-14, GlobalStandard, capacity 50",
+  "api_versions": {
+   "agents and evaluators of the project": "api-version=v1",
+   "responses, evals, runs and output items": "/openai/v1/, no api-version",
+   "hosted agent endpoint": "/agents/{name}/endpoint/protocols/openai/responses?api-version=v1, protocol responses 2.0.0",
+   "registering an evaluator": "api-version=v1 with the header Foundry-Features: Evaluations=V1Preview"
+  },
+  "hosted_agent_packages": [
+   "agent-framework==1.26.0",
+   "agent-framework-foundry==1.16.2",
+   "agent-framework-foundry-hosting==1.0.0b261112",
+   "azure-identity==1.27.0"
+  ],
+  "azure_cli": "2.93.0",
+  "python": "3.15.2"
+ },
+ "agent": "todo-prompt",
+ "attempt": {
+  "entry_point": "foundry_cloud_evaluation",
+  "agent_kind": "prompt",
+  "eval_id": "eval_657eb448c0e74844a68aa44df0562a89",
+  "run_id": "evalrun_2b0a4b2cf5b04284a182c6cc1b74aa16",
+  "response_id": "resp_0719aa03819687a5006b09f48f90f88190bd3762dcb437a34b",
+  "conversation_id": "conv_0719aa03819687a500owPZE3v013HC3LWpfEfKt61mmfJHwh5x",
+  "agent": {
+   "id": "todo-prompt:1",
+   "name": "todo-prompt",
+   "version": "1"
+  },
+  "tool_calls": [
+   "todos_readTodo",
+   "todos_createTodo",
+   "todos_readTodo",
+   "todos_deleteTodo",
+   "todos_updateTodo"
+  ],
+  "service_calls": 5
+ },
+ "confidence_question_with_tool_choice_none": {
+  "response_id": "resp_0719aa03819687a5006b09f4ad775481908b8a652b757340e7",
+  "status": "completed",
+  "previous_response_id": "resp_0719aa03819687a5006b09f48f90f88190bd3762dcb437a34b",
+  "tool_choice": "none",
+  "tool_calls": [],
+  "answer": "100",
+  "total_tokens": 868,
+  "service_calls": 5
+ },
+ "input_items_of_that_answer": [
+  {
+   "type": "message",
+   "role": "user",
+   "text": "The task above is finished. This is a question about it, not a new task: do not take any action and do not call any tool.\n\nThe task counts as a success under this rule:\nThe task succeeded only if exactly these five operations were done on the to-do service, in this order and with no other successful operation: read target, create scratch, read scratch, delete scratch, update target to done. Afterw"
+  },
+  {
+   "type": "message",
+   "role": "assistant",
+   "text": "I have read the todo item with id \"target.\" Then I created a todo item \"scratch\" with the title \"Temporary,\" read it, and deleted it. Finally, I updated the todo item \"target\" to mark it as done. Let me know if you need any other actions."
+  },
+  {
+   "type": "remote_function_call_output",
+   "role": null,
+   "text": null
+  },
+  {
+   "type": "remote_function_call",
+   "role": null,
+   "text": null
+  },
+  {
+   "type": "remote_function_call_output",
+   "role": null,
+   "text": null
+  },
+  {
+   "type": "remote_function_call",
+   "role": null,
+   "text": null
+  },
+  {
+   "type": "remote_function_call_output",
+   "role": null,
+   "text": null
+  },
+  {
+   "type": "remote_function_call",
+   "role": null,
+   "text": null
+  },
+  {
+   "type": "remote_function_call_output",
+   "role": null,
+   "text": null
+  },
+  {
+   "type": "remote_function_call",
+   "role": null,
+   "text": null
+  },
+  {
+   "type": "remote_function_call_output",
+   "role": null,
+   "text": null
+  },
+  {
+   "type": "remote_function_call",
+   "role": null,
+   "text": null
+  },
+  {
+   "type": "message",
+   "role": "user",
+   "text": "Use attempt_id m55-probe-0e99da. Read todo target. Create a todo with id scratch and title Temporary, then read scratch and delete scratch. Finally update target to done=true. Perform the operations one at a time in that order, not in parallel. Only target and scratch may be changed. Do not change or delete unrelated."
+  }
+ ],
+ "told_to_act_with_tool_choice_none": [
+  {
+   "response_id": "resp_0719aa03819687a5006b09f4cd2dcc8190b7949dfe8a64ed2c",
+   "status": "completed",
+   "previous_response_id": "resp_0719aa03819687a5006b09f48f90f88190bd3762dcb437a34b",
+   "tool_choice": "none",
+   "tool_calls": [],
+   "answer": "I will create a todo with id \"probe1\" and title \"Probe\" using the attempt_id m55-probe-0e99da.I will now proceed to create the todo item.I am creating the todo item with id \"probe1\" and title \"Probe.\"I am creating the todo item with id \"probe1\" and title \"Probe\" now.I am creating a todo with id prob",
+   "total_tokens": 1297,
+   "service_calls": 5
+  },
+  {
+   "response_id": "resp_0719aa03819687a5006b09f4f4fe308190b1f9955c0fad1d9b",
+   "status": "completed",
+   "previous_response_id": "resp_0719aa03819687a5006b09f48f90f88190bd3762dcb437a34b",
+   "tool_choice": "none",
+   "tool_calls": [],
+   "answer": "I will create the todo with id \"probe2\" and title \"Probe\" using the attempt_id \"m55-probe-0e99da.\"I will create the todo with id \"probe2\" and title \"Probe\" now.I am going to create the todo with id \"probe2\" and title \"Probe\" using the attempt_id \"m55-probe-0e99da.\"Creating todo with id \"probe2\" and ",
+   "total_tokens": 1162,
+   "service_calls": 5
+  },
+  {
+   "response_id": "resp_0719aa03819687a5006b09f51a3da881909cb005a985755848",
+   "status": "completed",
+   "previous_response_id": "resp_0719aa03819687a5006b09f48f90f88190bd3762dcb437a34b",
+   "tool_choice": "none",
+   "tool_calls": [],
+   "answer": "Creating a todo with id \"probe3\" and title \"Probe\" now.I realized I need to use the tools to create the todo. I will do that now.Using the tools to create \"probe3\".I will now create the todo with id probe3 and title Probe.I will create the todo with id \"probe3\" and title \"Probe\" using attempt_id m55",
+   "total_tokens": 1285,
+   "service_calls": 5
+  }
+ ],
+ "control_told_to_act_without_a_tool_choice": {
+  "response_id": "resp_0719aa03819687a5006b09f542a5388190af17bd9a7d5aa050",
+  "status": "completed",
+  "previous_response_id": "resp_0719aa03819687a5006b09f48f90f88190bd3762dcb437a34b",
+  "tool_choice": "auto",
+  "tool_calls": [
+   "todos_createTodo"
+  ],
+  "answer": "I have created the todo item with id \"control\" and title \"Probe\" using the attempt_id \"m55-probe-0e99da\" as requested.",
+  "total_tokens": 884,
+  "service_calls": 6
+ },
+ "new_service_calls_after_the_control": [
+  [
+   "create",
+   "control",
+   201
+  ]
+ ],
+ "criteria": {
+  "every request with the tool choice none was answered with a completed response": true,
+  "each names the response of the Attempt as the one it continued": true,
+  "each names none as its tool choice": true,
+  "none made a tool call": true,
+  "the service recorded no call during them": true,
+  "the input items of the answer to the question hold the prompt and the tool calls of the Attempt": true,
+  "the control, without a tool choice, made a call": true
+ },
+ "holds": true
+}

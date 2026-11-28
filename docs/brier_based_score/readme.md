@@ -334,18 +334,19 @@ One point is this implementation's reading of the confirmed decision that a rati
 
 ## On Foundry agents
 
-Whether a Foundry agent can be asked in an isolated follow-up was tried against a live Foundry project on 2026-11-27, with Attempts made from customer code through the prompt agent target and the hosted agent target. An agent target declares the follow-up supported only where a caller can ensure that the agent cannot act. Where it cannot, the three predictability metrics are unavailable by decision, and there is no fallback to a rating in the task response.
+Whether a Foundry agent can be asked in an isolated follow-up was tried against a live Foundry project on 2026-11-27, with Attempts made from customer code through the prompt agent target and the hosted agent target, and later that day for a prompt agent whose Attempt Foundry cloud evaluation had invoked. An agent target declares the follow-up supported only where a caller can ensure that the agent cannot act. Where it cannot, the three predictability metrics are unavailable by decision, and there is no fallback to a rating in the task response.
 
 | Agent type | Isolated follow-up | Calibration, strict confidence discrimination, Brier-based score |
 | --- | --- | --- |
 | Prompt agent | Supported. The follow-up names the response of the Attempt and carries the tool choice `none`, which the project applies when it runs the agent. See [the confidence rating](../foundry_prompt_agent/readme.md#the-confidence-rating) | Scored from the ratings |
 | Prompt agent whose definition specifies a `tool_choice` | Supported by the target and refused by the project: such an agent runs only under the tool choice of its definition | Unavailable: every Attempt has no rating, with the project's answer as the reason |
 | Hosted agent | Not supported. The agent's own code decides whether it acts, whatever a caller sends. See [no confidence rating](../foundry_hosted_agent/readme.md#no-confidence-rating) | Unavailable: every Attempt has no rating, with the target's reason |
-| Either agent type, invoked through [Foundry cloud evaluation](../foundry_cloud_evaluation/readme.md) | Not supported: not verified | Unavailable: every Attempt has no rating, with the target's reason |
+| Prompt agent, invoked through [Foundry cloud evaluation](../foundry_cloud_evaluation/readme.md#the-confidence-rating) | Supported. The same follow-up, sent by your own process, names the response that the output item of the Attempt names | Scored from the ratings |
+| Hosted agent, invoked through Foundry cloud evaluation | Not supported, for the reason above | Unavailable: every Attempt has no rating, with the target's reason |
 
 What the isolation of the prompt agent's follow-up rests on, and which of it was observed and which is documented, is [said with the target](../foundry_prompt_agent/readme.md#what-the-isolation-rests-on).
 
-Not verified: Foundry cloud evaluation as the entry point. Every Attempt and every follow-up of the verification was made from customer code. Nothing here says whether a confidence follow-up can be made, or made in isolation, when Foundry cloud evaluation makes the Attempts, so the cloud evaluation target declares it unsupported.
+Which of these combinations were run live with all twelve metrics, and what each did, is in the [coverage matrix](../coverage_matrix/readme.md).
 
 ## Numbers
 

@@ -33,6 +33,17 @@ class TodoService:
         """Make one tool (create, read, update or delete) fail for this Attempt only; None clears it."""
         self._admin("PATCH", attempt_id, {"failing_tool": tool})
 
+    def set_read_presentation(self, attempt_id, presentation):
+        """Present a successful read as the item itself ("direct") or inside an envelope ("wrapped"), for this Attempt only."""
+        self._admin("PATCH", attempt_id, {"read_presentation": presentation})
+
+    def set_note_on_target(self, attempt_id, note):
+        """Return this text as a `note` with every successful read of `target`, for this Attempt only; None clears it.
+
+        The note is untrusted text in a tool result. It is no part of the item and changes no state.
+        """
+        self._admin("PATCH", attempt_id, {"note_on_target": note})
+
     def evidence(self, attempt_id):
         """Return the Attempt's before and after state and the ordered service events."""
         return self._admin("GET", attempt_id)

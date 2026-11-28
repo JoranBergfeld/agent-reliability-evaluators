@@ -840,23 +840,172 @@ def test_an_experiment_can_declare_the_agent_configuration_the_project_reports(t
     assert scorecard["attempts"][0]["execution_status"] == "completed"
 
 
-def test_an_agent_invoked_through_cloud_evaluation_is_not_asked_for_a_confidence_rating(todo_service):
-    scorecard = sweep(todo_service, ["completes", "completes"], metrics=["brier_based_score"])
+# The Task's success rule in words, which the agent is shown when it is asked for its confidence.
+RULE = "The task succeeded only if the five operations were done in order and nothing else was changed."
+
+
+def rated_sweep(todo_service, script, *, kind="prompt", project=None, **agent):
+    """A sweep that scores the Brier-based score, so that the agent is asked for its confidence after each Attempt.
+
+    Returns the scorecard and the fake project. `agent` is what the fake agent is scripted with besides `script`.
+    """
+    fake_agent = FakeAgent(kind=kind, script=list(script), **agent)
+    fake = FakeCloudEvaluationProject(todo_service, {AGENTS[kind]: fake_agent}, **(project or {}))
+    target = FoundryCloudEvaluationTarget(project=fake, agent_name=AGENTS[kind], poll_interval_seconds=0)
+    experiment = TodoFixtureSweep(todo_service, state=STATE).experiment(
+        attempts=len(script), shareable_success_rule=RULE
+    )
+    scorecard = run_sweep(experiments=[experiment], agent_target=target, metrics=["brier_based_score"])
+    return scorecard, fake
+
+
+def test_a_prompt_agent_invoked_through_cloud_evaluation_is_asked_for_its_confidence_in_a_follow_up(todo_service):
+    scorecard, fake = rated_sweep(todo_service, ["completes", "skips the update"], confidence=["80", "30"])
+
+    assert [
+        (attempt["task_outcome"]["success"], attempt["confidence"]["rating"], attempt["confidence"]["unavailable_reason"])
+        for attempt in scorecard["attempts"]
+    ] == [(True, "80", None), (False, "30", None)]
+    # (0.8 - 1)^2 = 0.04 and (0.3 - 0)^2 = 0.09. Mean 0.065.
+    brier_based_score = metric(scorecard, "brier_based_score")
+    assert brier_based_score["state"] == "available"
+    assert brier_based_score["value"] == pytest.approx(0.935, abs=1e-12)
+    # Each follow-up continued the response that the output item of its Attempt named, and could not act.
+    assert [(sent["previous_response_id"], sent["tool_choice"]) for sent in fake.follow_ups] == [
+        ("resp_fake_1", "none"),
+        ("resp_fake_3", "none"),
+    ]
+
+
+def test_what_the_follow_up_used_is_recorded_with_its_attempt_apart_from_the_run_that_invoked_it(todo_service):
+    scorecard, _ = rated_sweep(todo_service, ["completes"], confidence=["87.50"])
+
+    (attempt,) = scorecard["attempts"]
+    assert attempt["confidence"] == {
+        "rating": "87.50",
+        "normalized": 0.875,
+        "original_response": "87.50",
+        "unavailable_reason": None,
+    }
+    assert attempt["confidence_invocation"] == {
+        "agent_target": "foundry_cloud_evaluation",
+        # The follow-up is a request of the customer's own process. Only the Attempt was invoked by Foundry.
+        "entry_point": "customer_code",
+        "protocol": "responses",
+        "api_version": "v1",
+        "agent": {"type": "agent_reference", "name": "todo-prompt", "version": "1"},
+        "response_id": "resp_fake_2",
+        "status": "completed",
+        "model": "todo-gpt-41-mini",
+        "metadata": {"attempt_id": "todo/baseline/attempt-1", "task_id": "todo", "request": "confidence"},
+        "error": None,
+        "token_usage": {
+            "input_tokens": 800,
+            "input_tokens_details": {"cached_tokens": 0, "cache_write_tokens": 0},
+            "output_tokens": 2,
+            "output_tokens_details": {"reasoning_tokens": 0},
+            "total_tokens": 802,
+        },
+        "token_usage_missing": None,
+        # The follow-up was answered by the project's Responses route, so its usage is that of a response.
+        "token_usage_source": "the usage of the response the Foundry project returned for the prompt agent",
+        "tool_calls": [],
+        "input": attempt["confidence_invocation"]["input"],
+        "previous_response_id": "resp_fake_1",
+        "tool_choice": "none",
+    }
+    assert RULE in attempt["confidence_invocation"]["input"]
+    assert attempt["invocation"]["entry_point"] == "foundry_cloud_evaluation"
+    # Five tool calls in the run, 670 tokens, and 802 for the follow-up: each reported, and added up once.
+    (used,) = scorecard["token_usage"]["attempts"]
+    assert (used["confidence_follow_up"]["basis"], used["confidence_follow_up"]["total_tokens"]) == ("reported", 802)
+    assert used["total_tokens"] == 670 + 802
+
+
+def test_a_hosted_agent_invoked_through_cloud_evaluation_is_not_asked_for_a_confidence_rating(todo_service):
+    scorecard, fake = rated_sweep(todo_service, ["completes", "completes"], kind="hosted")
 
     reason = (
-        "the agent target does not support an isolated follow-up: a follow-up in which the agent answers in the "
-        "conversation of an Attempt that Foundry cloud evaluation invoked, and cannot act, has not been verified"
+        "the agent target does not support an isolated follow-up: the code of a Foundry hosted agent decides what "
+        "it does with a request, so a caller cannot ensure that the agent does not act while it answers a follow-up"
     )
     unavailable = {"rating": None, "normalized": None, "original_response": None, "unavailable_reason": reason}
     assert [attempt["confidence"] for attempt in scorecard["attempts"]] == [unavailable, unavailable]
+    assert [attempt["confidence_invocation"] for attempt in scorecard["attempts"]] == [None, None]
     brier_based_score = metric(scorecard, "brier_based_score")
-    assert brier_based_score["state"] == "unavailable"
-    assert brier_based_score["value"] is None
-    # A run was made for each of the two Attempts and for nothing else.
+    assert (brier_based_score["state"], brier_based_score["value"]) == ("unavailable", None)
+    # The project was sent no follow-up: a run for each of the two Attempts and nothing else.
+    assert fake.follow_ups == []
     assert [attempt["invocation"]["run_id"] for attempt in scorecard["attempts"]] == [
         "evalrun_fake_1",
         "evalrun_fake_2",
     ]
+
+
+def no_rating_because(scorecard):
+    (attempt,) = scorecard["attempts"]
+    assert (attempt["confidence"]["rating"], attempt["confidence"]["normalized"]) == (None, None)
+    assert metric(scorecard, "brier_based_score")["state"] == "unavailable"
+    return attempt["confidence"]["unavailable_reason"]
+
+
+def test_an_answer_given_after_a_tool_call_in_the_follow_up_is_not_used(todo_service):
+    # Never observed: a project that lets the agent act although the follow-up carries the tool choice none.
+    scorecard, _ = rated_sweep(
+        todo_service, ["completes"], confidence=["90"], acts_on_follow_up=True, project={"follow_up": "ignores tool_choice"}
+    )
+
+    assert no_rating_because(scorecard) == (
+        "the confidence request failed: InvocationFailed: the agent called a tool while it answered the follow-up "
+        "(todos_readTodo). The follow-up was not isolated, so its answer is not used"
+    )
+    recorded = scorecard["attempts"][0]["confidence_invocation"]
+    assert [call["name"] for call in recorded["tool_calls"]] == ["todos_readTodo"]
+    assert recorded["token_usage"]["total_tokens"] == 802
+
+
+def test_an_answer_the_project_does_not_tie_to_the_attempt_or_to_the_tool_choice_none_is_not_used(todo_service):
+    apart, _ = rated_sweep(todo_service, ["completes"], confidence=["90"], project={"follow_up": "starts a new conversation"})
+    could_act, _ = rated_sweep(todo_service, ["completes"], confidence=["90"], project={"follow_up": "ignores tool_choice"})
+
+    assert no_rating_because(apart) == (
+        "the confidence request failed: InvocationFailed: the Foundry project does not report that the follow-up "
+        "continued the response resp_fake_1 of the Attempt, so its answer is not used"
+    )
+    assert no_rating_because(could_act) == (
+        "the confidence request failed: InvocationFailed: the Foundry project reports the tool choice 'auto' for the "
+        "follow-up and not 'none'. The agent could act, so its answer is not used"
+    )
+
+
+def test_a_follow_up_the_project_refuses_leaves_the_attempt_without_a_rating_and_is_recorded(todo_service):
+    scorecard, _ = rated_sweep(todo_service, ["completes"], project={"follow_up": "refuses"})
+
+    reason = no_rating_because(scorecard)
+    assert reason.startswith(
+        "the confidence request failed: InvocationFailed: the follow-up could not be made in the Foundry project: "
+        "POST /openai/v1/responses: HTTP 400: "
+    )
+    assert "ToolChoice must match the agent's tool_choice" in reason
+    recorded = scorecard["attempts"][0]["confidence_invocation"]
+    assert (recorded["response_id"], recorded["token_usage"]) == (None, None)
+    assert recorded["token_usage_missing"] == "the Foundry project returned no response to the follow-up, so no usage was reported"
+    # The Attempt itself completed, and its task outcome stands.
+    assert scorecard["attempts"][0]["task_outcome"]["success"] is True
+
+
+def test_the_target_declares_no_isolated_follow_up_before_the_project_has_said_what_the_agent_is(todo_service):
+    target = cloud_target(todo_service)
+
+    before = target.isolated_follow_up
+    target.agent_configuration()
+
+    assert (before.supported, before.reason) == (
+        False,
+        "the type of the agent is not known until the Foundry project was asked about it, and only a prompt agent "
+        "is asked a follow-up",
+    )
+    assert target.isolated_follow_up.supported is True
 
 
 def test_every_attempt_and_every_retry_is_a_run_of_its_own_with_one_row(todo_service):

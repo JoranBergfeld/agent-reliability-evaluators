@@ -73,7 +73,7 @@ The confidence request that follows a completed Attempt is a request of its own,
 | The request failed with `InvocationFailed` | What that exception carries as `invocation`, read as above |
 | The response belongs to another Attempt | `missing`. What that response used is not attributed to this Attempt |
 
-The Foundry prompt agent target sends a confidence request and records what the platform returned for it, its `usage` included: see [the confidence rating](../foundry_prompt_agent/readme.md#the-confidence-rating). The Foundry hosted agent target and the Foundry cloud evaluation target do not support an isolated follow-up, so they send none. What a follow-up response reports for each of them was [observed](#the-confidence-follow-up).
+The Foundry prompt agent target sends a confidence request and records what the platform returned for it, its `usage` included: see [the confidence rating](../foundry_prompt_agent/readme.md#the-confidence-rating). The Foundry cloud evaluation target sends the same request for a prompt agent, from your own process, and records it the same way: see [the confidence rating](../foundry_cloud_evaluation/readme.md#the-confidence-rating) there. For a hosted agent neither target supports an isolated follow-up, so none is sent. What a follow-up response reports was [observed](#the-confidence-follow-up).
 
 ### Scoring
 
@@ -407,7 +407,7 @@ The first was deleted by the provisioning that failed. The second was deleted wi
 - **Why the hosted agent's response stated more than was metered**, and what a hosted agent built with anything else states. The comparison was made with one agent, one model and one Task.
 - **A hosted agent that serves the Invocations protocol.** It is not supported, and its usage is unverified.
 - **Tool-side model usage.** The fixture's tool is a plain service. Whether the usage of a response includes a model that a tool calls was not observed.
-- **A confidence follow-up sent by a target for a hosted agent or through cloud evaluation.** Neither target sends one. What is above was observed by hand.
+- **A confidence follow-up sent by a target for a hosted agent.** No target sends one. What is above was observed by hand. The follow-up that the cloud evaluation target now sends for a prompt agent was not part of this check: it was run for the [coverage matrix](../coverage_matrix/readme.md).
 - **Usage for generated variations.** The offering generates none, and what a customer declares is reported as declared.
 - **Usage rows of a managed run that uses a model.** The offering makes none. The three runs above were made by hand.
 - **More than one Attempt at a time**, a run with more than one row, and a failed managed run: what it reports of its usage was not looked at live.

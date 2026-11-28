@@ -47,7 +47,7 @@ To invoke the same agents from your own code instead, use the [Foundry prompt ag
 - Python 3.10 or later and the standard library. The requests are sent by `FoundryProject`, the same class [Foundry-managed scoring](../managed_scoring/readme.md) uses: plain REST with `urllib` and a bearer token. No Azure SDK: see [ADR 0005](../adr/0005-foundry-targets-use-the-standard-library.md).
 - A bearer token for the resource `https://ai.azure.com`. By default `FoundryProject` asks the Azure CLI, so the sweep runs as whoever the Azure CLI is signed in as. Pass `FoundryProject(endpoint, token=...)` to use your own function. What the [hosted agent target's documentation](../foundry_hosted_agent/readme.md#authentication) says about signing in from CI holds here.
 - A role in the Foundry project that allows the identity to read the agent and to create evals and evaluation runs. In the live check it held Foundry User on the Foundry account and Foundry Project Manager on the project. Which of the two is needed was not isolated.
-- Network access from where the sweep runs to the project endpoint. Your process does not call the agent. Foundry does.
+- Network access from where the sweep runs to the project endpoint. Your process does not call the agent for an Attempt. Foundry does. The one request your process sends to the agent itself is [the confidence follow-up](#the-confidence-rating) to a prompt agent, when a metric that uses confidence is selected.
 
 ## One run per Attempt
 
@@ -191,6 +191,31 @@ action_evidence = ActionEvidenceDeclaration(
 
 The platform says what each tool returned, not whether the call failed. So no action event from this source carries an `error`; a failed call shows only in its result. The tool calls of an output item and the calls your service received can differ, and there is no default between them: you declare which one a metric is calculated from. An Attempt whose invocation failed has no action evidence from this source, although the agent may have acted.
 
+## The confidence rating
+
+When a selected metric uses confidence, the sweep asks the agent for a [confidence rating](../brier_based_score/readme.md#how-the-confidence-rating-is-collected) after each completed Attempt, in a separate request in which the agent must not be able to act.
+
+**A prompt agent is asked.** Foundry cloud evaluation invoked the Attempt, and its output item names the response of the agent. The follow-up is not a run. It is one request of your own process to the project's Responses route, the request the [prompt agent target](../foundry_prompt_agent/readme.md#the-confidence-rating) sends:
+
+```text
+POST <project endpoint>/openai/v1/responses
+{"input": "<the confidence question>",
+ "previous_response_id": "<the response the output item of the Attempt names>",
+ "agent_reference": {"type": "agent_reference", "name": "<agent name>", "version": "<the version that item names>"},
+ "tool_choice": "none",
+ "metadata": {"attempt_id": "<Attempt identity>", "task_id": "<Task identity>", "request": "confidence"}}
+```
+
+The target reads from the answer which response it continued, which tool choice it ran under and which tools were called. Unless it continued the Attempt's response, under `none`, with no tool call, the answer is not returned and the Attempt has no rating. What the isolation rests on, and its limits, are those of the prompt agent target: see [what the isolation rests on](../foundry_prompt_agent/readme.md#what-the-isolation-rests-on), [ADR 0009](../adr/0009-prompt-agent-follow-up-rests-on-tool-choice-none.md) and [ADR 0012](../adr/0012-a-cloud-evaluation-attempt-of-a-prompt-agent-is-followed-up-from-the-customers-process.md).
+
+So with a predictability metric selected, your process needs what the prompt agent target needs: access to the Responses route as an identity that may invoke the agent.
+
+**A hosted agent is not asked.** Its own code decides whether it acts in a follow-up, whichever entry point invoked the Attempt. Every Attempt then has no rating, with that reason, and the three predictability metrics are unavailable: see [no confidence rating](../foundry_hosted_agent/readme.md#no-confidence-rating).
+
+The follow-up is recorded on the Attempt as `confidence_invocation`: the `response_id` of the answer, the `previous_response_id` and the `tool_choice` the project reported, the `tool_calls` of the answer, its `token_usage` and the `input` that was sent. Its `entry_point` is `customer_code`, because your process sent it. The Attempt's own `invocation` keeps `foundry_cloud_evaluation`. The usage of a follow-up has the fields of a response, `input_tokens`, `output_tokens` and `total_tokens`, and the [token usage report](../token_usage/readme.md#confidence-follow-ups) counts its `total_tokens` with the Attempt.
+
+`target.isolated_follow_up` says which of the two holds for your agent. The target learns the type of the agent from the project, on its first Attempt or when you ask for `agent_configuration()`. Before that it declares nothing supported.
+
 ## The task outcome never comes from the run
 
 The target does not look at the agent's answer, and not at Foundry's labels, to decide anything. Your task-success rule decides the task outcome, and it should read independent evidence, such as the state of your test service.
@@ -247,7 +272,7 @@ An unsupported combination is reported. Nothing is tried in its place.
 
   `agent_configuration()` returns the entry point, the project endpoint, the agent's name, its kind, the protocols its endpoint serves, the version you pinned and its latest version. The project returns a hosted agent's environment variables with its details, in plain text. The target does not copy them anywhere.
 
-- **The confidence follow-up.** The target declares that it does not support an isolated follow-up. Whether an agent can be asked a follow-up question in the conversation of an Attempt that cloud evaluation invoked, without being able to act, has not been verified. Until it is, every Attempt made through this target has no confidence rating, with that reason, and [calibration](../calibration/readme.md), [strict confidence discrimination](../strict_confidence_discrimination/readme.md) and the [Brier-based score](../brier_based_score/readme.md) are unavailable. The agent is not asked, and a rating in its task response is not used.
+- **The confidence follow-up of a hosted agent.** For a hosted agent the target declares that it does not support an isolated follow-up, as the hosted agent target does. Every Attempt of a hosted agent has no confidence rating, with that reason, and [calibration](../calibration/readme.md), [strict confidence discrimination](../strict_confidence_discrimination/readme.md) and the [Brier-based score](../brier_based_score/readme.md) are unavailable. The agent is not asked, and a rating in its task response is not used. A prompt agent is asked: see [the confidence rating](#the-confidence-rating).
 
 - **Fault robustness for a prompt agent whose tool returns an HTTP error.** As from customer code, such a fault fails the whole invocation, so no Attempt under the fault completes and [fault robustness](../fault_robustness/readme.md) is unavailable. It is not 0. For a hosted agent the Attempt completes and the metric is calculated.
 
@@ -273,6 +298,7 @@ The same Task, the same controls and the same task-success rule give the same ki
 | Time limit | Covers the request | Covers the whole run |
 | After a time limit | Nothing is recorded of the invocation | The eval and the run are recorded. The run's cancellation is requested |
 | Platform labels | None | A pass or fail label per item, kept as a platform diagnostic |
+| Confidence follow-up to a prompt agent | A request of your process that continues the response of the Attempt | The same request, of your process, that continues the response the output item names. It is not a run |
 | What stays in your project | Nothing the target made | One eval per target and one run per Attempt |
 
 The same invocation has the same token usage through both: the response that an output item names, read from customer code by its identifier, stated the numbers of the item under the other field names, [once for each agent type](../token_usage/readme.md#observed-live). The elapsed times of the two entry points have different measurement boundaries. Do not read a difference in elapsed time between them as a difference in what your agent used.
@@ -344,6 +370,15 @@ It ran twice on one fixture and passed both times, 13 checks in 9 minutes 29 sec
 - The run's `report_url` named the resource group, the Foundry account and the project, after an encoded identifier.
 - An eval and a run record the display name of the identity that created them, as `created_by`. The target does not copy it.
 
+### The confidence follow-up, observed for the coverage matrix
+
+Observed later on 2026-11-27, on another fixture (`rg-are-55-278c868e`), for the [coverage matrix](../coverage_matrix/readme.md). The records are in [`docs/coverage_matrix/evidence/`](../coverage_matrix/evidence/).
+
+- **By hand, before the target asked.** One Attempt of the fixture's prompt agent through the target, then requests to `POST /openai/v1/responses` that named the response of its output item in `previous_response_id`, with the agent and version the item named. With `tool_choice: none`: the confidence question was answered `100` in a completed response that named the Attempt's response as the one it continued and `none` as its tool choice, with no tool call. Its input items held the Attempt's prompt, the agent's answer and five `remote_function_call` items with their outputs. Told three times to create an item, the agent called nothing, and the service recorded no call. Told the same once without a tool choice, it created the item. The criteria this was held against were written down before the first request: [`cloud-follow-up-probe.json`](../coverage_matrix/evidence/cloud-follow-up-probe.json).
+- **Through the target, in a sweep.** In the run of the coverage matrix on a prompt agent through cloud evaluation, the target sent a follow-up after each of the 17 Attempts that completed. Every one was answered with a rating, and the service had recorded nothing more for the Attempt when its state was removed. Calibration and the Brier-based score were calculated from those ratings and equalled an independent calculation. Six more follow-ups in the supplement of that run were answered `100`, `100`, `50.0`, `90.0`, `60` and `80`.
+- **A hosted agent was not asked**, in the 19 Attempts of its run and the six of its supplement.
+- The same was seen once by hand for the token usage verification, which also continued the conversation the output item names: see [token usage](../token_usage/readme.md#the-confidence-follow-up).
+
 ### Resources
 
 One resource group was created for this work, in the subscription named `Sandbox`: `rg-are-45-f6638d25`, provisioned with `python -m live_fixture provision --ticket 45`. It held the fixture for everything above. It was deleted with the fixture's `teardown`, which took 29 minutes, and the soft-deleted Foundry account was purged. Afterwards a separate `az group exists` returned `false`, and no soft-deleted account of the fixture was listed. The evals, the runs and the code evaluator made above were in that project and went with it.
@@ -353,7 +388,8 @@ One resource group was created for this work, in the subscription named `Sandbox
 - The self-contained form of the live check, in which it provisions and tears down its own fixture. The check was run on a fixture provisioned beforehand.
 - More than one Attempt at a time, and so several runs at once.
 - A run with more than one row. The target never makes one.
-- The confidence follow-up, in the conversation the output item names or in any other way.
+- A follow-up that continues the conversation the output item names, in place of the response, and a follow-up made through a run. Neither was tried.
+- The follow-up of a prompt agent whose definition specifies a `tool_choice` of its own, after a cloud evaluation Attempt. From customer code the project refused it.
 - An agent that really speaks the Invocations protocol, and an agent that is neither a prompt agent nor a hosted agent.
 - A run that fails after it invoked the agent, an output item with a status other than `completed`, a run that returns no item or the item of another row, a project that refuses to make a run, and an answer that is no run. The default test run covers them against a fake project that answers in the shapes above.
 - A target error other than the one a failing tool of a prompt agent gives. The prototypes saw `(SystemError) Agent response '…' ended with status 'failed'` for a hosted agent at low model capacity on 2026-11-24. It was not seen here.

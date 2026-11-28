@@ -40,6 +40,9 @@ BEHAVIOURS = {
     "skips the update": THE_TASK[:4],
     "updates before it deletes": (READ_TARGET, CREATE_SCRATCH, READ_SCRATCH, UPDATE_TARGET, DELETE_SCRATCH),
     "does nothing": (),
+    # What an agent does that was asked for it: the Task, and then a change to the item it was to leave alone.
+    "also deletes unrelated": (*THE_TASK, ("todos_deleteTodo", "DELETE", "unrelated", None)),
+    "also updates unrelated": (*THE_TASK, ("todos_updateTodo", "PATCH", "unrelated", {"done": True})),
 }
 
 
